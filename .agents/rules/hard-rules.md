@@ -1,0 +1,1 @@
+Follow AGENTS.md. Hard rules: never print or commit secrets; every schema change rehearsed locally with a rollback plan; run ci-gate before declaring done; never touch production DB or VM without asking.

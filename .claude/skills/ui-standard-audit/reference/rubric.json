@@ -1,0 +1,41 @@
+[
+  {"id": "A1", "category": "A", "category_name": "Typography", "title": "Plus Jakarta Sans is the primary UI font across body, labels, inputs, tables, KPI numbers, and it is actually loaded (package, font link, or local file).", "max": 4},
+  {"id": "A2", "category": "A", "category_name": "Typography", "title": "Serif is reserved for page titles and subtitles; no more than 4 families with distinct roles; no monospace in inputs, filters, or labels.", "max": 3},
+  {"id": "A3", "category": "A", "category_name": "Typography", "title": "Hero and KPI numerals are bold or extra bold with tabular lining figures; units such as % are smaller and muted.", "max": 3},
+  {"id": "A4", "category": "A", "category_name": "Typography", "title": "Secondary text is at least 12px, none below 11px, and its gray has enough contrast.", "max": 3},
+  {"id": "A5", "category": "A", "category_name": "Typography", "title": "Clear type scale: page title, then card title, then body, then caption; uppercase only for table headers.", "max": 2},
+
+  {"id": "B1", "category": "B", "category_name": "Color", "title": "Brand palette (navy, red, yellow), light-blue page background, white cards, cool neutral grays.", "max": 4},
+  {"id": "B2", "category": "B", "category_name": "Color", "title": "Status colors are consistent across donut, KPI icons, bars, and pills, and defined in one place.", "max": 4},
+  {"id": "B3", "category": "B", "category_name": "Color", "title": "Colors come from theme tokens or CSS variables, not scattered hex literals; no pure black text.", "max": 3},
+  {"id": "B4", "category": "B", "category_name": "Color", "title": "No off-palette hues for statuses; red reserved for overdue and error.", "max": 2},
+  {"id": "B5", "category": "B", "category_name": "Color", "title": "Text and status chips meet WCAG AA contrast.", "max": 2},
+
+  {"id": "C1", "category": "C", "category_name": "Cards and surfaces", "title": "Rounded corners (about 12 to 16px), slim border, soft shadow, identical on every card.", "max": 4},
+  {"id": "C2", "category": "C", "category_name": "Cards and surfaces", "title": "Related information is grouped in one card, cards in a row have equal heights, padding is consistent.", "max": 3},
+  {"id": "C3", "category": "C", "category_name": "Cards and surfaces", "title": "Page header sits on the background, not in a card; all filters live in one card.", "max": 3},
+
+  {"id": "D1", "category": "D", "category_name": "Layout and hierarchy", "title": "Summary-first structure: hero metric on the left, KPIs in the middle, breakdown on the right, in one row above the main list.", "max": 5},
+  {"id": "D2", "category": "D", "category_name": "Layout and hierarchy", "title": "Grid with consistent gutters and aligned edges; graceful wrap below about 1280px.", "max": 4},
+  {"id": "D3", "category": "D", "category_name": "Layout and hierarchy", "title": "The main table is visible close to the fold and cards have no large dead space.", "max": 3},
+  {"id": "D4", "category": "D", "category_name": "Layout and hierarchy", "title": "Page header has a large navy title and a scope subtitle; the screen's purpose is clear.", "max": 3},
+
+  {"id": "E1", "category": "E", "category_name": "KPI and data visualization", "title": "KPI cards have a tinted icon circle, semibold title, large number, % of total at one decimal, a 'View list ->' link, and the whole card is clickable.", "max": 4},
+  {"id": "E2", "category": "E", "category_name": "KPI and data visualization", "title": "Donut is large with a thick ring, a centered number whose unit is smaller, a label, a caption, and a legend (or KPI cards acting as the legend).", "max": 4},
+  {"id": "E3", "category": "E", "category_name": "KPI and data visualization", "title": "Breakdown bars show stacked status segments with 'x of y' text and a legend, not bare totals.", "max": 4},
+  {"id": "E4", "category": "E", "category_name": "KPI and data visualization", "title": "Numbers are consistent between chart, KPI, and table; rounding sums sensibly.", "max": 3},
+
+  {"id": "F1", "category": "F", "category_name": "Tables", "title": "Small uppercase muted headers with sort indicators and per-column filter icons; no always-visible filter input row.", "max": 4},
+  {"id": "F2", "category": "F", "category_name": "Tables", "title": "Status is a soft pill with a dot, using the status tokens.", "max": 3},
+  {"id": "F3", "category": "F", "category_name": "Tables", "title": "Primary-link first column, muted secondary columns, trailing row action, hover highlight.", "max": 3},
+  {"id": "F4", "category": "F", "category_name": "Tables", "title": "Hairline dividers, generous row height, no redundant columns or pills, '—' for empty values.", "max": 3},
+  {"id": "F5", "category": "F", "category_name": "Tables", "title": "Sticky header, count and pagination, one consistent date format.", "max": 2},
+
+  {"id": "G1", "category": "G", "category_name": "Filters and controls", "title": "One filter card, labels above, rounded fields with solid slim borders in the UI font, locked fields marked with an icon.", "max": 3},
+  {"id": "G2", "category": "G", "category_name": "Filters and controls", "title": "One clear secondary action (outlined navy), Reset as a ghost button, enabled and disabled states are distinguishable.", "max": 2},
+
+  {"id": "H1", "category": "H", "category_name": "UX laws and accessibility", "title": "Large click targets, grouped actions, familiar patterns (Fitts, Hick, Jakob).", "max": 3},
+  {"id": "H2", "category": "H", "category_name": "UX laws and accessibility", "title": "Loading, empty, success, and error states exist for the main screens.", "max": 3},
+  {"id": "H3", "category": "H", "category_name": "UX laws and accessibility", "title": "Visible keyboard focus and aria-label on icon-only buttons.", "max": 2},
+  {"id": "H4", "category": "H", "category_name": "UX laws and accessibility", "title": "Layout holds at 1366px width.", "max": 2}
+]

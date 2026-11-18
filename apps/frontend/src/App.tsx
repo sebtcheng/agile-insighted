@@ -1,0 +1,40 @@
+import { Navigate, Route, Routes } from "react-router-dom";
+import { AuthGate } from "./auth";
+import { Layout } from "./components/Layout";
+import { ComingSoon } from "./pages/ComingSoon";
+import { HomePage } from "./pages/HomePage";
+import { LoginPage } from "./pages/LoginPage";
+import { PortfolioPage } from "./pages/PortfolioPage";
+import { ProjectPage } from "./pages/ProjectPage";
+import { ProjectsPage } from "./pages/ProjectsPage";
+import { SettingsPage } from "./pages/SettingsPage";
+import { SprintPage } from "./pages/SprintPage";
+import { WorkloadPage } from "./pages/WorkloadPage";
+
+export function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        element={
+          <AuthGate>
+            <Layout />
+          </AuthGate>
+        }
+      >
+        <Route index element={<HomePage />} />
+        <Route path="portfolio" element={<PortfolioPage />} />
+        <Route path="workload" element={<WorkloadPage />} />
+        <Route path="projects" element={<ProjectsPage />} />
+        <Route path="projects/:projectId" element={<ProjectPage />} />
+        <Route path="projects/:projectId/sprints/:sprintId" element={<SprintPage />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="ost" element={<ComingSoon title="Opportunity Solution Tree" />} />
+        <Route path="usm" element={<ComingSoon title="User Story Mapping" />} />
+        <Route path="kano" element={<ComingSoon title="Kano Request Tracker" />} />
+        <Route path="raid" element={<ComingSoon title="RAID Log" />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
+  );
+}

@@ -1,0 +1,129 @@
+import { Alert, Badge, Button, Center, Group, Loader, Stack, Text } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import type { UseQueryResult } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+import {
+  ENUM_LABELS,
+  type ActivityPriority,
+  type ActivityStatus,
+  type Health,
+  type SprintStatus,
+  type WorkType,
+} from "@myapp/shared";
+import { errorMessage } from "../api/client";
+import { HEALTH_COLOR, PRIORITY_COLOR, SPRINT_COLOR, STATUS_COLOR } from "../theme";
+
+/** Every screen shows loading, error and empty states through this wrapper. */
+export function QueryState<T>({
+  query,
+  isEmpty,
+  empty,
+  children,
+}: {
+  query: Pick<UseQueryResult<T>, "isPending" | "isError" | "error" | "data" | "refetch">;
+  isEmpty?: (data: T) => boolean;
+  empty?: ReactNode;
+  children: (data: T) => ReactNode;
+}) {
+  if (query.isPending) {
+    return (
+      <Center py="xl" aria-busy="true">
+        <Loader size="sm" />
+      </Center>
+    );
+  }
+  if (query.isError) {
+    return (
+      <Alert color="red" title="Could not load this">
+        <Stack gap="xs" align="flex-start">
+          <Text size="sm">{errorMessage(query.error)}</Text>
+          <Button size="xs" variant="light" onClick={() => void query.refetch()}>
+            Try again
+          </Button>
+        </Stack>
+      </Alert>
+    );
+  }
+  if (query.data === undefined) return null;
+  if (isEmpty?.(query.data)) {
+    return (
+      <Center py="xl">
+        <Text c="dimmed">{empty ?? "Nothing here yet."}</Text>
+      </Center>
+    );
+  }
+  return <>{children(query.data)}</>;
+}
+
+export const StatusBadge = ({ status }: { status: ActivityStatus }) => (
+  <Badge color={STATUS_COLOR[status]} variant="light">
+    {ENUM_LABELS.status[status]}
+  </Badge>
+);
+export const PriorityBadge = ({ priority }: { priority: ActivityPriority }) => (
+  <Badge color={PRIORITY_COLOR[priority]} variant="outline">
+    {ENUM_LABELS.priority[priority]}
+  </Badge>
+);
+export const WorkTypeBadge = ({ type }: { type: WorkType }) => (
+  <Badge color="gray" variant="outline">
+    {ENUM_LABELS.workType[type]}
+  </Badge>
+);
+export const HealthBadge = ({ health }: { health: Health }) => (
+  <Badge color={HEALTH_COLOR[health]} variant="light">
+    {ENUM_LABELS.health[health]}
+  </Badge>
+);
+export const SprintBadge = ({ status }: { status: SprintStatus }) => (
+  <Badge color={SPRINT_COLOR[status]} variant="light">
+    {ENUM_LABELS.sprintStatus[status]}
+  </Badge>
+);
+
+export const fmtDate = (d: string | null | undefined): string => {
+  if (!d) return "No date";
+  const [y, m, day] = d.slice(0, 10).split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, day)).toLocaleDateString(undefined, {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+};
+export const fmtDateTime = (iso: string): string =>
+  new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+
+export const toast = {
+  error: (message: string, title = "That did not work") =>
+    notifications.show({ color: "red", title, message, autoClose: 8000 }),
+  ok: (message: string) => notifications.show({ color: "green", message, autoClose: 3000 }),
+  warn: (message: string, title = "Heads up") =>
+    notifications.show({ color: "yellow", title, message, autoClose: 8000 }),
+};
+
+export function PageHeader({
+  title,
+  actions,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <Group justify="space-between" align="flex-start" mb="md" wrap="wrap">
+      <div>
+        <Text component="h1" fz={26} fw={700} lh={1.2} m={0}>
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text c="dimmed" size="sm" mt={4}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </div>
+      {actions ? <Group>{actions}</Group> : null}
+    </Group>
+  );
+}

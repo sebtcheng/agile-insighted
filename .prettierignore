@@ -1,0 +1,9 @@
+node_modules
+dist
+coverage
+drizzle
+playwright-report
+package-lock.json
+.claude
+.agents
+.agent

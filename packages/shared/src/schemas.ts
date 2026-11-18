@@ -1,0 +1,508 @@
+﻿import { z } from "zod";
+import {
+  type ActivityEventType,
+  type ActivityPriority,
+  type ActivityStatus,
+  type ChecklistKind,
+  type Gate,
+  type Health,
+  type ReleaseStatus,
+  type SprintStatus,
+  type UserRole,
+  checklistKindSchema,
+  releaseStatusSchema,
+  activityPrioritySchema,
+  activityStatusSchema,
+  healthSchema,
+  sprintStatusSchema,
+  trackSchema,
+  userRoleSchema,
+  workTypeSchema,
+} from "./enums";
+
+const id = z.string().uuid();
+const text = (max: number) => z.string().trim().min(1).max(max);
+const optionalText = (max: number) => z.string().trim().max(max).nullable().optional();
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
+
+export const MIN_PASSWORD_LENGTH = 10;
+
+// ---- auth and users
+export const loginSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+  password: z.string().min(1).max(200),
+});
+export const createUserSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+  fullName: text(120),
+  password: z.string().min(MIN_PASSWORD_LENGTH).max(200),
+  role: userRoleSchema.default("team_member"),
+});
+export const updateUserSchema = z
+  .object({
+    fullName: text(120),
+    role: userRoleSchema,
+    isActive: z.boolean(),
+    password: z.string().min(MIN_PASSWORD_LENGTH).max(200),
+  })
+  .partial();
+
+export const userDtoSchema = z.object({
+  id,
+  email: z.string(),
+  fullName: z.string(),
+  role: userRoleSchema,
+  isActive: z.boolean(),
+});
+export type UserDto = z.infer<typeof userDtoSchema>;
+
+// ---- projects and subprojects
+export const createProjectSchema = z.object({
+  name: text(120),
+  code: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_-]{2,16}$/),
+  wipLimitPerPerson: z.number().int().min(1).max(50).default(3),
+});
+export const updateProjectSchema = z
+  .object({
+    name: text(120),
+    wipLimitPerPerson: z.number().int().min(1).max(50),
+    archived: z.boolean(),
+  })
+  .partial();
+
+export const createSubprojectSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_-]{2,16}$/),
+  name: text(160),
+  description: optionalText(2000),
+  leadId: id.nullable().optional(),
+  health: healthSchema.default("on_track"),
+  healthNote: optionalText(500),
+});
+export const updateSubprojectSchema = z
+  .object({
+    name: text(160),
+    description: optionalText(2000),
+    leadId: id.nullable(),
+    health: healthSchema,
+    healthNote: optionalText(500),
+    archived: z.boolean(),
+  })
+  .partial();
+
+// ---- sprints
+export const createSprintSchema = z
+  .object({
+    name: text(120),
+    subprojectId: id.nullable().optional(),
+    goal: optionalText(1000),
+    capacityItems: z.number().int().min(0).max(1000).nullable().optional(),
+    startDate: isoDate,
+    endDate: isoDate,
+    status: sprintStatusSchema.default("planning"),
+  })
+  .refine((v) => v.endDate >= v.startDate, {
+    message: "endDate must be on or after startDate",
+    path: ["endDate"],
+  });
+export const updateSprintSchema = z
+  .object({
+    name: text(120),
+    goal: optionalText(1000),
+    capacityItems: z.number().int().min(0).max(1000).nullable(),
+    startDate: isoDate,
+    endDate: isoDate,
+    status: sprintStatusSchema,
+  })
+  .partial();
+
+// ---- activities
+
+/**
+ * Governance inputs that accompany an activity write; they are not columns.
+ * - removeActivityId + tradeReason: the "one in, one out" trade when adding to an active sprint.
+ * - overrideReason: a PM override of the Definition of Done gate or the scope-change gate.
+ */
+function governanceFields() {
+  return {
+    removeActivityId: id.optional(),
+    tradeReason: z.string().trim().min(1).max(500).optional(),
+    overrideReason: z.string().trim().min(1).max(500).optional(),
+  };
+}
+
+export const createActivitySchema = z.object({
+  subprojectId: id.nullable().optional(),
+  sprintId: id.nullable().optional(),
+  assigneeId: id.nullable().optional(),
+  title: text(300),
+  description: optionalText(10000),
+  status: activityStatusSchema.default("todo"),
+  priority: activityPrioritySchema.default("medium"),
+  workType: workTypeSchema.default("feature"),
+  track: trackSchema.default("delivery"),
+  percentComplete: z.number().int().min(0).max(100).default(0),
+  dueDate: isoDate.nullable().optional(),
+  tagIds: z.array(id).max(20).optional(),
+  releaseId: id.nullable().optional(),
+  ...governanceFields(),
+});
+
+/** Full edit, PM only. */
+export const updateActivitySchema = z
+  .object({
+    subprojectId: id.nullable(),
+    sprintId: id.nullable(),
+    assigneeId: id.nullable(),
+    title: text(300),
+    description: optionalText(10000),
+    status: activityStatusSchema,
+    priority: activityPrioritySchema,
+    workType: workTypeSchema,
+    track: trackSchema,
+    percentComplete: z.number().int().min(0).max(100),
+    isBlocked: z.boolean(),
+    blockedReason: optionalText(500),
+    dueDate: isoDate.nullable(),
+    tagIds: z.array(id).max(20),
+    releaseId: id.nullable(),
+  })
+  .partial()
+  .extend(governanceFields());
+
+/** What a team member may change on their own activity. */
+export const MEMBER_EDITABLE_FIELDS = [
+  "status",
+  "percentComplete",
+  "isBlocked",
+  "blockedReason",
+] as const;
+
+export const activityListQuerySchema = z.object({
+  projectId: id.optional(),
+  subprojectId: id.optional(),
+  sprintId: id.optional(),
+  assigneeId: id.optional(),
+  tagId: id.optional(),
+  status: activityStatusSchema.optional(),
+  workType: workTypeSchema.optional(),
+  blocked: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().max(500).optional(),
+});
+export type ActivityListQuery = z.infer<typeof activityListQuerySchema>;
+
+// ---- tags and comments
+export const createTagSchema = z.object({
+  name: text(40),
+  colorCode: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/)
+    .default("#64748B"),
+});
+export const createCommentSchema = z.object({ body: text(5000) });
+
+// ---- releases, capacity, dependencies, checklists (Phase 2)
+export const createReleaseSchema = z.object({
+  name: text(80),
+  targetDate: isoDate.nullable().optional(),
+  isMvp: z.boolean().default(false),
+});
+export const updateReleaseSchema = z
+  .object({
+    name: text(80),
+    targetDate: isoDate.nullable(),
+    position: z.number().int().min(0).max(100000),
+    status: releaseStatusSchema,
+    isMvp: z.boolean(),
+  })
+  .partial();
+export const setCapacitySchema = z.object({
+  members: z
+    .array(z.object({ userId: id, capacityItems: z.number().int().min(0).max(1000) }))
+    .max(100),
+});
+export const addDependencySchema = z.object({ blockingActivityId: id });
+export const createChecklistTemplateSchema = z.object({
+  kind: checklistKindSchema,
+  label: text(300),
+});
+export const updateChecklistTemplateSchema = z
+  .object({
+    label: text(300),
+    position: z.number().int().min(0).max(100000),
+    isActive: z.boolean(),
+  })
+  .partial();
+export const setChecklistCheckSchema = z.object({ checked: z.boolean() });
+
+// ---- read models
+export const activityDtoSchema = z.object({
+  id,
+  projectId: id,
+  subprojectId: id.nullable(),
+  subprojectCode: z.string().nullable(),
+  subprojectName: z.string().nullable(),
+  sprintId: id.nullable(),
+  releaseId: id.nullable(),
+  assigneeId: id.nullable(),
+  assigneeName: z.string().nullable(),
+  /** Derived, not stored: an unfinished blocking dependency exists. */
+  waitingOnDependency: z.boolean(),
+  title: z.string(),
+  description: z.string().nullable(),
+  status: activityStatusSchema,
+  priority: activityPrioritySchema,
+  workType: workTypeSchema,
+  track: trackSchema,
+  percentComplete: z.number(),
+  isBlocked: z.boolean(),
+  blockedReason: z.string().nullable(),
+  dueDate: z.string().nullable(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type ActivityDto = z.infer<typeof activityDtoSchema>;
+
+export type ApiError = { error: { code: string; message: string; details?: unknown } };
+export type ActivityUpdateResult = { activity: ActivityDto; warnings: string[] };
+
+export type HomeRow = ActivityDto & { isOverdue: boolean; atRisk: boolean };
+export type HomeRelease = { id: string; name: string; targetDate: string };
+export type HomeResponse = {
+  timezone: string;
+  activeSprint: {
+    id: string;
+    name: string;
+    goal: string | null;
+    endDate: string;
+    daysLeft: number;
+  } | null;
+  wip: { inProgress: number; limit: number };
+  thisWeek: HomeRow[];
+  nextWeek: HomeRow[];
+  thisMonth: HomeRow[];
+  upcomingReleases: HomeRelease[];
+  /** True when the row cap was hit, so some items are missing. A PM should narrow by assignee or subproject. */
+  truncated: boolean;
+};
+
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+export type CreateProjectInput = z.infer<typeof createProjectSchema>;
+export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
+export type CreateSubprojectInput = z.infer<typeof createSubprojectSchema>;
+export type UpdateSubprojectInput = z.infer<typeof updateSubprojectSchema>;
+export type CreateSprintInput = z.infer<typeof createSprintSchema>;
+export type UpdateSprintInput = z.infer<typeof updateSprintSchema>;
+export type CreateActivityInput = z.infer<typeof createActivitySchema>;
+export type UpdateActivityInput = z.infer<typeof updateActivitySchema>;
+
+// ---- Phase 3: portfolio, workload, search read models
+const booleanQuery = z.enum(["true", "false"]).transform((v) => v === "true");
+
+export const portfolioQuerySchema = z.object({
+  health: healthSchema.optional(),
+  leadId: id.optional(),
+  hasBlockers: booleanQuery.optional(),
+  /** "My subprojects": ones the signed-in user leads or has assigned work in. */
+  mine: booleanQuery.optional(),
+  sort: z
+    .enum(["code", "name", "health", "open", "blocked", "waiting", "overdue", "percentDone"])
+    .default("code"),
+  dir: z.enum(["asc", "desc"]).default("asc"),
+});
+export type PortfolioQuery = z.infer<typeof portfolioQuerySchema>;
+
+export type PortfolioRow = {
+  id: string;
+  code: string;
+  name: string;
+  leadId: string | null;
+  leadName: string | null;
+  health: Health;
+  healthNote: string | null;
+  activeSprint: { id: string; name: string } | null;
+  open: number;
+  blocked: number;
+  waitingOnDependency: number;
+  overdue: number;
+  total: number;
+  /** done / total non-archived, 0 to 100. */
+  percentDone: number;
+  nextRelease: { id: string; name: string; targetDate: string } | null;
+  openHighRaid: number;
+};
+export type PortfolioResponse = { items: PortfolioRow[] };
+
+export type WorkloadRow = {
+  userId: string;
+  fullName: string;
+  inProgress: number;
+  wipLimit: number;
+  overWipLimit: boolean;
+  dueThisWeek: number;
+  blocked: number;
+  waitingOnDependency: number;
+  sprint: { id: string; name: string } | null;
+  sprintAssigned: number;
+  sprintCapacity: number | null;
+  overCapacity: boolean;
+};
+export type WorkloadResponse = { items: WorkloadRow[] };
+
+export const searchQuerySchema = z.object({
+  q: z.string().trim().max(100).default(""),
+  limit: z.coerce.number().int().min(1).max(20).default(8),
+});
+export type SearchResponse = {
+  query: string;
+  activities: Array<{
+    id: string;
+    title: string;
+    status: ActivityStatus;
+    subprojectCode: string | null;
+  }>;
+  subprojects: Array<{ id: string; code: string; name: string }>;
+  people: Array<{ id: string; fullName: string }>;
+};
+
+// ---- JSON shapes returned by the API for plain rows (dates arrive as ISO strings)
+export type ProjectDto = {
+  id: string;
+  name: string;
+  code: string;
+  ownerId: string;
+  wipLimitPerPerson: number;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+};
+export type SubprojectDto = {
+  id: string;
+  projectId: string;
+  code: string;
+  name: string;
+  description: string | null;
+  leadId: string | null;
+  health: Health;
+  healthNote: string | null;
+  archivedAt: string | null;
+};
+export type SprintDto = {
+  id: string;
+  projectId: string;
+  subprojectId: string | null;
+  name: string;
+  goal: string | null;
+  capacityItems: number | null;
+  startDate: string;
+  endDate: string;
+  status: SprintStatus;
+};
+export type ReleaseDto = {
+  id: string;
+  projectId: string;
+  name: string;
+  targetDate: string | null;
+  position: number;
+  status: ReleaseStatus;
+  isMvp: boolean;
+};
+export type TagDto = { id: string; name: string; colorCode: string };
+export type CommentDto = {
+  id: string;
+  body: string;
+  authorId: string;
+  authorName: string;
+  createdAt: string;
+};
+export type ActivityEventDto = {
+  id: string;
+  eventType: ActivityEventType;
+  fromValue: string | null;
+  toValue: string | null;
+  note: string | null;
+  actorId: string | null;
+  actorName: string | null;
+  occurredAt: string;
+};
+export type ChecklistTemplateDto = {
+  id: string;
+  projectId: string;
+  kind: ChecklistKind;
+  label: string;
+  position: number;
+  isActive: boolean;
+};
+export type ChecklistItemDto = {
+  templateId: string;
+  label: string;
+  position: number;
+  checked: boolean;
+  checkedAt: string | null;
+};
+export type DependencyDto = {
+  activityId: string;
+  title: string;
+  status: ActivityStatus;
+  subprojectCode: string | null;
+  assigneeName: string | null;
+};
+export type DependenciesDto = { waitingOn: DependencyDto[]; blocks: DependencyDto[] };
+export type SprintCapacityDto = {
+  sprintId: string;
+  teamCapacityItems: number | null;
+  members: Array<{
+    userId: string;
+    fullName: string;
+    capacityItems: number | null;
+    assignedItems: number;
+    overCapacity: boolean;
+  }>;
+};
+export type ScopeChangeDto = {
+  id: string;
+  sprintId: string;
+  addedActivityId: string;
+  removedActivityId: string | null;
+  reason: string;
+  requestedById: string;
+  approvedById: string | null;
+  createdAt: string;
+};
+export type GateOverrideDto = {
+  id: string;
+  gate: Gate;
+  entityType: string;
+  entityId: string;
+  reason: string;
+  userId: string;
+  createdAt: string;
+};
+export type PersonItemsDto = {
+  groups: Array<{
+    subprojectId: string | null;
+    code: string | null;
+    name: string | null;
+    items: Array<{
+      id: string;
+      title: string;
+      status: ActivityStatus;
+      priority: ActivityPriority;
+      dueDate: string | null;
+      isBlocked: boolean;
+    }>;
+  }>;
+};
+export type MeDto = { user: { id: string; email: string; fullName: string; role: UserRole } };

@@ -1,0 +1,28 @@
+# Appendix A Coverage & Enforcement Matrix
+
+Mapping every section of Appendix A from the enterprise research report to its implementation file or architectural status.
+
+| Appendix A Section | Topic / Practice | Implementation / Target File | Status & Enforcement Mechanism |
+| --- | --- | --- | --- |
+| **1. Folder Architecture** | VSA for Backend (co-located slices) | `assets/templates/rules/architecture.md.tpl`<br>`assets/templates/AGENTS.backend.md.tpl`<br>`reference/folder-architecture.md` | **Enforced**: Documented in rules and verified via ESLint boundaries. |
+| **1. Folder Architecture** | FSD for Frontend (App > Pages > Widgets > Features > Entities > Shared) | `assets/templates/rules/architecture.md.tpl`<br>`assets/templates/AGENTS.frontend.md.tpl`<br>`reference/folder-architecture.md` | **Enforced**: Documented in rules; verified via Steiger and ESLint boundaries. |
+| **2. Deterministic Boundaries** | `eslint-plugin-boundaries` flat config | `assets/templates/lint/eslint.boundaries.config.mjs.tpl` | **Enforced**: Deterministic lint error output on illegal cross-slice imports. |
+| **2. Deterministic Boundaries** | `@feature-sliced/steiger` FSD validation | `assets/templates/lint/steiger.config.ts.tpl` | **Enforced**: Deterministic file structure validation in lint pipeline. |
+| **3. Instruction Layering** | Lean root `AGENTS.md` (≤ 120 lines, ≤ 8k chars) | `assets/templates/AGENTS.root.md.tpl` | **Enforced**: Budget checked by `scripts/check-brain.mjs`. |
+| **3. Instruction Layering** | Tool adapters (`CLAUDE.md`, `GEMINI.md`, `config.toml`) | `assets/templates/CLAUDE.md.tpl`<br>`assets/templates/GEMINI.md.tpl`<br>`assets/templates/codex/config.toml.tpl` | **Enforced**: Delas only; sibling import verified by `check-brain.mjs`. |
+| **3. Instruction Layering** | Antigravity truncation limit (< 12,000 chars) | `assets/templates/rules/*.md.tpl` | **Enforced**: All rule files checked for ≤ 10,000 chars by `check-brain.mjs`. |
+| **4. Progressive Disclosure** | On-demand skills & routing table | `assets/templates/AGENTS.root.md.tpl` | **Enforced**: Routing table links checked by `check-brain.mjs`. |
+| **5. Context Rot / PPE** | Progressive Prompt Ephemerality (PPE) | `docs/agent-state/README.md`<br>`assets/templates/claude/hooks/pre-compact-save.mjs`<br>`assets/templates/claude/hooks/session-start-restore.mjs` | **Approximated via repo files**: Full PPE requires harness-level runtime; repo implements Tier 1 (stable rules), Tier 2 (session summary + state serialize/restore), Tier 3 (silent flags). |
+| **6. Retrieval / CKG** | AST Code Knowledge Graph (MCP) | `reference/optional-modules.md` | **Opt-in only**: Unvetted third-party packages; disabled by default. `dependency-cruiser` recommended as deterministic alternative. |
+| **7. Lifecycle Hooks** | Claude Code hooks (`PreToolUse`, `PostToolUse`, `PreCompact`, `SessionStart`, `Stop`) | `assets/templates/claude/settings.json.tpl`<br>`assets/templates/claude/hooks/*.mjs` | **Enforced**: PreToolUse blocks (exit 2); Stop gates termination; PostToolUse formats. |
+| **7. Lifecycle Hooks** | Antigravity IDE PreToolUse support | `reference/platform-matrix.md` | **UNVERIFIED**: Antigravity IDE reportedly fails to fire PreToolUse (CLI only). Enforcement falls back to CI gate. |
+| **7. Lifecycle Hooks** | OpenAI Codex CLI hooks | `reference/platform-matrix.md` | **Not enforceable via repo files**: Codex CLI lacks native hooks; guarded by `config.toml` sandbox and CI check. |
+| **8. Circuit Breakers** | Tool call limit (300 calls) | `assets/templates/claude/hooks/pre-tool-guard.mjs` | **Enforced**: Counter in `.claude/state/calls.json`; exits 2 when limit reached. |
+| **8. Circuit Breakers** | Stop hook infinite loop prevention | `assets/templates/claude/hooks/stop-gate.mjs` | **Enforced**: Checks `stop_hook_active` and exits 0 immediately. |
+| **9. Compaction Resilience** | State serialization across compactions | `assets/templates/claude/hooks/pre-compact-save.mjs`<br>`assets/templates/claude/hooks/session-start-restore.mjs` | **Enforced**: PreCompact saves git and Tier 2 state; SessionStart restores `additionalContext`. |
+| **10. Edit Protocol** | Search-First, Targeted-Slice, Batching, Edit Consolidation | `assets/templates/rules/verification.md.tpl`<br>`assets/templates/AGENTS.root.md.tpl` | **Enforced via Rules**: Advisory instruction text checked during code reviews and pre-flight. |
+| **11. Verification** | Two-Tier Verification & 3-strike circuit breaker | `assets/templates/rules/verification.md.tpl`<br>`assets/templates/claude/hooks/stop-gate.mjs` | **Enforced**: Stop hook prevents concluding if source files changed without Tier 2 pass. |
+| **12. Security & Supply Chain** | Hidden/invisible Unicode detection | `scripts/lib/brain-lib.mjs`<br>`scripts/check-brain.mjs`<br>`assets/templates/claude/hooks/pre-tool-guard.mjs` | **Enforced**: Tool edits blocked on hidden Unicode; CI gate fails PR. |
+| **12. Security & Supply Chain** | Protected paths gating | `assets/templates/claude/hooks/pre-tool-guard.mjs` | **Enforced**: Edits to instructions blocked unless `AGENT_BRAIN_ALLOW_PROTECTED=1`. |
+| **12. Security & Supply Chain** | Sandbox & network egress filtering | `reference/security-supply-chain.md`<br>`reference/optional-modules.md` | **Not enforceable via repo files alone**: Repo files configure settings/hooks, but true egress filtering requires container or OS-level sandbox. |
+| **13. Overclaim Avoidance** | Banning "guaranteed zero-regression" | `rules.md`<br>`scripts/check-brain.mjs` | **Enforced**: `check-brain.mjs` issues warnings if overclaim words appear in generated files. |
