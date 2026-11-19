@@ -1,0 +1,689 @@
+/* Login route only. Every selector lives under .login-stage so nothing leaks into the app. */
+@property --beam-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.login-stage {
+  --obsidian: #050814;
+  --glass: rgba(13, 18, 36, 0.72);
+  --glass-line: rgba(255, 255, 255, 0.14);
+  --ink: #e8ecf8;
+  --ink-2: #a9b4d0; /* 8:1 on the glass surface */
+  --ink-3: #8f9bbd; /* placeholders, 5.9:1 */
+  --danger-ink: #ff9aa8;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --mouse-x: 50%;
+  --mouse-y: 30%;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: 20px 16px 24px;
+  background: var(--obsidian);
+  color: var(--ink);
+  font-family: var(--font-body);
+  isolation: isolate;
+}
+@media (min-width: 992px) {
+  .login-stage {
+    padding: 28px 48px 32px;
+  }
+}
+
+/* ---- ambient layers (GPU-composited: transform / opacity only) */
+.login-stage .ls-aurora,
+.login-stage .ls-grid,
+.login-stage .ls-spot {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.login-stage .ls-blob {
+  position: absolute;
+  width: 55vmax;
+  height: 55vmax;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.5;
+  will-change: transform;
+}
+.login-stage .ls-blob--a {
+  top: -20vmax;
+  left: -15vmax;
+  background: radial-gradient(circle, #1e3a8a, transparent 65%);
+  animation: ls-drift-a 14s ease-in-out infinite alternate;
+}
+.login-stage .ls-blob--b {
+  right: -20vmax;
+  top: 10vmax;
+  background: radial-gradient(circle, #4f46e5, transparent 65%);
+  animation: ls-drift-b 18s ease-in-out infinite alternate;
+}
+.login-stage .ls-blob--c {
+  bottom: -25vmax;
+  left: 20vmax;
+  background: radial-gradient(circle, #06b6d4, transparent 65%);
+  opacity: 0.32;
+  animation: ls-drift-c 16s ease-in-out infinite alternate;
+}
+.login-stage .ls-blob--d {
+  bottom: -10vmax;
+  right: 10vmax;
+  width: 30vmax;
+  height: 30vmax;
+  background: radial-gradient(circle, #f59e0b, transparent 65%);
+  opacity: 0.12;
+  animation: ls-drift-a 12s ease-in-out infinite alternate-reverse;
+}
+@keyframes ls-drift-a {
+  to {
+    transform: translate3d(8vmax, 6vmax, 0) scale(1.1);
+  }
+}
+@keyframes ls-drift-b {
+  to {
+    transform: translate3d(-10vmax, 8vmax, 0) scale(0.92);
+  }
+}
+@keyframes ls-drift-c {
+  to {
+    transform: translate3d(6vmax, -8vmax, 0) scale(1.15);
+  }
+}
+.login-stage .ls-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse at center, #000 20%, transparent 75%);
+}
+.login-stage .ls-grid::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.06;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.login-stage .ls-spot {
+  background: radial-gradient(
+    480px circle at var(--mouse-x) var(--mouse-y),
+    rgba(99, 102, 241, 0.18),
+    transparent 70%
+  );
+}
+
+/* ---- entrance choreography: blur-to-sharp, staggered by --d */
+.login-stage .ls-in {
+  animation: ls-reveal 700ms var(--ease-out) both;
+  animation-delay: var(--d, 0ms);
+}
+@keyframes ls-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+@keyframes ls-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- top bar */
+.login-stage .ls-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.login-stage .ls-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px 6px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 9999px;
+  background: rgba(13, 18, 36, 0.6);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  backdrop-filter: blur(10px);
+}
+.login-stage .ls-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34d399;
+}
+.login-stage .ls-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid #34d399;
+  animation: ls-ping 1.8s ease-out infinite;
+}
+@keyframes ls-ping {
+  from {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+.login-stage .ls-dock {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, auto));
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  background: rgba(13, 18, 36, 0.6);
+  backdrop-filter: blur(12px);
+}
+.login-stage .ls-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    transform 200ms var(--ease-out),
+    border-color 200ms var(--ease-out),
+    box-shadow 200ms var(--ease-out);
+}
+.login-stage .ls-chip:hover {
+  transform: translateY(-2px);
+  border-color: rgba(129, 140, 248, 0.7);
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.45);
+}
+.login-stage .ls-chip img {
+  max-width: 100%;
+  max-height: 24px;
+  object-fit: contain;
+}
+
+/* ---- main stage */
+.login-stage .ls-main {
+  display: grid;
+  flex: 1;
+  align-content: center;
+  gap: 32px;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+@media (min-width: 992px) {
+  .login-stage .ls-main {
+    grid-template-columns: minmax(0, 1fr) 440px;
+    align-items: center;
+    gap: 64px;
+  }
+}
+.login-stage .ls-eyebrow {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.login-stage .ls-bar {
+  display: block;
+  width: 72px;
+  height: 3px;
+  margin: 10px 0 18px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #4f46e5, #06b6d4, #f59e0b, #4f46e5);
+  background-size: 200% 100%;
+  animation: ls-slide 4s linear infinite;
+}
+@keyframes ls-slide {
+  to {
+    background-position: 200% 0;
+  }
+}
+.login-stage .ls-title {
+  margin: 0 0 12px;
+  font-family: var(--font-serif);
+  font-size: clamp(2.5rem, 6vw, 4.25rem);
+  font-weight: 700;
+  line-height: 1.04;
+  background: linear-gradient(100deg, #ffffff 20%, #a5b4fc 40%, #67e8f9 50%, #ffffff 65%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ls-shimmer 7s ease-in-out infinite;
+}
+@keyframes ls-shimmer {
+  0%,
+  100% {
+    background-position: 100% 0;
+  }
+  50% {
+    background-position: 0 0;
+  }
+}
+.login-stage .ls-lede {
+  max-width: 32rem;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+/* ---- telemetry cards */
+.login-stage .ls-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.login-stage .ls-card {
+  position: relative;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  padding: 14px;
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  background: rgba(13, 18, 36, 0.55);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition:
+    transform 200ms var(--ease-out),
+    border-color 200ms var(--ease-out);
+}
+.login-stage .ls-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(
+    140px circle at var(--px, 50%) var(--py, 50%),
+    rgba(129, 140, 248, 0.35),
+    transparent 70%
+  );
+  transition: opacity 200ms var(--ease-out);
+}
+.login-stage .ls-card[aria-current="true"] {
+  transform: translateY(-3px) scale(1.02);
+  border-color: rgba(129, 140, 248, 0.8);
+}
+.login-stage .ls-card[aria-current="true"]::before {
+  opacity: 1;
+}
+.login-stage .ls-card:focus-visible {
+  outline: 2px solid #a5b4fc;
+  outline-offset: 2px;
+}
+.login-stage .ls-card > * {
+  position: relative;
+}
+.login-stage .ls-card-title {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+}
+.login-stage .ls-card-meta {
+  display: block;
+  margin: 4px 0 10px;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.login-stage .ls-meter {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.login-stage .ls-meter > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #4f46e5, #22d3ee);
+  transform-origin: left;
+  transform: scaleX(calc(var(--pct) / 100));
+  animation: ls-fill 1100ms var(--ease-out) 500ms both;
+}
+@keyframes ls-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* ---- glass auth card with conic beam */
+.login-stage .ls-tilt {
+  perspective: 900px;
+}
+.login-stage .ls-auth {
+  position: relative;
+  padding: 32px 28px 28px;
+  border: 1px solid var(--glass-line);
+  border-radius: 16px;
+  background: var(--glass);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 8px 16px rgba(0, 0, 0, 0.35),
+    0 32px 64px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(20px);
+  transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  transition: transform 200ms var(--ease-out);
+}
+.login-stage .ls-auth::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  padding: 1.5px;
+  border-radius: 16px;
+  background: conic-gradient(
+    from var(--beam-angle),
+    transparent 0 70%,
+    #06b6d4 82%,
+    #818cf8 92%,
+    transparent 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: ls-beam 6s linear infinite;
+  pointer-events: none;
+}
+@keyframes ls-beam {
+  to {
+    --beam-angle: 360deg;
+  }
+}
+.login-stage .ls-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.login-stage .ls-heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #fff;
+}
+.login-stage .ls-sub {
+  margin: 4px 0 10px;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.login-stage .ls-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.login-stage .ls-label {
+  color: var(--ink-2);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: color 160ms var(--ease-out);
+}
+.login-stage .ls-field:focus-within .ls-label {
+  color: #c7d2fe;
+}
+.login-stage .ls-input-wrap {
+  position: relative;
+  display: flex;
+}
+.login-stage .ls-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.6);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.35);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  transition:
+    border-color 160ms var(--ease-out),
+    box-shadow 160ms var(--ease-out);
+}
+.login-stage .ls-input::placeholder {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+}
+.login-stage .ls-input:focus-visible {
+  outline: none;
+  border-color: #818cf8;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.35),
+    0 0 0 3px rgba(129, 140, 248, 0.35),
+    0 0 20px rgba(99, 102, 241, 0.35);
+}
+.login-stage .ls-input[aria-invalid="true"] {
+  border-color: #fb7185;
+}
+.login-stage .ls-input--toggle {
+  padding-right: 70px;
+}
+.login-stage .ls-shake {
+  animation: ls-shake 360ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+@keyframes ls-shake {
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
+}
+.login-stage .ls-toggle {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 160ms var(--ease-out),
+    border-color 160ms var(--ease-out);
+}
+.login-stage .ls-toggle:hover {
+  background: rgba(129, 140, 248, 0.25);
+  border-color: rgba(165, 180, 252, 0.6);
+}
+.login-stage .ls-toggle:focus-visible {
+  outline: 2px solid #a5b4fc;
+  outline-offset: 2px;
+}
+/* Fixed slot: the message fades in without moving the next field. */
+.login-stage .ls-slot {
+  min-height: 20px;
+}
+.login-stage .ls-error,
+.login-stage .ls-caps {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+}
+.login-stage .ls-error {
+  color: var(--danger-ink);
+  animation: ls-fade 160ms ease-out both;
+}
+.login-stage .ls-caps {
+  color: #fcd34d;
+}
+.login-stage .ls-alert {
+  padding: 10px 12px;
+  border: 1px solid rgba(251, 113, 133, 0.5);
+  border-radius: 10px;
+  background: rgba(127, 29, 29, 0.35);
+  color: var(--danger-ink);
+  font-size: 14px;
+}
+.login-stage .ls-submit {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 52px;
+  margin-top: 4px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(100deg, #3730a3, #4f46e5 55%, #0e7490);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 160ms var(--ease-out),
+    box-shadow 200ms var(--ease-out);
+}
+.login-stage .ls-submit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 60%
+  );
+  transform: translateX(-120%);
+}
+.login-stage .ls-submit:hover:not(:disabled) {
+  box-shadow: 0 0 28px rgba(99, 102, 241, 0.55);
+}
+.login-stage .ls-submit:hover:not(:disabled)::after {
+  transform: translateX(120%);
+  transition: transform 700ms var(--ease-out);
+}
+.login-stage .ls-submit:active:not(:disabled) {
+  transform: scale(0.985);
+}
+.login-stage .ls-submit:focus-visible {
+  outline: 3px solid #a5b4fc;
+  outline-offset: 2px;
+}
+.login-stage .ls-submit:disabled {
+  opacity: 0.8;
+  cursor: progress;
+}
+.login-stage .ls-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: ls-spin 0.7s linear infinite;
+}
+@keyframes ls-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.login-stage .ls-help {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(103, 232, 249, 0.25);
+  border-radius: 10px;
+  background: rgba(14, 116, 144, 0.22);
+  color: #d5e4f5;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.login-stage .ls-help strong {
+  display: block;
+  color: #fff;
+  font-family: var(--font-display);
+}
+.login-stage .ls-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+/* ---- reduced motion: no looping, tilt or translate; opacity only */
+@media (prefers-reduced-motion: reduce) {
+  .login-stage .ls-blob,
+  .login-stage .ls-bar,
+  .login-stage .ls-title,
+  .login-stage .ls-dot::after,
+  .login-stage .ls-auth::before,
+  .login-stage .ls-shake {
+    animation: none;
+  }
+  .login-stage .ls-in {
+    animation: ls-fade 300ms ease-out both;
+    animation-delay: var(--d, 0ms);
+  }
+  .login-stage .ls-meter > span {
+    animation: none;
+  }
+  .login-stage .ls-auth,
+  .login-stage .ls-card,
+  .login-stage .ls-chip,
+  .login-stage .ls-submit {
+    transform: none;
+    transition: none;
+  }
+  .login-stage .ls-submit::after {
+    display: none;
+  }
+  .login-stage .ls-spinner {
+    animation-duration: 2s;
+  }
+}

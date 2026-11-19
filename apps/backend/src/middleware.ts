@@ -12,6 +12,7 @@ import {
 import { logger } from "./logger";
 import { can, type Action, type Actor } from "./permissions";
 import { SESSION_COOKIE, userForToken } from "./services/authService";
+import { SIMULATION_COOKIE, findSimulationTarget, verifySimulation } from "./services/simulation";
 
 export type AuthedActor = Actor & { email: string };
 
@@ -36,10 +37,28 @@ export const loadUser: RequestHandler = asyncHandler(async (req, res, next) => {
   const token: unknown = (req.cookies as Record<string, unknown> | undefined)?.[SESSION_COOKIE];
   if (typeof token === "string" && token.length > 0) {
     const user = await userForToken(token);
-    if (user) res.locals.user = user;
+    if (user) {
+      res.locals.user = user;
+      res.locals.realUser = user;
+      res.locals.sessionToken = token;
+      // A valid signed simulation cookie swaps the effective user; only a PM session may carry one.
+      const cookies = req.cookies as Record<string, unknown> | undefined;
+      const targetId = verifySimulation(token, cookies?.[SIMULATION_COOKIE]);
+      if (targetId && user.role === "pm") {
+        const target = await findSimulationTarget(targetId);
+        if (target) res.locals.user = target;
+      }
+    }
   }
   next();
 });
+
+/** The really authenticated user, ignoring any active simulation. */
+export function realActorOf(res: Response): AuthedActor {
+  const user = res.locals.realUser as AuthedActor | undefined;
+  if (!user) throw unauthorized();
+  return user;
+}
 
 export function actorOf(res: Response): AuthedActor {
   const user = res.locals.user as AuthedActor | undefined;

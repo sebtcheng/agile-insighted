@@ -10,16 +10,33 @@ import {
   createUserSchema,
   homeQuerySchema,
   loginSchema,
+  startSimulationSchema,
   updateActivitySchema,
   updateProjectSchema,
   updateSprintSchema,
   updateSubprojectSchema,
   updateUserSchema,
 } from "@myapp/shared";
+import type { Response } from "express";
 import { z } from "zod";
 import { env } from "../env";
-import { unauthorized } from "../errors";
-import { actorOf, asyncHandler, idParam, parse, requireAction, requireAuth } from "../middleware";
+import { badRequest, conflict, forbidden, unauthorized } from "../errors";
+import { logger } from "../logger";
+import {
+  actorOf,
+  asyncHandler,
+  idParam,
+  parse,
+  realActorOf,
+  requireAction,
+  requireAuth,
+} from "../middleware";
+import {
+  SIMULATION_COOKIE,
+  findSimulationTarget,
+  listSimulationCandidates,
+  signSimulation,
+} from "../services/simulation";
 import * as activityService from "../services/activityService";
 import * as queries from "../services/activityQueries";
 import * as authService from "../services/authService";
@@ -70,7 +87,63 @@ api.post(
 
 api.get("/auth/me", requireAuth, (_req, res) => {
   const { id, email, fullName, role } = actorOf(res);
-  res.json({ user: { id, email, fullName, role } });
+  const real = realActorOf(res);
+  const isSimulating = real.id !== id;
+  res.json({
+    user: { id, email, fullName, role },
+    isSimulating,
+    realUser: isSimulating
+      ? { id: real.id, email: real.email, fullName: real.fullName, role: real.role }
+      : null,
+  });
+});
+
+// ---- PM "view as team member". Authorised against the REAL actor, never the simulated one.
+const requireRealPm = (res: Response): void => {
+  if (realActorOf(res).role !== "pm") throw forbidden("Only a project manager can simulate a user");
+};
+
+api.get(
+  "/auth/simulation/candidates",
+  requireAuth,
+  asyncHandler(async (_req, res) => {
+    requireRealPm(res);
+    res.json({ items: await listSimulationCandidates(realActorOf(res).id) });
+  }),
+);
+
+api.post(
+  "/auth/simulation",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    requireRealPm(res);
+    const real = realActorOf(res);
+    if (actorOf(res).id !== real.id) throw conflict("Exit the current simulation first");
+    const { userId } = parse(startSimulationSchema, req.body);
+    const target = await findSimulationTarget(userId);
+    if (!target || target.id === real.id) throw badRequest("That user cannot be simulated");
+    res.cookie(SIMULATION_COOKIE, signSimulation(res.locals.sessionToken as string, target.id), {
+      ...cookieOptions(),
+      maxAge: env.SESSION_TTL_HOURS * 3_600_000,
+    });
+    logger.info(
+      { requestId: res.locals.requestId, actorUserId: real.id, targetUserId: target.id },
+      "simulation started",
+    );
+    res.json({ ok: true });
+  }),
+);
+
+api.post("/auth/simulation/exit", requireAuth, (_req, res) => {
+  requireRealPm(res);
+  const real = realActorOf(res);
+  const target = actorOf(res);
+  res.clearCookie(SIMULATION_COOKIE, cookieOptions());
+  logger.info(
+    { requestId: res.locals.requestId, actorUserId: real.id, targetUserId: target.id },
+    "simulation ended",
+  );
+  res.status(204).end();
 });
 
 // Everything below needs a signed-in user.

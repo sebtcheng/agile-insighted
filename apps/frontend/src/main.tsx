@@ -3,6 +3,7 @@ import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
 import "./styles/tokens.css";
 import "./styles/shell.css";
+import "./styles/login.css";
 import "./styles/raid.css";
 import "./styles/view-toggle.css";
 import "./styles/ost.css";
@@ -39,7 +40,7 @@ createRoot(root).render(
   <StrictMode>
     <DevProfiler id="root">
       <DevErrorBoundary>
-        <MantineProvider theme={theme}>
+        <MantineProvider theme={theme} defaultColorScheme="light">
           <Notifications position="top-right" />
           <QueryClientProvider client={queryClient}>
             <BrowserRouter>

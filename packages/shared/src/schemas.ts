@@ -491,7 +491,11 @@ export type PersonItemsDto = {
     }>;
   }>;
 };
-export type MeDto = { user: { id: string; email: string; fullName: string; role: UserRole } };
+export type MeUser = { id: string; email: string; fullName: string; role: UserRole };
+/** `user` is the effective user; while a PM simulates a team member, `realUser` is the PM. */
+export type MeDto = { user: MeUser; isSimulating: boolean; realUser: MeUser | null };
+
+export const startSimulationSchema = z.object({ userId: z.string().uuid() });
 
 // ---- RAID log (Phase 5)
 const level = z.number().int().min(1).max(3);

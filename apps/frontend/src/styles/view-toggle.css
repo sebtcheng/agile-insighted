@@ -1,7 +1,7 @@
 /* Card / Table switch and shared card-view surface. */
 .view-toggle {
   border: 1px solid var(--border-muted);
-  background: #fff;
+  background: var(--surface);
 }
 .view-toggle .mantine-SegmentedControl-label {
   font-family: var(--font-display);
@@ -16,7 +16,7 @@
 }
 
 .item-card {
-  background: #fff;
+  background: var(--surface);
   border-radius: 6px;
   box-shadow: var(--mantine-shadow-sm);
   transition: var(--ui-transition);

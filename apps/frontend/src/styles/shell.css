@@ -49,6 +49,22 @@
     var(--nav-gradient-to)
   );
   border-inline-end: 0;
+  overflow: hidden;
+  z-index: 101;
+  /* The rail overlays the main panel (main keeps its 64px offset), so only the rail's own width animates. */
+  /* transform keeps Mantine's mobile slide-in, now on the same curve. */
+  transition:
+    width var(--motion-duration) var(--motion-ease),
+    transform var(--motion-duration) var(--motion-ease);
+}
+/* Labels fade in with the width instead of being revealed as the edge slides past them. */
+.shell-navbar .mantine-NavLink-body {
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity var(--motion-duration) var(--motion-ease);
+}
+.shell-navbar[data-expanded="true"] .mantine-NavLink-body {
+  opacity: 1;
 }
 .shell-navbar .mantine-NavLink-root {
   color: #fff;
@@ -77,17 +93,27 @@
   padding-top: 0;
   border-top: 0;
 }
+/* Headings open by height and opacity, in step with the rail, so links slide down instead of jumping. */
 .shell-nav-heading {
-  display: none;
-  padding: 0 10px 4px;
+  max-height: 0;
+  padding: 0 10px;
+  overflow: hidden;
+  opacity: 0;
   font-size: 11px;
+  line-height: 16px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
   color: rgba(255, 255, 255, 0.6);
+  transition:
+    max-height var(--motion-duration) var(--motion-ease),
+    padding-bottom var(--motion-duration) var(--motion-ease),
+    opacity var(--motion-duration) var(--motion-ease);
 }
 .shell-nav-section[data-expanded="true"] .shell-nav-heading {
-  display: block;
+  max-height: 20px;
+  padding-bottom: 4px;
+  opacity: 1;
 }
 .shell-nav-section[data-expanded="true"][data-first="true"] .shell-nav-heading {
   padding-top: 0;
@@ -95,6 +121,27 @@
 .shell-navbar .mantine-NavLink-root:focus-visible {
   outline: 2px solid var(--nav-active-marker);
   outline-offset: -2px;
+}
+
+/* Main panel: each page fades and rises 4px on entry. Opacity and transform only (GPU-composited), and the
+   `backwards` fill leaves no transform behind once settled, so nothing shifts and pointer events are never held. */
+@keyframes shell-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.shell-page {
+  animation: shell-page-enter var(--motion-duration) var(--motion-ease) backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shell-page {
+    animation: none;
+  }
 }
 
 .shell-header .shell-role,

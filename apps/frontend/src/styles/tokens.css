@@ -1,30 +1,45 @@
 /* Semantic design tokens. Keep in sync with DESIGN.md. */
 :root {
-  --font-serif: "Source Serif 4", system-ui, sans-serif;
-  --font-display: "Plus Jakarta Sans", system-ui, sans-serif;
-  --font-body: "Public Sans", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", system-ui, sans-serif;
+  /* Font roles. --font-serif is the title face (kept by name so existing rules keep working).
+     Experiment with <html data-fonts="classic"> (set it in devtools) to compare against the old set. */
+  --font-serif: "Bricolage Grotesque", system-ui, sans-serif;
+  --font-display: "Geist", system-ui, sans-serif;
+  --font-body: "Geist", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, system-ui, sans-serif;
 
-  --nav-gradient-from: #0f4b88;
-  --nav-gradient-mid: #0b3868;
-  --nav-gradient-to: #092e58;
-  --brand-primary: #0f4c8a;
+  /* InsightED v2 palette (light is the default). Indigo/cyan brand; nav stays a deep gradient. */
+  --nav-gradient-from: #1e3a8a;
+  --nav-gradient-mid: #1d2f7a;
+  --nav-gradient-to: #131c4f;
+  --brand-primary: #4f46e5;
+  --brand-primary-hover: #4338ca;
   --nav-active-overlay: rgba(255, 255, 255, 0.14);
-  --nav-active-marker: #ffc629;
-  --accent-left: #d4182f;
-  --accent-right: #ffc629;
+  --nav-active-marker: #22d3ee;
+  --accent-left: #4f46e5;
+  --accent-right: #06b6d4;
+
+  --surface: #ffffff;
+  --surface-page: #f8fafc;
+  --text-primary: #0f172a;
+  --focus-ring: rgba(79, 70, 229, 0.35);
 
   --danger-bg: #fbe6e9;
   --danger-fg: #9b1022;
   --warning-bg: #fdf0d8;
   --warning-fg: #8a5605;
-  --info-bg: #d3e1f0;
-  --info-fg: #0f4c8a;
+  --info-bg: #e0e7ff;
+  --info-fg: #3730a3;
   --success-bg: #e2f3eb;
   --success-fg: #14603f;
 
   --text-secondary: #586679;
   --border-muted: #cbd5e1;
+
+  --radius-md: 6px;
+  --radius-sm: 4px;
+  --radius-pill: 9999px;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 1px 2px rgba(15, 23, 42, 0.1), 0 6px 12px rgba(15, 23, 42, 0.1);
 
   --ui-duration: 120ms;
   --ui-ease: cubic-bezier(0.2, 0, 0, 1);
@@ -32,13 +47,215 @@
     background-color var(--ui-duration) var(--ui-ease),
     border-color var(--ui-duration) var(--ui-ease), color var(--ui-duration) var(--ui-ease),
     box-shadow var(--ui-duration) var(--ui-ease);
+
+  /* Layout motion (sidebar rail, page entry): one duration and one deceleration curve so pieces move together. */
+  --motion-duration: 240ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Base typography hierarchy: serif page titles, body-font subtitles. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration: 0ms;
+  }
+}
+
+/* Dark theme: opt-in through the account menu (Mantine sets data-mantine-color-scheme on <html>). */
+:root[data-mantine-color-scheme="dark"] {
+  --nav-gradient-from: #0f1a3d;
+  --nav-gradient-mid: #0b1230;
+  --nav-gradient-to: #070b1f;
+  --brand-primary: #6366f1;
+  --brand-primary-hover: #818cf8;
+  --accent-left: #6366f1;
+  --accent-right: #22d3ee;
+
+  --surface: #0d1224;
+  --surface-page: #050814;
+  --text-primary: #e8ecf8;
+  --focus-ring: rgba(129, 140, 248, 0.45);
+  --mantine-color-body: #050814;
+
+  --danger-bg: #3b0f18;
+  --danger-fg: #ff9aa8;
+  --warning-bg: #3a2a08;
+  --warning-fg: #fcd34d;
+  --info-bg: #1e1b4b;
+  --info-fg: #c7d2fe;
+  --success-bg: #0b2e22;
+  --success-fg: #6ee7b7;
+
+  --text-secondary: #a9b4d0;
+  --border-muted: #2a3354;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 16px rgba(0, 0, 0, 0.45);
+}
+body {
+  background: var(--surface-page);
+}
+
+:root[data-fonts="classic"] {
+  --font-serif: "Source Serif 4", system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-body: "Public Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", system-ui, sans-serif;
+}
+
+/* ---- Typography. Large text is tight and heavy, small text is quiet and tracked: the contrast is
+   the style. Serif is reserved for page titles; Plus Jakarta Sans for headings and controls;
+   Public Sans for reading; IBM Plex Mono for identifiers and numbers. */
+:root {
+  --fs-display: clamp(2rem, 1.4rem + 2vw, 2.75rem);
+  --fs-h1: 1.875rem;
+  --fs-h2: 1.375rem;
+  --fs-h3: 1.0625rem;
+  --fs-body: 0.9375rem;
+  --fs-small: 0.8125rem;
+  --fs-micro: 0.6875rem;
+  --track-display: -0.03em;
+  --track-heading: -0.012em;
+  --track-micro: 0.09em;
+}
+body {
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+h1,
+h2,
+h3,
+h4,
+.mantine-Title-root {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: var(--track-heading);
+  text-wrap: balance;
+}
 .page-title {
+  margin: 0;
   font-family: var(--font-serif);
+  font-size: var(--fs-display);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: var(--track-display);
+  color: var(--text-primary);
 }
 .page-subtitle {
+  margin-top: 6px;
   font-family: var(--font-body);
+  font-size: var(--fs-body);
   color: var(--text-secondary);
+}
+/* Small labels: uppercase, tracked, semibold display face. */
+.mantine-InputWrapper-label,
+.mantine-Table-th,
+.mantine-Badge-label,
+.shell-nav-heading {
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: var(--track-micro);
+  text-transform: uppercase;
+}
+.mantine-Table-th {
+  color: var(--text-secondary);
+}
+.mantine-InputWrapper-description,
+.mantine-InputWrapper-error {
+  font-size: var(--fs-small);
+}
+/* Numbers line up in tables and identifiers. */
+.mantine-Table-td,
+code,
+kbd {
+  font-variant-numeric: tabular-nums;
+}
+code,
+kbd {
+  font-family: var(--font-mono);
+}
+
+/* ---- Main panels: same language as the login card, sidebar and header. Flat in the app (no blur). */
+.mantine-Paper-root,
+.mantine-Card-root {
+  background: var(--surface);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-primary);
+  transition:
+    border-color var(--ui-duration) var(--ui-ease),
+    box-shadow var(--ui-duration) var(--ui-ease);
+}
+/* Panels that are the page's primary surface get the dual accent line, like the header and login card. */
+.mantine-Paper-root[data-with-border],
+.mantine-Card-root {
+  position: relative;
+}
+.mantine-Card-root::before {
+  content: "";
+  position: absolute;
+  inset: -1px -1px auto -1px;
+  height: 3px;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: linear-gradient(90deg, var(--accent-left) 50%, var(--accent-right) 50%);
+  pointer-events: none;
+}
+.mantine-Card-root:hover {
+  border-color: var(--brand-primary);
+  box-shadow: var(--shadow-md);
+}
+.mantine-Modal-content,
+.mantine-Drawer-content {
+  background: var(--surface);
+  border: 1px solid var(--border-muted);
+  box-shadow: var(--shadow-md);
+}
+.mantine-Modal-header,
+.mantine-Drawer-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-muted);
+}
+.mantine-Modal-title,
+.mantine-Drawer-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: var(--track-heading);
+}
+.mantine-Table-table {
+  --table-border-color: var(--border-muted);
+}
+.mantine-Table-thead {
+  background: var(--surface-page);
+}
+.mantine-Table-tr[data-hover]:hover,
+.mantine-Table-tbody .mantine-Table-tr:hover {
+  background: var(--info-bg);
+}
+.mantine-Input-input,
+.mantine-Textarea-input,
+.mantine-Select-input {
+  background: var(--surface);
+  border-color: var(--border-muted);
+  color: var(--text-primary);
+  transition: var(--ui-transition);
+}
+.mantine-Input-input:focus,
+.mantine-Input-input:focus-within {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+.mantine-Button-root {
+  font-family: var(--font-display);
+  font-weight: 700;
+  transition: var(--ui-transition);
+}
+.mantine-Button-root:active:not(:disabled) {
+  transform: scale(0.985);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mantine-Button-root:active:not(:disabled) {
+    transform: none;
+  }
 }

@@ -1,5 +1,7 @@
 import {
+  Alert,
   AppShell,
+  Button,
   Burger,
   Group,
   Menu,
@@ -7,16 +9,24 @@ import {
   ScrollArea,
   Text,
   UnstyledButton,
+  useMantineColorScheme,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { Outlet, NavLink as RouterNavLink, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Outlet,
+  NavLink as RouterNavLink,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { ENUM_LABELS } from "@myapp/shared";
-import { useLogout } from "../api/hooks";
-import { useAuth, useIsPm } from "../auth";
+import { useExitSimulation, useLogout } from "../api/hooks";
+import { useAuth, useIsPm, useSimulation } from "../auth";
 import { ActivityDrawer } from "./ActivityDrawer";
 import { GlobalSearch } from "./GlobalSearch";
+import { SimulationPicker } from "./SimulationPicker";
 import { visibleSections } from "./navSections";
 import { useRailExpansion } from "./useRailExpansion";
 
@@ -63,8 +73,15 @@ export function Layout() {
   const logout = useLogout();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   const activityId = params.get("activity");
+
+  const { colorScheme, setColorScheme } = useMantineColorScheme();
+  const sim = useSimulation();
+  const exitSim = useExitSimulation();
+  const [pickerOpen, { open: openPicker, close: closePicker }] = useDisclosure(false);
+  const exitSimulation = () => exitSim.mutate(undefined, { onSuccess: () => void navigate("/") });
 
   const sections = visibleSections(isPm);
 
@@ -133,6 +150,29 @@ export function Layout() {
                 {isPm ? (
                   <Menu.Item onClick={() => void navigate("/settings")}>Settings</Menu.Item>
                 ) : null}
+                {sim.realIsPm && !sim.isSimulating ? (
+                  <Menu.Item onClick={openPicker}>Simulate team member</Menu.Item>
+                ) : null}
+                {sim.isSimulating ? (
+                  <Menu.Item disabled={exitSim.isPending} onClick={exitSimulation}>
+                    Exit simulation
+                  </Menu.Item>
+                ) : null}
+                <Menu.Divider />
+                <Menu.Label>Appearance</Menu.Label>
+                {(["light", "dark", "auto"] as const).map((mode) => (
+                  <Menu.Item
+                    key={mode}
+                    closeMenuOnClick={false}
+                    aria-checked={colorScheme === mode}
+                    role="menuitemradio"
+                    rightSection={colorScheme === mode ? "✓" : null}
+                    onClick={() => setColorScheme(mode)}
+                  >
+                    {mode === "auto" ? "System" : mode === "light" ? "Light" : "Dark"}
+                  </Menu.Item>
+                ))}
+                <Menu.Divider />
                 <Menu.Item
                   color="red"
                   disabled={logout.isPending}
@@ -157,8 +197,8 @@ export function Layout() {
         className="shell-navbar"
         p="xs"
         w={expanded ? 300 : undefined}
+        data-expanded={expanded ? "true" : "false"}
         {...rail.handlers}
-        style={{ transition: "width 150ms ease", overflow: "hidden", zIndex: 101 }}
       >
         <AppShell.Section grow component={ScrollArea}>
           <nav aria-label="Main">
@@ -200,7 +240,26 @@ export function Layout() {
       </AppShell.Navbar>
 
       <AppShell.Main>
-        <Outlet />
+        {sim.isSimulating ? (
+          <Alert color="yellow" mb="md" py="xs" role="status">
+            <Group justify="space-between" wrap="nowrap">
+              <Text size="sm">Viewing as {user.fullName}</Text>
+              <Button
+                size="compact-sm"
+                variant="default"
+                loading={exitSim.isPending}
+                onClick={exitSimulation}
+              >
+                Exit
+              </Button>
+            </Group>
+          </Alert>
+        ) : null}
+        <SimulationPicker opened={pickerOpen} onClose={closePicker} />
+        {/* Keyed by path so each page plays the entry fade; query-string changes (filters, drawers) do not replay it. */}
+        <div className="shell-page" key={location.pathname}>
+          <Outlet />
+        </div>
         <ActivityDrawer
           activityId={activityId}
           onClose={() => {
