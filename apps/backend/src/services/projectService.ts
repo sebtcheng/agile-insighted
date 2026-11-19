@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
 import type {
   CreateProjectInput,
   CreateSprintInput,
@@ -8,8 +8,21 @@ import type {
   UpdateSubprojectInput,
 } from "@myapp/shared";
 import { db } from "../db/client";
-import { projects, sprints, subprojects } from "../db/schema";
+import {
+  activities,
+  journeySteps,
+  kanoRequests,
+  ostOutcomes,
+  personas,
+  projects,
+  raidItems,
+  sprints,
+  subprojects,
+  userStories,
+  users,
+} from "../db/schema";
 import { conflict, notFound, unprocessable } from "../errors";
+import { nextSeq } from "./seq";
 
 // ---- projects
 export async function listProjects() {
@@ -22,12 +35,22 @@ export async function getProject(id: string) {
   return row;
 }
 
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** PROJ-01, PROJ-02, ... from a database sequence: concurrent creates each get a distinct number (gaps are fine). */
+async function nextProjectCode(): Promise<string> {
+  const res = await db.execute(sql`select nextval('project_code_seq')::int as n`);
+  const n = Number((res.rows[0] as { n: number } | undefined)?.n);
+  if (!Number.isInteger(n)) throw new Error("project code sequence returned no value");
+  return `PROJ-${pad2(n)}`;
+}
+
 export async function createProject(ownerId: string, input: CreateProjectInput) {
   const [row] = await db
     .insert(projects)
     .values({
       name: input.name,
-      code: input.code,
+      code: await nextProjectCode(),
       ownerId,
       wipLimitPerPerson: input.wipLimitPerPerson,
     })
@@ -49,6 +72,80 @@ export async function updateProject(id: string, patch: UpdateProjectInput) {
   return row;
 }
 
+/** Projects with their subprojects in two queries total (no per-project lookups). */
+export async function listProjectsWithSubprojects(includeArchived = false) {
+  const projectRows = await listProjects();
+  if (projectRows.length === 0) return [];
+  const subs = await db
+    .select({ ...getTableColumns(subprojects), leadName: users.fullName })
+    .from(subprojects)
+    .leftJoin(users, eq(users.id, subprojects.leadId))
+    .where(
+      includeArchived
+        ? inArray(
+            subprojects.projectId,
+            projectRows.map((p) => p.id),
+          )
+        : and(
+            inArray(
+              subprojects.projectId,
+              projectRows.map((p) => p.id),
+            ),
+            isNull(subprojects.archivedAt),
+          ),
+    )
+    .orderBy(asc(subprojects.code));
+  const byProject = new Map<string, typeof subs>();
+  for (const s of subs) {
+    const list = byProject.get(s.projectId);
+    if (list) list.push(s);
+    else byProject.set(s.projectId, [s]);
+  }
+  return projectRows.map((p) => ({ ...p, subprojects: byProject.get(p.id) ?? [] }));
+}
+
+export async function deleteProject(id: string) {
+  await getProject(id);
+  const [{ n } = { n: 0 }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(subprojects)
+    .where(eq(subprojects.projectId, id));
+  if (n > 0) throw conflict("Remove this project's subprojects first, or archive the project");
+  const [{ m } = { m: 0 }] = await db
+    .select({ m: sql<number>`count(*)::int` })
+    .from(activities)
+    .where(eq(activities.projectId, id));
+  if (m > 0) throw conflict("This project has activities; archive it instead of deleting");
+  await db.delete(projects).where(eq(projects.id, id));
+}
+
+/** Refuses when any module row still points at the subproject, so nothing is silently unlinked. */
+export async function deleteSubproject(id: string) {
+  const [row] = await db.select().from(subprojects).where(eq(subprojects.id, id)).limit(1);
+  if (!row) throw notFound("Subproject");
+  const refs = await Promise.all(
+    [
+      activities,
+      sprints,
+      ostOutcomes,
+      personas,
+      journeySteps,
+      userStories,
+      kanoRequests,
+      raidItems,
+    ].map(async (t) => {
+      const [r] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(t)
+        .where(eq(t.subprojectId, id));
+      return r?.n ?? 0;
+    }),
+  );
+  if (refs.some((n) => n > 0))
+    throw conflict("This subproject is in use by activities or other modules; archive it instead");
+  await db.delete(subprojects).where(eq(subprojects.id, id));
+}
+
 async function assertProjectOpen(projectId: string) {
   const project = await getProject(projectId);
   if (project.archivedAt) throw conflict("This project is archived and read-only");
@@ -58,8 +155,9 @@ async function assertProjectOpen(projectId: string) {
 // ---- subprojects
 export async function listSubprojects(projectId: string, includeArchived = false) {
   return db
-    .select()
+    .select({ ...getTableColumns(subprojects), leadName: users.fullName })
     .from(subprojects)
+    .leftJoin(users, eq(users.id, subprojects.leadId))
     .where(
       includeArchived
         ? eq(subprojects.projectId, projectId)
@@ -68,25 +166,44 @@ export async function listSubprojects(projectId: string, includeArchived = false
     .orderBy(asc(subprojects.code));
 }
 
+/** The assigned team member must exist and be active; null leaves the subproject unassigned. */
+async function assertLead(leadId: string | null | undefined) {
+  if (!leadId) return;
+  const [u] = await db
+    .select({ isActive: users.isActive })
+    .from(users)
+    .where(eq(users.id, leadId))
+    .limit(1);
+  if (!u) throw notFound("Team member");
+  if (!u.isActive) throw unprocessable("That team member is inactive");
+}
+
 export async function createSubproject(projectId: string, input: CreateSubprojectInput) {
   await assertProjectOpen(projectId);
-  const [row] = await db
-    .insert(subprojects)
-    .values({
-      projectId,
-      code: input.code,
-      name: input.name,
-      description: input.description ?? null,
-      leadId: input.leadId ?? null,
-      health: input.health,
-      healthNote: input.healthNote ?? null,
-    })
-    .returning();
-  if (!row) throw new Error("insert returned no row");
-  return row;
+  await assertLead(input.leadId);
+  // The counter upsert row-locks per project, so parallel creates queue up and never share a number.
+  return db.transaction(async (tx) => {
+    const seq = await nextSeq(tx, projectId, "sub");
+    const [row] = await tx
+      .insert(subprojects)
+      .values({
+        projectId,
+        code: `PRJ-${pad2(seq)}`,
+        name: input.name,
+        description: input.description ?? null,
+        leadId: input.leadId ?? null,
+        health: input.health,
+        healthNote: input.healthNote ?? null,
+      })
+      .returning();
+    if (!row) throw new Error("insert returned no row");
+    return row;
+  });
 }
 
 export async function updateSubproject(id: string, patch: UpdateSubprojectInput) {
+  await assertLead(patch.leadId);
+  // `code` is system-generated and never part of the patch (the schema strips it).
   const set: Partial<typeof subprojects.$inferInsert> = {};
   if (patch.name !== undefined) set.name = patch.name;
   if (patch.description !== undefined) set.description = patch.description;

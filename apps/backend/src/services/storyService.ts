@@ -15,8 +15,6 @@ import type {
 import { db, type DbOrTx } from "../db/client";
 import {
   activities,
-  checklistChecks,
-  checklistTemplates,
   journeySteps,
   personas,
   projects,
@@ -28,6 +26,15 @@ import {
 import { AppError, conflict, forbidden, notFound, unprocessable } from "../errors";
 import { can, type Actor } from "../permissions";
 import { recordOverride } from "./governanceService";
+import {
+  addDorItem,
+  dorItemsByStory,
+  listDorItems,
+  patchDorItem,
+  removeDorItem,
+  summarize,
+  syncDorItems,
+} from "./dorService";
 import { createStory as insertStory } from "./moduleService";
 
 /**
@@ -69,7 +76,7 @@ export async function getStoryMap(subprojectId: string): Promise<StoryMapDto> {
     .limit(1);
   if (!sub) throw notFound("Subproject");
 
-  const [personaRows, stepRows, storyRows, [tpl]] = await Promise.all([
+  const [personaRows, stepRows, storyRows] = await Promise.all([
     db
       .select()
       .from(personas)
@@ -99,35 +106,11 @@ export async function getStoryMap(subprojectId: string): Promise<StoryMapDto> {
       .leftJoin(sprints, eq(sprints.id, userStories.sprintId))
       .where(eq(userStories.subprojectId, subprojectId))
       .orderBy(asc(userStories.position), asc(userStories.seq)),
-    db
-      .select({ n: count() })
-      .from(checklistTemplates)
-      .where(
-        and(
-          eq(checklistTemplates.projectId, sub.projectId),
-          eq(checklistTemplates.kind, "ready"),
-          eq(checklistTemplates.isActive, true),
-        ),
-      ),
   ]);
-  const readyTotal = tpl?.n ?? 0;
   const ids = storyRows.map((r) => r.s.id);
-  const checked = new Map<string, number>();
+  const dor = await dorItemsByStory(db, ids);
   const linked = new Map<string, number>();
   if (ids.length > 0) {
-    const checkRows = await db
-      .select({ storyId: checklistChecks.storyId, n: count() })
-      .from(checklistChecks)
-      .innerJoin(checklistTemplates, eq(checklistTemplates.id, checklistChecks.templateId))
-      .where(
-        and(
-          inArray(checklistChecks.storyId, ids),
-          eq(checklistTemplates.isActive, true),
-          eq(checklistTemplates.kind, "ready"),
-        ),
-      )
-      .groupBy(checklistChecks.storyId);
-    for (const r of checkRows) if (r.storyId) checked.set(r.storyId, r.n);
     const linkRows = await db
       .select({ storyId: activities.userStoryId, n: count() })
       .from(activities)
@@ -154,8 +137,9 @@ export async function getStoryMap(subprojectId: string): Promise<StoryMapDto> {
     storyPoints: r.s.storyPoints,
     status: r.s.status,
     position: r.s.position,
-    readyChecked: checked.get(r.s.id) ?? 0,
-    readyTotal,
+    readyChecked: summarize(dor.get(r.s.id) ?? []).readyChecked,
+    readyTotal: dor.get(r.s.id)?.length ?? 0,
+    dorItems: dor.get(r.s.id) ?? [],
     linkedActivities: linked.get(r.s.id) ?? 0,
   }));
   const personaDtos: PersonaDto[] = personaRows.map((p) => ({
@@ -319,6 +303,7 @@ export async function createStoryFor(actor: Actor, subprojectId: string, input: 
         releaseId: input.releaseId ?? null,
         storyPoints: input.storyPoints ?? null,
         position: (last?.p ?? -1) + 1,
+        dorLabels: input.dorItems?.map((i) => i.label),
       },
       tx,
     );
@@ -340,86 +325,67 @@ export async function storyById(id: string): Promise<StoryDto> {
   return story;
 }
 
-/** Active Definition of Ready items for a story's project, with a checked flag. */
+/** The story's Definition of Ready criteria in the legacy checklist shape (templateId is the item id). */
 export async function storyChecklist(
   tx: DbOrTx,
   storyId: string,
 ): Promise<StoryChecklistItemDto[]> {
+  return (await listDorItems(tx, storyId)).map((i) => ({
+    templateId: i.id,
+    label: i.label,
+    position: i.sortOrder,
+    checked: i.isCompleted,
+  }));
+}
+
+export const getStoryChecklist = (storyId: string) => storyChecklist(db, storyId);
+
+async function assertStoryOpen(tx: DbOrTx, storyId: string) {
   const [story] = await tx
     .select({ projectId: userStories.projectId })
     .from(userStories)
     .where(eq(userStories.id, storyId))
     .limit(1);
   if (!story) throw notFound("Story");
-  const rows = await tx
-    .select({
-      templateId: checklistTemplates.id,
-      label: checklistTemplates.label,
-      position: checklistTemplates.position,
-      checkedAt: checklistChecks.checkedAt,
-    })
-    .from(checklistTemplates)
-    .leftJoin(
-      checklistChecks,
-      and(
-        eq(checklistChecks.templateId, checklistTemplates.id),
-        eq(checklistChecks.storyId, storyId),
-      ),
-    )
-    .where(
-      and(
-        eq(checklistTemplates.projectId, story.projectId),
-        eq(checklistTemplates.kind, "ready"),
-        eq(checklistTemplates.isActive, true),
-      ),
-    )
-    .orderBy(asc(checklistTemplates.position), asc(checklistTemplates.id));
-  return rows.map((r) => ({
-    templateId: r.templateId,
-    label: r.label,
-    position: r.position,
-    checked: r.checkedAt !== null,
-  }));
+  await assertProjectOpen(tx, story.projectId);
 }
 
-export const getStoryChecklist = (storyId: string) => storyChecklist(db, storyId);
-
+/** Kept for the existing PUT route; the item id travels in the old templateId slot. */
 export async function setStoryCheck(
-  actor: Actor,
+  _actor: Actor,
   storyId: string,
-  templateId: string,
+  itemId: string,
   checked: boolean,
 ) {
   await db.transaction(async (tx) => {
-    const [story] = await tx
-      .select({ projectId: userStories.projectId })
-      .from(userStories)
-      .where(eq(userStories.id, storyId))
-      .limit(1);
-    if (!story) throw notFound("Story");
-    await assertProjectOpen(tx, story.projectId);
-    const [tpl] = await tx
-      .select()
-      .from(checklistTemplates)
-      .where(eq(checklistTemplates.id, templateId))
-      .limit(1);
-    if (!tpl || tpl.projectId !== story.projectId || tpl.kind !== "ready")
-      throw notFound("Checklist item");
-    if (!tpl.isActive) throw conflict("That checklist item is no longer active");
-    if (checked) {
-      await tx
-        .insert(checklistChecks)
-        .values({ templateId, storyId, checkedById: actor.id })
-        .onConflictDoNothing();
-    } else {
-      await tx
-        .delete(checklistChecks)
-        .where(
-          and(eq(checklistChecks.templateId, templateId), eq(checklistChecks.storyId, storyId)),
-        );
-    }
+    await assertStoryOpen(tx, storyId);
+    await patchDorItem(tx, storyId, itemId, { isCompleted: checked });
   });
   return storyChecklist(db, storyId);
+}
+
+/** Add / toggle / remove one criterion without a full story save. */
+export async function addStoryDorItem(storyId: string, label: string) {
+  return db.transaction(async (tx) => {
+    await assertStoryOpen(tx, storyId);
+    return addDorItem(tx, storyId, label);
+  });
+}
+export async function updateStoryDorItem(
+  storyId: string,
+  itemId: string,
+  patch: { label?: string; isCompleted?: boolean; sortOrder?: number },
+) {
+  return db.transaction(async (tx) => {
+    await assertStoryOpen(tx, storyId);
+    return patchDorItem(tx, storyId, itemId, patch);
+  });
+}
+export async function removeStoryDorItem(storyId: string, itemId: string) {
+  return db.transaction(async (tx) => {
+    await assertStoryOpen(tx, storyId);
+    return removeDorItem(tx, storyId, itemId);
+  });
 }
 
 /** Returns the override reason to record when a PM overrides, or null when the story is ready. */
@@ -449,7 +415,7 @@ export async function updateStory(
   id: string,
   patch: UpdateStoryInput,
 ): Promise<StoryDto> {
-  const { overrideReason, ...fields } = patch;
+  const { overrideReason, dorItems, ...fields } = patch;
   await db.transaction(async (tx) => {
     const [current] = await tx
       .select()
@@ -466,6 +432,8 @@ export async function updateStory(
       fields.journeyStepId,
       fields.personaId,
     );
+
+    if (dorItems) await syncDorItems(tx, id, dorItems);
 
     const intoSprint = fields.sprintId != null && fields.sprintId !== current.sprintId;
     const intoProgress =

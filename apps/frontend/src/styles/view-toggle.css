@@ -1,0 +1,29 @@
+/* Card / Table switch and shared card-view surface. */
+.view-toggle {
+  border: 1px solid var(--border-muted);
+  background: #fff;
+}
+.view-toggle .mantine-SegmentedControl-label {
+  font-family: var(--font-display);
+  transition: var(--ui-transition);
+}
+.view-toggle .mantine-SegmentedControl-indicator {
+  background: var(--brand-primary);
+}
+.view-toggle [data-active] .mantine-SegmentedControl-label,
+.view-toggle [data-active] {
+  color: #fff;
+}
+
+.item-card {
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: var(--mantine-shadow-sm);
+  transition: var(--ui-transition);
+}
+.item-card[data-clickable] {
+  cursor: pointer;
+}
+.item-card[data-clickable]:hover {
+  box-shadow: var(--mantine-shadow-md);
+}

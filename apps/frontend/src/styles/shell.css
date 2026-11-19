@@ -1,0 +1,85 @@
+/* Global navigation shell: top bar and left rail. */
+.shell-header {
+  background: linear-gradient(
+    90deg,
+    var(--nav-gradient-from),
+    var(--nav-gradient-mid),
+    var(--nav-gradient-to)
+  );
+  border-bottom: 0;
+  color: #fff;
+}
+.shell-header::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent-left) 50%, var(--accent-right) 50%);
+  pointer-events: none;
+}
+.shell-header .mantine-Text-root,
+.shell-header .shell-account {
+  color: #fff;
+}
+.shell-header .shell-brand {
+  font-family: var(--font-display);
+}
+.shell-header input::placeholder {
+  color: var(--text-secondary);
+}
+.shell-header .mantine-Input-input {
+  border-radius: 6px;
+  border-color: var(--border-muted);
+  transition: var(--ui-transition);
+}
+.shell-account {
+  border-radius: 6px;
+  transition: var(--ui-transition);
+}
+.shell-account:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.shell-navbar {
+  background: linear-gradient(
+    180deg,
+    var(--nav-gradient-from),
+    var(--nav-gradient-mid),
+    var(--nav-gradient-to)
+  );
+  border-inline-end: 0;
+}
+.shell-navbar .mantine-NavLink-root {
+  color: #fff;
+  border-radius: 6px;
+  transition: var(--ui-transition);
+}
+.shell-navbar .mantine-NavLink-root svg,
+.shell-navbar .mantine-NavLink-label {
+  color: #fff;
+}
+.shell-navbar .mantine-NavLink-root:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.shell-navbar .mantine-NavLink-root[data-active],
+.shell-navbar .mantine-NavLink-root[aria-current="page"] {
+  background: var(--nav-active-overlay);
+  box-shadow: inset 3px 0 0 var(--nav-active-marker);
+}
+.shell-navbar .mantine-NavLink-root:focus-visible {
+  outline: 2px solid var(--nav-active-marker);
+  outline-offset: -2px;
+}
+
+.shell-header .shell-role,
+.shell-header .shell-chevron {
+  color: #fff;
+}
+
+.shell-header .shell-account,
+.shell-header .shell-account .mantine-Text-root,
+.shell-header .shell-role {
+  font-family: var(--font-display);
+  color: #fff;
+}

@@ -31,6 +31,29 @@ const storyPoints = z
   .refine((n) => (STORY_POINT_VALUES as readonly number[]).includes(n), {
     message: "Use 1, 2, 3, 5, 8, 13 or 21",
   });
+export const DEFAULT_DOR_LABELS = [
+  "Persona and value stated",
+  "Acceptance criteria in Given/When/Then",
+  "Wireframes attached",
+  "Dependencies resolved",
+  "Right-sized for one sprint",
+] as const;
+
+export const syncDorItemSchema = z.object({
+  id: id.optional(),
+  label: text(300),
+  isCompleted: z.boolean().optional(),
+});
+export const createDorItemSchema = z.object({ label: text(300) });
+export const updateDorItemSchema = z
+  .object({
+    label: text(300),
+    isCompleted: z.boolean(),
+    sortOrder: z.number().int().min(0).max(100000),
+  })
+  .partial()
+  .refine((v) => Object.keys(v).length > 0, { message: "Nothing to change" });
+
 export const createStorySchema = z.object({
   story: text(1000),
   acceptanceCriteria: optionalText(3000),
@@ -39,6 +62,8 @@ export const createStorySchema = z.object({
   workType: workTypeSchema.optional(),
   releaseId: id.nullable().optional(),
   storyPoints: storyPoints.nullable().optional(),
+  // Custom Definition of Ready criteria; omitted means the project defaults (the five standard items).
+  dorItems: z.array(syncDorItemSchema).max(50).optional(),
 });
 export const updateStorySchema = z
   .object({
@@ -54,10 +79,13 @@ export const updateStorySchema = z
     position: z.number().int().min(0).max(1_000_000),
     // PM only: lets a story skip the Definition of Ready, recorded in gate_overrides.
     overrideReason: text(500),
+    // Atomically syncs the whole criteria list: edits, additions, deletions, ticks and order.
+    dorItems: z.array(syncDorItemSchema).max(50),
   })
   .partial();
 export const storyMapQuerySchema = z.object({ subprojectId: id });
 
+export type SyncDorItemInput = z.infer<typeof syncDorItemSchema>;
 export type CreatePersonaInput = z.infer<typeof createPersonaSchema>;
 export type UpdatePersonaInput = z.infer<typeof updatePersonaSchema>;
 export type CreateJourneyStepInput = z.infer<typeof createJourneyStepSchema>;
@@ -99,8 +127,17 @@ export type StoryDto = {
   position: number;
   readyChecked: number;
   readyTotal: number;
+  /** Definition of Ready criteria, ordered by sortOrder. readyChecked/readyTotal derive from these. */
+  dorItems: StoryDorItemDto[];
   linkedActivities: number;
 };
+export type StoryDorItemDto = {
+  id: string;
+  label: string;
+  isCompleted: boolean;
+  sortOrder: number;
+};
+export type DorSummaryDto = { readyChecked: number; readyTotal: number; percent: number };
 export type StoryMapDto = {
   personas: PersonaDto[];
   steps: JourneyStepDto[];

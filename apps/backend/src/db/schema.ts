@@ -1,4 +1,4 @@
-﻿import { sql } from "drizzle-orm";
+﻿import { relations, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   boolean,
@@ -8,6 +8,7 @@ import {
   integer,
   numeric,
   pgEnum,
+  pgSequence,
   pgTable,
   primaryKey,
   smallint,
@@ -18,7 +19,6 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import {
-  ASSUMPTION_CATEGORIES,
   KANO_CATEGORIES,
   KANO_DECISIONS,
   RAID_STATUSES,
@@ -66,7 +66,6 @@ export const releaseStatus = pgEnum("release_status", RELEASE_STATUSES);
 export const checklistKind = pgEnum("checklist_kind", CHECKLIST_KINDS);
 export const gate = pgEnum("gate", GATES);
 export const validationStatus = pgEnum("validation_status", VALIDATION_STATUSES);
-export const assumptionCategory = pgEnum("assumption_category", ASSUMPTION_CATEGORIES);
 export const storyStatus = pgEnum("story_status", STORY_STATUSES);
 export const kanoCategory = pgEnum("kano_category", KANO_CATEGORIES);
 export const kanoDecision = pgEnum("kano_decision", KANO_DECISIONS);
@@ -193,11 +192,8 @@ export const activities = pgTable(
     sprintId: uuid("sprint_id"),
     // Composite FK (project_id, release_id) is added in the Phase 2 hand-written migration.
     releaseId: uuid("release_id"),
-    // Phase 4: link an activity to the story it delivers and to the assumption it tests.
+    // Phase 4: link an activity to the story it delivers.
     userStoryId: uuid("user_story_id").references(() => userStories.id, { onDelete: "set null" }),
-    ostAssumptionId: uuid("ost_assumption_id").references(() => ostAssumptions.id, {
-      onDelete: "set null",
-    }),
     assigneeId: uuid("assignee_id").references(() => users.id, { onDelete: "set null" }),
     createdById: uuid("created_by_id")
       .notNull()
@@ -223,7 +219,6 @@ export const activities = pgTable(
     index("activities_sprint_id_idx").on(t.sprintId),
     index("activities_release_id_idx").on(t.releaseId),
     index("activities_user_story_id_idx").on(t.userStoryId),
-    index("activities_ost_assumption_id_idx").on(t.ostAssumptionId),
     index("activities_assignee_id_idx").on(t.assigneeId),
     index("activities_created_by_id_idx").on(t.createdById),
     index("activities_assignee_due_open_idx")
@@ -512,6 +507,9 @@ const moduleBase = () => ({
   updatedAt: updatedAt(),
 });
 
+/** Source of the global project codes (PROJ-01, PROJ-02, ...). Read with nextval in projectService. */
+export const projectCodeSeq = pgSequence("project_code_seq");
+
 /** Per-project sequence source for human-readable codes. See nextSeq() in services/seq.ts. */
 export const codeCounters = pgTable(
   "code_counters",
@@ -524,7 +522,7 @@ export const codeCounters = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.projectId, t.scope] }),
-    check("code_counters_scope", sql`${t.scope} IN ('ost', 'usm', 'req', 'raid')`),
+    check("code_counters_scope", sql`${t.scope} IN ('ost', 'usm', 'req', 'raid', 'sub')`),
     check("code_counters_last_value_nonneg", sql`${t.lastValue} >= 0`),
   ],
 );
@@ -557,10 +555,6 @@ export const ostOpportunities = pgTable(
     outcomeId: uuid("outcome_id")
       .notNull()
       .references(() => ostOutcomes.id, { onDelete: "cascade" }),
-    parentOpportunityId: uuid("parent_opportunity_id").references(
-      (): AnyPgColumn => ostOpportunities.id,
-      { onDelete: "cascade" },
-    ),
     title: text("title").notNull(),
     description: text("description"),
     evidence: text("evidence"),
@@ -569,7 +563,6 @@ export const ostOpportunities = pgTable(
   (t) => [
     index("ost_opportunities_project_id_idx").on(t.projectId),
     index("ost_opportunities_outcome_id_idx").on(t.outcomeId),
-    index("ost_opportunities_parent_idx").on(t.parentOpportunityId),
     index("ost_opportunities_created_by_idx").on(t.createdById),
     uniqueIndex("ost_opportunities_one_targeted_per_outcome")
       .on(t.outcomeId)
@@ -592,7 +585,7 @@ export const ostSolutions = pgTable(
         sql`'OST-' || repeat('0', greatest(2 - length(seq::text), 0)) || seq::text`,
       ),
     title: text("title").notNull(),
-    // Denormalized roll-up of the solution's assumptions; see recalcSolutionValidation().
+    // The solution is the action: planned until the PM marks it validated.
     validationStatus: validationStatus("validation_status").notNull().default("planned"),
     ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
     convertedStoryId: uuid("converted_story_id").references((): AnyPgColumn => userStories.id, {
@@ -608,32 +601,6 @@ export const ostSolutions = pgTable(
     index("ost_solutions_created_by_idx").on(t.createdById),
     check("ost_solutions_seq_positive", sql`${t.seq} > 0`),
     check("ost_solutions_title_not_empty", sql`char_length(btrim(${t.title})) > 0`),
-  ],
-);
-
-export const ostAssumptions = pgTable(
-  "ost_assumptions",
-  {
-    ...moduleBase(),
-    solutionId: uuid("solution_id")
-      .notNull()
-      .references(() => ostSolutions.id, { onDelete: "cascade" }),
-    statement: text("statement").notNull(),
-    category: assumptionCategory("category").notNull(),
-    isRiskiest: boolean("is_riskiest").notNull().default(false),
-    validationTest: text("validation_test"),
-    validationStatus: validationStatus("validation_status").notNull().default("planned"),
-    resultNotes: text("result_notes"),
-    position: integer("position").notNull().default(0),
-  },
-  (t) => [
-    index("ost_assumptions_project_id_idx").on(t.projectId),
-    index("ost_assumptions_solution_idx").on(t.solutionId, t.position),
-    index("ost_assumptions_created_by_idx").on(t.createdById),
-    uniqueIndex("ost_assumptions_one_riskiest_per_solution")
-      .on(t.solutionId)
-      .where(sql`${t.isRiskiest}`),
-    check("ost_assumptions_statement_not_empty", sql`char_length(btrim(${t.statement})) > 0`),
   ],
 );
 
@@ -720,6 +687,35 @@ export const userStories = pgTable(
     ),
   ],
 );
+
+// Per-story Definition of Ready criteria. Replaces the project-wide ready templates + checklist_checks for
+// stories (those stay in place, deprecated, until a later contract migration). New stories are seeded from the
+// project's active ready templates, or the five defaults when it has none.
+export const storyDorItems = pgTable(
+  "story_dor_items",
+  {
+    id: pk(),
+    storyId: uuid("story_id")
+      .notNull()
+      .references(() => userStories.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    isCompleted: boolean("is_completed").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("story_dor_items_story_idx").on(t.storyId, t.sortOrder),
+    check("story_dor_items_label_not_empty", sql`char_length(btrim(${t.label})) > 0`),
+  ],
+);
+
+export const userStoriesRelations = relations(userStories, ({ many }) => ({
+  dorItems: many(storyDorItems),
+}));
+export const storyDorItemsRelations = relations(storyDorItems, ({ one }) => ({
+  story: one(userStories, { fields: [storyDorItems.storyId], references: [userStories.id] }),
+}));
 
 // ---- Kano Request Tracker
 export const kanoRequests = pgTable(
@@ -836,6 +832,35 @@ export const raidItems = pgTable(
     check(
       "raid_items_likelihood_range",
       sql`${t.likelihood} IS NULL OR ${t.likelihood} BETWEEN 1 AND 3`,
+    ),
+  ],
+);
+
+// One-to-many checklist of mitigating actions. Replaces raid_items.mitigating_action, which stays
+// in place (deprecated, no longer written) until a later contract migration drops it.
+export const raidMitigatingActions = pgTable(
+  "raid_mitigating_actions",
+  {
+    id: pk(),
+    raidItemId: uuid("raid_item_id")
+      .notNull()
+      .references(() => raidItems.id, { onDelete: "cascade" }),
+    description: text("description").notNull(),
+    isCompleted: boolean("is_completed").notNull().default(false),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("raid_mitigating_actions_raid_item_idx").on(t.raidItemId, t.sortOrder),
+    check(
+      "raid_mitigating_actions_description_not_empty",
+      sql`char_length(btrim(${t.description})) > 0`,
+    ),
+    check(
+      "raid_mitigating_actions_completed_at_matches",
+      sql`${t.isCompleted} = (${t.completedAt} IS NOT NULL)`,
     ),
   ],
 );

@@ -7,7 +7,6 @@ import {
   Card,
   Checkbox,
   Group,
-  Modal,
   Select,
   Stack,
   Table,
@@ -51,6 +50,7 @@ import { useAuth, useIsPm } from "../auth";
 import { ActivityRow } from "../components/ActivityRow";
 import { HealthBadge, PageHeader, QueryState, SprintBadge, fmtDate, toast } from "../components/ui";
 import { applyActivityFilters, parseActivityFilters, type ActivityFilters } from "../lib/filters";
+import { SideModal } from "../components/SideModal";
 
 export function ProjectPage() {
   const { projectId } = useParams();
@@ -162,7 +162,7 @@ function ActivitiesTab({
         {sel(
           "Subproject",
           "subprojectId",
-          (subs.data ?? []).map((s) => ({ value: s.id, label: `${s.code} ${s.name}` })),
+          (subs.data ?? []).map((s) => ({ value: s.id, label: s.name })),
         )}
         {sel(
           "Status",
@@ -276,7 +276,7 @@ function NewActivityModal({
     validate: { title: (v) => (v.trim() ? null : "Enter a title") },
   });
   return (
-    <Modal opened={opened} onClose={onClose} title="New activity">
+    <SideModal opened={opened} onClose={onClose} title="New activity">
       <form
         onSubmit={form.onSubmit((v) =>
           create.mutate(
@@ -310,7 +310,7 @@ function NewActivityModal({
             label="Subproject"
             clearable
             searchable
-            data={(subs.data ?? []).map((s) => ({ value: s.id, label: `${s.code} ${s.name}` }))}
+            data={(subs.data ?? []).map((s) => ({ value: s.id, label: s.name }))}
             {...form.getInputProps("subprojectId")}
           />
           <Select
@@ -323,7 +323,7 @@ function NewActivityModal({
             {...form.getInputProps("assigneeId")}
           />
           <TextInput label="Due date" type="date" {...form.getInputProps("dueDate")} />
-          <Group justify="flex-end">
+          <Group justify="flex-end" className="side-modal-footer">
             <Button variant="default" onClick={onClose}>
               Cancel
             </Button>
@@ -333,7 +333,7 @@ function NewActivityModal({
           </Group>
         </Stack>
       </form>
-    </Modal>
+    </SideModal>
   );
 }
 
@@ -348,7 +348,6 @@ function SubprojectsTab({ projectId, canEdit }: { projectId: string; canEdit: bo
   const update = useUpdateSubproject();
   const createForm = useForm({
     initialValues: {
-      code: "",
       name: "",
       description: "",
       leadId: null as string | null,
@@ -463,7 +462,7 @@ function SubprojectsTab({ projectId, canEdit }: { projectId: string; canEdit: bo
         )}
       </QueryState>
 
-      <Modal opened={opened} onClose={close} title="New subproject">
+      <SideModal opened={opened} onClose={close} title="New subproject">
         <form
           onSubmit={createForm.onSubmit((v) =>
             create.mutate(
@@ -480,13 +479,7 @@ function SubprojectsTab({ projectId, canEdit }: { projectId: string; canEdit: bo
           )}
         >
           <Stack>
-            <TextInput
-              label="Code"
-              description="For example PRJ-16"
-              data-autofocus
-              {...createForm.getInputProps("code")}
-            />
-            <TextInput label="Name" {...createForm.getInputProps("name")} />
+            <TextInput label="Name" data-autofocus {...createForm.getInputProps("name")} />
             <Textarea
               label="Description"
               autosize
@@ -507,7 +500,7 @@ function SubprojectsTab({ projectId, canEdit }: { projectId: string; canEdit: bo
               {...createForm.getInputProps("health")}
             />
             <TextInput label="Health note" {...createForm.getInputProps("healthNote")} />
-            <Group justify="flex-end">
+            <Group justify="flex-end" className="side-modal-footer">
               <Button variant="default" onClick={close}>
                 Cancel
               </Button>
@@ -517,9 +510,9 @@ function SubprojectsTab({ projectId, canEdit }: { projectId: string; canEdit: bo
             </Group>
           </Stack>
         </form>
-      </Modal>
+      </SideModal>
 
-      <Modal
+      <SideModal
         opened={!!editRow}
         onClose={() => setEditRow(null)}
         title={editRow ? `Edit ${editRow.code}` : ""}
@@ -570,7 +563,7 @@ function SubprojectsTab({ projectId, canEdit }: { projectId: string; canEdit: bo
               {...editForm.getInputProps("health")}
             />
             <TextInput label="Health note" {...editForm.getInputProps("healthNote")} />
-            <Group justify="flex-end">
+            <Group justify="flex-end" className="side-modal-footer">
               <Button variant="default" onClick={() => setEditRow(null)}>
                 Cancel
               </Button>
@@ -580,7 +573,7 @@ function SubprojectsTab({ projectId, canEdit }: { projectId: string; canEdit: bo
             </Group>
           </Stack>
         </form>
-      </Modal>
+      </SideModal>
     </Stack>
   );
 }
@@ -597,7 +590,7 @@ function SprintsTab({ projectId, canEdit }: { projectId: string; canEdit: boolea
   return (
     <Stack>
       {canEdit ? (
-        <Group justify="flex-end">
+        <Group justify="flex-end" className="side-modal-footer">
           <Button onClick={open}>New sprint</Button>
         </Group>
       ) : null}
@@ -623,7 +616,7 @@ function SprintsTab({ projectId, canEdit }: { projectId: string; canEdit: boolea
           </Stack>
         )}
       </QueryState>
-      <Modal opened={opened} onClose={close} title="New sprint">
+      <SideModal opened={opened} onClose={close} title="New sprint">
         <form
           onSubmit={form.onSubmit((v) =>
             create.mutate(
@@ -648,11 +641,11 @@ function SprintsTab({ projectId, canEdit }: { projectId: string; canEdit: boolea
               minRows={2}
               {...form.getInputProps("goal")}
             />
-            <Group grow>
+            <Group className="side-modal-pair" grow>
               <TextInput label="Start" type="date" {...form.getInputProps("startDate")} />
               <TextInput label="End" type="date" {...form.getInputProps("endDate")} />
             </Group>
-            <Group justify="flex-end">
+            <Group justify="flex-end" className="side-modal-footer">
               <Button variant="default" onClick={close}>
                 Cancel
               </Button>
@@ -662,7 +655,7 @@ function SprintsTab({ projectId, canEdit }: { projectId: string; canEdit: boolea
             </Group>
           </Stack>
         </form>
-      </Modal>
+      </SideModal>
     </Stack>
   );
 }

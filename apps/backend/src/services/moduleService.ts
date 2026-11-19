@@ -1,10 +1,9 @@
-import { asc, eq, ne, and } from "drizzle-orm";
-import type { ValidationStatus, WorkType } from "@myapp/shared";
-import { db, type DbOrTx, type Tx } from "../db/client";
+import { eq } from "drizzle-orm";
+import type { WorkType } from "@myapp/shared";
+import { db, type Tx } from "../db/client";
 import {
   journeySteps,
   kanoRequests,
-  ostAssumptions,
   ostOpportunities,
   ostOutcomes,
   ostSolutions,
@@ -12,7 +11,7 @@ import {
   raidItems,
   userStories,
 } from "../db/schema";
-import { notFound } from "../errors";
+import { seedDorItems } from "./dorService";
 import { nextSeq } from "./seq";
 
 /*
@@ -26,34 +25,6 @@ type Run<T> = (tx: Tx) => Promise<T>;
 const inTx = <T>(tx: Tx | undefined, fn: Run<T>): Promise<T> => (tx ? fn(tx) : db.transaction(fn));
 
 // ---------------------------------------------------------------- OST
-export function computeSolutionValidation(
-  assumptions: Array<{ isRiskiest: boolean; validationStatus: ValidationStatus }>,
-): ValidationStatus {
-  // A solution is only as validated as its riskiest assumption; with none flagged it stays planned.
-  const riskiest = assumptions.find((a) => a.isRiskiest);
-  return riskiest ? riskiest.validationStatus : "planned";
-}
-
-/** Recomputes the denormalized solution status from its assumptions. Call in the same transaction as any assumption change. */
-export async function recalcSolutionValidation(
-  tx: DbOrTx,
-  solutionId: string,
-): Promise<ValidationStatus> {
-  const rows = await tx
-    .select({
-      isRiskiest: ostAssumptions.isRiskiest,
-      validationStatus: ostAssumptions.validationStatus,
-    })
-    .from(ostAssumptions)
-    .where(eq(ostAssumptions.solutionId, solutionId));
-  const status = computeSolutionValidation(rows);
-  await tx
-    .update(ostSolutions)
-    .set({ validationStatus: status })
-    .where(eq(ostSolutions.id, solutionId));
-  return status;
-}
-
 export async function createOutcome(
   k: Kind & {
     subprojectId?: string | null;
@@ -89,7 +60,6 @@ export async function createOutcome(
 export async function createOpportunity(
   k: Kind & {
     outcomeId: string;
-    parentOpportunityId?: string | null;
     title: string;
     description?: string;
     evidence?: string;
@@ -111,7 +81,6 @@ export async function createOpportunity(
         projectId: k.projectId,
         createdById: k.createdById,
         outcomeId: k.outcomeId,
-        parentOpportunityId: k.parentOpportunityId ?? null,
         title: k.title,
         description: k.description ?? null,
         evidence: k.evidence ?? null,
@@ -142,92 +111,6 @@ export async function createSolution(
       .returning();
     if (!row) throw new Error("insert returned no row");
     return row;
-  });
-}
-
-export async function createAssumption(
-  k: Kind & {
-    solutionId: string;
-    statement: string;
-    category: "desirability" | "viability" | "usability" | "feasibility";
-    isRiskiest?: boolean;
-    validationTest?: string;
-    validationStatus?: ValidationStatus;
-    resultNotes?: string;
-    position?: number;
-  },
-  tx?: Tx,
-) {
-  return inTx(tx, async (t) => {
-    // At most one riskiest assumption per solution: flagging a new one moves the flag.
-    if (k.isRiskiest) {
-      await t
-        .update(ostAssumptions)
-        .set({ isRiskiest: false })
-        .where(eq(ostAssumptions.solutionId, k.solutionId));
-    }
-    const [row] = await t
-      .insert(ostAssumptions)
-      .values({
-        projectId: k.projectId,
-        createdById: k.createdById,
-        solutionId: k.solutionId,
-        statement: k.statement,
-        category: k.category,
-        isRiskiest: k.isRiskiest ?? false,
-        validationTest: k.validationTest ?? null,
-        validationStatus: k.validationStatus ?? "planned",
-        resultNotes: k.resultNotes ?? null,
-        position: k.position ?? 0,
-      })
-      .returning();
-    if (!row) throw new Error("insert returned no row");
-    await recalcSolutionValidation(t, k.solutionId);
-    return row;
-  });
-}
-
-export async function updateAssumption(
-  id: string,
-  patch: { validationStatus?: ValidationStatus; isRiskiest?: boolean; resultNotes?: string },
-  tx?: Tx,
-) {
-  return inTx(tx, async (t) => {
-    const [current] = await t
-      .select()
-      .from(ostAssumptions)
-      .where(eq(ostAssumptions.id, id))
-      .for("update")
-      .limit(1);
-    if (!current) throw notFound("Assumption");
-    if (patch.isRiskiest) {
-      await t
-        .update(ostAssumptions)
-        .set({ isRiskiest: false })
-        .where(and(eq(ostAssumptions.solutionId, current.solutionId), ne(ostAssumptions.id, id)));
-    }
-    const [row] = await t
-      .update(ostAssumptions)
-      .set({
-        ...(patch.validationStatus === undefined
-          ? {}
-          : { validationStatus: patch.validationStatus }),
-        ...(patch.isRiskiest === undefined ? {} : { isRiskiest: patch.isRiskiest }),
-        ...(patch.resultNotes === undefined ? {} : { resultNotes: patch.resultNotes }),
-      })
-      .where(eq(ostAssumptions.id, id))
-      .returning();
-    if (!row) throw notFound("Assumption");
-    await recalcSolutionValidation(t, current.solutionId);
-    return row;
-  });
-}
-
-export async function deleteAssumption(id: string, tx?: Tx) {
-  return inTx(tx, async (t) => {
-    const [row] = await t.delete(ostAssumptions).where(eq(ostAssumptions.id, id)).returning();
-    if (!row) throw notFound("Assumption");
-    await recalcSolutionValidation(t, row.solutionId);
   });
 }
 
@@ -286,6 +169,8 @@ export async function createStory(
     storyPoints?: number | null;
     status?: "backlog" | "planning" | "in_progress" | "completed";
     position?: number;
+    /** Custom Definition of Ready labels; omitted seeds the project defaults. */
+    dorLabels?: string[];
   },
   tx?: Tx,
 ) {
@@ -311,6 +196,7 @@ export async function createStory(
       })
       .returning();
     if (!row) throw new Error("insert returned no row");
+    await seedDorItems(t, row.id, k.projectId, k.dorLabels);
     return row;
   });
 }
@@ -369,7 +255,6 @@ export async function createRaidItem(
     description: string;
     impact: number;
     likelihood?: number | null;
-    mitigatingAction?: string;
     ownerId?: string | null;
     status?: "open" | "in_progress" | "mitigated" | "closed";
     targetDate?: string | null;
@@ -391,7 +276,6 @@ export async function createRaidItem(
         description: k.description,
         impact: k.impact,
         likelihood: k.likelihood ?? null,
-        mitigatingAction: k.mitigatingAction ?? null,
         ownerId: k.ownerId ?? null,
         status,
         targetDate: k.targetDate ?? null,
@@ -401,12 +285,4 @@ export async function createRaidItem(
     if (!row) throw new Error("insert returned no row");
     return row;
   });
-}
-
-export async function listSolutionAssumptions(solutionId: string) {
-  return db
-    .select()
-    .from(ostAssumptions)
-    .where(eq(ostAssumptions.solutionId, solutionId))
-    .orderBy(asc(ostAssumptions.position), asc(ostAssumptions.id));
 }

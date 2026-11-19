@@ -269,7 +269,7 @@ export function InsightsPage() {
           w={260}
           data={(subprojects.data ?? []).map((s) => ({
             value: s.id,
-            label: `${s.code} ${s.name}`,
+            label: s.name,
           }))}
           value={subprojectId ?? null}
           onChange={(v) => setParam("subprojectId", v)}

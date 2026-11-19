@@ -1,7 +1,7 @@
-import { and, asc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { addDays } from "../services/dateBuckets";
 import * as m from "../services/moduleService";
-import { activities, checklistChecks, checklistTemplates, ostAssumptions } from "./schema";
+import { activities, ostSolutions, raidMitigatingActions, storyDorItems } from "./schema";
 import { db } from "./client";
 
 export type ModuleSeedContext = {
@@ -124,13 +124,6 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
       evidence: "Raised in five teacher and student interviews during discovery.",
       isTargeted: true,
     });
-    // A sibling opportunity so the tree is not a single line.
-    await m.createOpportunity({
-      ...k,
-      outcomeId: outcome.id,
-      parentOpportunityId: opportunity.id,
-      title: `Sub-problem: ${o[4].toLowerCase()}`,
-    });
     const solution = await m.createSolution({
       ...k,
       opportunityId: opportunity.id,
@@ -138,33 +131,13 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
       ownerId: member(i),
     });
     solutions.push(solution);
-    const riskiest = await m.createAssumption({
-      ...k,
-      solutionId: solution.id,
-      statement: o[6],
-      category: o[7],
-      isRiskiest: true,
-      validationTest: "Five-user prototype test plus a two-week pilot in one school",
-      position: 0,
-    });
-    await m.createAssumption({
-      ...k,
-      solutionId: solution.id,
-      statement: "We can build and run this within current infrastructure",
-      category: "feasibility",
-      validationTest: "Engineering spike, two days",
-      position: 1,
-    });
-    // Vary validation states so the roll-up is visible: validated, invalidated, in progress, planned.
+    // Vary solution states so progress is visible: validated, in progress, planned, invalidated.
     const state = (["validated", "in_progress", "planned", "invalidated"] as const)[i % 4];
     if (state && state !== "planned") {
-      await m.updateAssumption(riskiest.id, {
-        validationStatus: state,
-        resultNotes:
-          state === "validated"
-            ? "Seven of eight prototype users completed the task unaided"
-            : undefined,
-      });
+      await db
+        .update(ostSolutions)
+        .set({ validationStatus: state })
+        .where(eq(ostSolutions.id, solution.id));
     }
   }
 
@@ -330,18 +303,15 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
     storyIds.push(story.id);
   }
 
-  // Definition of Ready ticks on the first two stories.
-  const ready = await db
-    .select({ id: checklistTemplates.id })
-    .from(checklistTemplates)
-    .where(and(eq(checklistTemplates.projectId, c.projectId), eq(checklistTemplates.kind, "ready")))
-    .orderBy(asc(checklistTemplates.position));
+  // Definition of Ready ticks on the first two stories (items were seeded when each story was created).
   for (const storyId of storyIds.slice(0, 2)) {
-    for (const t of ready.slice(0, 3)) {
-      await db
-        .insert(checklistChecks)
-        .values({ templateId: t.id, storyId, checkedById: c.pmId })
-        .onConflictDoNothing();
+    const items = await db
+      .select({ id: storyDorItems.id })
+      .from(storyDorItems)
+      .where(eq(storyDorItems.storyId, storyId))
+      .orderBy(asc(storyDorItems.sortOrder));
+    for (const it of items.slice(0, 3)) {
+      await db.update(storyDorItems).set({ isCompleted: true }).where(eq(storyDorItems.id, it.id));
     }
   }
 
@@ -570,7 +540,7 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
     ],
   ] as const;
   for (const [i, r] of RAID.entries()) {
-    await m.createRaidItem({
+    const item = await m.createRaidItem({
       ...k,
       subprojectId: sub(i + 1),
       itemType: r[0],
@@ -578,21 +548,22 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
       impact: r[2],
       likelihood: r[3],
       status: r[4],
-      mitigatingAction: r[5],
       ownerId: member(i),
       targetDate: r[4] === "closed" ? null : addDays(c.today, 7 + i * 6),
     });
+    if (r[5]) {
+      const done = r[4] === "mitigated" || r[4] === "closed";
+      await db.insert(raidMitigatingActions).values({
+        raidItemId: item.id,
+        description: r[5],
+        isCompleted: done,
+        completedAt: done ? new Date() : null,
+      });
+    }
   }
 
-  // ---------------------------------------------------------------- Link a few activities to stories and assumptions
+  // ---------------------------------------------------------------- Link a few activities to stories
   const linkIds = c.seededActivityIds.slice(0, 6);
-  // One riskiest assumption per solution is enough for the demo links.
-  const assumptionRows = await db
-    .select({ id: ostAssumptions.id })
-    .from(ostAssumptions)
-    .where(and(eq(ostAssumptions.projectId, c.projectId), eq(ostAssumptions.isRiskiest, true)))
-    .orderBy(asc(ostAssumptions.createdAt), asc(ostAssumptions.id))
-    .limit(3);
   for (const [i, activityId] of linkIds.slice(0, 3).entries()) {
     const storyId = storyIds[i];
     if (storyId)
@@ -600,14 +571,5 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
         .update(activities)
         .set({ userStoryId: storyId })
         .where(eq(activities.id, activityId));
-  }
-  for (const [i, activityId] of linkIds.slice(3).entries()) {
-    const assumptionId = assumptionRows[i]?.id;
-    if (assumptionId) {
-      await db
-        .update(activities)
-        .set({ ostAssumptionId: assumptionId })
-        .where(eq(activities.id, activityId));
-    }
   }
 }

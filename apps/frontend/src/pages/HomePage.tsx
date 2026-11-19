@@ -176,7 +176,7 @@ export function HomePage() {
                   onChange={(v) => update({ ...filters, subprojectId: v ?? undefined })}
                   data={(subs.data ?? []).map((s) => ({
                     value: s.id,
-                    label: `${s.code} ${s.name}`,
+                    label: s.name,
                   }))}
                 />
                 <Switch

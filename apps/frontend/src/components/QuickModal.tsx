@@ -1,5 +1,6 @@
-import { Button, Group, Modal, Select, Stack, Textarea, TextInput } from "@mantine/core";
+import { Button, Group, Select, Stack, Textarea, TextInput } from "@mantine/core";
 import { useForm } from "@mantine/form";
+import { SideModal } from "./SideModal";
 
 export type QuickField = {
   key: string;
@@ -39,7 +40,7 @@ export function QuickModal({
     ),
   });
   return (
-    <Modal opened={opened} onClose={onClose} title={title} size="lg">
+    <SideModal opened={opened} onClose={onClose} title={title} size="lg">
       <form
         onSubmit={form.onSubmit((v) =>
           onSubmit(Object.fromEntries(Object.entries(v).map(([k, x]) => [k, x.trim()]))),
@@ -77,7 +78,7 @@ export function QuickModal({
               />
             ),
           )}
-          <Group justify="flex-end">
+          <Group justify="flex-end" className="side-modal-footer">
             <Button variant="default" onClick={onClose}>
               Cancel
             </Button>
@@ -87,6 +88,6 @@ export function QuickModal({
           </Group>
         </Stack>
       </form>
-    </Modal>
+    </SideModal>
   );
 }

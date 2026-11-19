@@ -1,0 +1,233 @@
+/* RAID Log page. Scoped under .raid-page. */
+.raid-page h1 {
+  font-family: var(--font-serif);
+}
+.raid-page h1 + p {
+  font-family: var(--font-body);
+  color: var(--text-secondary);
+}
+
+.raid-add-btn {
+  font-family: var(--font-display);
+  background: var(--brand-primary);
+  border-radius: 6px;
+  transition: var(--ui-transition);
+}
+.raid-add-btn:hover:not(:disabled) {
+  background: var(--nav-gradient-mid);
+}
+
+.raid-filters .mantine-InputWrapper-label {
+  font-family: var(--font-display);
+}
+.raid-filters .mantine-Checkbox-label {
+  font-family: var(--font-body);
+}
+.raid-input {
+  border-radius: 6px;
+  border-color: var(--border-muted);
+  font-family: var(--font-body);
+  transition: var(--ui-transition);
+}
+.raid-input::placeholder {
+  color: var(--text-secondary);
+}
+.raid-option {
+  font-family: var(--font-body);
+  transition: var(--ui-transition);
+}
+.raid-closed {
+  display: flex;
+  align-items: center;
+  height: 36px; /* matches the Select input height so the box centres on the dropdowns */
+}
+.raid-closed .mantine-Checkbox-input {
+  border-radius: 4px;
+  border-color: var(--border-muted);
+  transition: var(--ui-transition);
+}
+
+.raid-card {
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: var(--mantine-shadow-sm);
+  overflow: hidden;
+}
+.raid-table {
+  --table-border-color: var(--border-muted);
+  font-family: var(--font-body);
+}
+.raid-table th {
+  font-family: var(--font-display);
+}
+.raid-table td:last-child,
+.raid-table th:last-child {
+  padding-inline-start: 32px;
+}
+.raid-mono {
+  font-family: var(--font-mono);
+}
+.raid-sub {
+  color: var(--text-secondary);
+}
+.raid-actions {
+  justify-content: flex-end;
+}
+.raid-page .raid-action {
+  font-family: var(--font-display);
+  border-radius: 4px;
+  transition: var(--ui-transition);
+}
+.raid-page .raid-delete {
+  color: var(--danger-fg);
+}
+
+.raid-page .raid-badge {
+  border-radius: 9999px;
+}
+.raid-page .raid-badge[data-severity="3"] {
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+}
+.raid-page .raid-badge[data-severity="2"] {
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+}
+.raid-page .raid-badge[data-severity="1"] {
+  background: var(--info-bg);
+  color: var(--info-fg);
+}
+
+.raid-page .raid-status-input,
+.raid-page .raid-status-badge {
+  border-radius: 4px;
+  font-family: var(--font-body);
+  transition: var(--ui-transition);
+}
+.raid-page [data-status="open"] {
+  background: var(--info-bg);
+  color: var(--info-fg);
+}
+.raid-page [data-status="mitigated"] {
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+
+/* Corrections found while verifying in the browser. */
+.raid-page {
+  --mantine-color-dimmed: var(--text-secondary);
+}
+.raid-input {
+  --input-radius: 6px;
+  --input-placeholder-color: var(--text-secondary);
+}
+.raid-mono {
+  white-space: nowrap;
+}
+.raid-page .raid-badge {
+  overflow: visible;
+  max-width: none;
+}
+.raid-page .raid-badge .mantine-Badge-label {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* Completed mitigating actions: struck through and in the secondary text color. */
+.raid-action-check:has(input:checked) .mantine-Checkbox-label {
+  text-decoration: line-through;
+  color: var(--text-secondary);
+}
+.raid-action-check .mantine-Checkbox-label {
+  font-family: var(--font-body);
+  transition: var(--ui-transition);
+}
+
+/* Card layout: equal heights per row, metadata and actions pinned to the bottom. */
+.raid-page .raid-item {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.raid-card-foot {
+  margin-top: auto;
+}
+.raid-mitigation-summary {
+  display: block;
+}
+.raid-card-actions {
+  border-top: 1px solid var(--border-muted);
+}
+.raid-item .raid-sub,
+.raid-item .mantine-Text-root.raid-sub {
+  font-family: var(--font-display);
+}
+.raid-item .raid-mono {
+  font-family: var(--font-mono);
+}
+.raid-item .mantine-Text-root:not(.raid-sub):not(.raid-mono) {
+  font-family: var(--font-body);
+}
+.raid-item .raid-action-check .mantine-Checkbox-body {
+  gap: 8px;
+}
+.raid-item .raid-action-check .mantine-Checkbox-input {
+  border-radius: 4px;
+  border-color: var(--border-muted);
+  transition: var(--ui-transition);
+}
+.raid-item .raid-action-check .mantine-Checkbox-input:checked {
+  border-color: var(--brand-primary);
+}
+
+/* Toolbar: centre the checkbox and the toggle on the input row, not on the labels above it. */
+.raid-toggle {
+  display: flex;
+  align-items: center;
+  height: 36px;
+}
+.raid-toggle .view-toggle {
+  border-radius: 6px;
+}
+
+/* Filter labels and card boundaries. */
+.raid-page .raid-filters .mantine-InputWrapper-label,
+.raid-page .raid-filters label.mantine-InputWrapper-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+.raid-page .raid-item.item-card {
+  border: 1px solid var(--border-muted);
+  box-shadow: var(--mantine-shadow-md);
+}
+.raid-page .raid-item.item-card[data-clickable]:hover {
+  box-shadow: var(--mantine-shadow-md);
+  border-color: var(--text-secondary);
+}
+.raid-page .raid-item .raid-sub {
+  font-weight: 500;
+}
+
+/* Typography and spacing refinements. */
+.raid-page .raid-item .mantine-Text-root.raid-mono,
+.raid-page .raid-item .raid-sub .raid-mono,
+.raid-page .raid-item .raid-mono {
+  font-family: var(--font-mono);
+}
+.raid-page .raid-item .mantine-Text-root.raid-type {
+  font-family: var(--font-body);
+}
+.raid-page .raid-item .raid-badge,
+.raid-page .raid-item .raid-badge .mantine-Badge-label {
+  font-family: var(--font-display);
+}
+.raid-page .raid-add-btn {
+  color: #fff;
+}
+.raid-page .raid-meta .mantine-Text-root.raid-sub {
+  line-height: 1.2;
+  margin-bottom: 1px;
+}
+.raid-page .raid-meta {
+  row-gap: 18px;
+}

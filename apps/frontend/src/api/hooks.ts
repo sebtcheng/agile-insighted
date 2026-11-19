@@ -5,6 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { withStoryDor } from "../lib/storyDor";
 import type {
   ActivityDto,
   ActivityEventDto,
@@ -14,7 +15,6 @@ import type {
   CommentDto,
   CreateActivityInput,
   ConvertSolutionInput,
-  CreateAssumptionInput,
   CreateJourneyStepInput,
   CreateOpportunityInput,
   CreateOutcomeInput,
@@ -36,6 +36,7 @@ import type {
   PortfolioResponse,
   ProjectDto,
   RaidItemDto,
+  RaidMitigatingActionDto,
   ReleaseDto,
   ScopeChangeDto,
   SearchResponse,
@@ -46,13 +47,13 @@ import type {
   OstTreeDto,
   PromoteKanoInput,
   StoryChecklistItemDto,
+  StoryDorItemDto,
   StoryDto,
   StoryMapDto,
   SprintDto,
   SubprojectDto,
   TagDto,
   UpdateActivityInput,
-  UpdateAssumptionInput,
   UpdateJourneyStepInput,
   UpdateOpportunityInput,
   UpdateOutcomeInput,
@@ -69,6 +70,7 @@ import type {
 } from "@myapp/shared";
 import { ApiClientError, api, type Params } from "./client";
 import type { ActivityFilters, PortfolioFilters } from "../lib/filters";
+import { statusForTick, withSolutionStatus } from "../lib/ostOptimistic";
 
 /** All server access lives here; components never call fetch. */
 
@@ -117,6 +119,17 @@ export const useProjects = () =>
   useQuery({
     queryKey: ["projects"],
     queryFn: async () => (await api.get<{ items: ProjectDto[] }>("/projects")).items,
+  });
+export const useProjectsWithSubprojects = () =>
+  useQuery({
+    queryKey: ["projects", "with-subprojects"],
+    queryFn: async () =>
+      (
+        await api.get<{ items: Array<ProjectDto & { subprojects: SubprojectDto[] }> }>(
+          "/projects",
+          { withSubprojects: true },
+        )
+      ).items,
   });
 export const useTags = () =>
   useQuery({
@@ -358,6 +371,13 @@ export const useCreateSubproject = (projectId: string) =>
     (v: CreateSubprojectInput) => api.post(`/projects/${projectId}/subprojects`, v),
     ["subprojects", "portfolio"],
   );
+export const useDeleteProject = () =>
+  useAdminMutation((id: string) => api.delete(`/projects/${id}`), ["projects", "portfolio"]);
+export const useDeleteSubproject = () =>
+  useAdminMutation(
+    (id: string) => api.delete(`/subprojects/${id}`),
+    ["subprojects", "projects", "portfolio"],
+  );
 export const useUpdateSubproject = () =>
   useAdminMutation(
     (v: { id: string; patch: UpdateSubprojectInput }) => api.patch(`/subprojects/${v.id}`, v.patch),
@@ -467,6 +487,14 @@ export const useUpdateRaid = () =>
     (v: { id: string; patch: UpdateRaidInput }) => api.patch<RaidItemDto>(`/raid/${v.id}`, v.patch),
     ["raid", "portfolio"],
   );
+export const useToggleMitigatingAction = () =>
+  useAdminMutation(
+    (v: { raidItemId: string; actionId: string; isCompleted: boolean }) =>
+      api.patch<RaidMitigatingActionDto>(`/raid/${v.raidItemId}/mitigating-actions/${v.actionId}`, {
+        isCompleted: v.isCompleted,
+      }),
+    ["raid", "portfolio"],
+  );
 export const useDeleteRaid = () =>
   useAdminMutation((id: string) => api.delete(`/raid/${id}`), ["raid", "portfolio"]);
 
@@ -521,6 +549,72 @@ export const useSetStoryCheck = (storyId: string) =>
       api.put(`/stories/${storyId}/checklist/${v.templateId}`, { checked: v.checked }),
     ["story-checklist", "story-map"],
   );
+
+/**
+ * Definition of Ready edits go straight onto the cached map so X/Y counts and completion percentages update
+ * at once; ticks and removals roll back on error, additions are appended once the server returns the new row.
+ */
+function useStoryMapEdit<V>(
+  subprojectId: string,
+  request: (v: V) => Promise<unknown>,
+  optimistic: ((map: StoryMapDto, v: V) => StoryMapDto) | null,
+) {
+  const qc = useQueryClient();
+  const key = ["story-map", subprojectId];
+  return useMutation({
+    mutationFn: request,
+    onMutate: async (v: V) => {
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<StoryMapDto>(key);
+      if (previous && optimistic) qc.setQueryData<StoryMapDto>(key, optimistic(previous, v));
+      return { previous };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.previous) qc.setQueryData(key, ctx.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["story-map"] }),
+  });
+}
+
+export function useToggleStoryReady(subprojectId: string) {
+  return useStoryMapEdit(
+    subprojectId,
+    (v: { storyId: string; itemId: string; isCompleted: boolean }) =>
+      api.patch(`/stories/${v.storyId}/dor-items/${v.itemId}`, { isCompleted: v.isCompleted }),
+    (map, v) =>
+      withStoryDor(map, v.storyId, (items) =>
+        items.map((i) => (i.id === v.itemId ? { ...i, isCompleted: v.isCompleted } : i)),
+      ),
+  );
+}
+
+export function useRemoveStoryDor(subprojectId: string) {
+  return useStoryMapEdit(
+    subprojectId,
+    (v: { storyId: string; itemId: string }) =>
+      api.delete(`/stories/${v.storyId}/dor-items/${v.itemId}`),
+    (map, v) => withStoryDor(map, v.storyId, (items) => items.filter((i) => i.id !== v.itemId)),
+  );
+}
+
+export function useAddStoryDor(subprojectId: string) {
+  const qc = useQueryClient();
+  const key = ["story-map", subprojectId];
+  return useMutation({
+    mutationFn: (v: { storyId: string; label: string }) =>
+      api.post<{ item: StoryDorItemDto }>(`/stories/${v.storyId}/dor-items`, { label: v.label }),
+    onSuccess: (res, v) => {
+      const previous = qc.getQueryData<StoryMapDto>(key);
+      if (previous) {
+        qc.setQueryData<StoryMapDto>(
+          key,
+          withStoryDor(previous, v.storyId, (items) => [...items, res.item]),
+        );
+      }
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["story-map"] }),
+  });
+}
 
 // ---------------------------------------------------------------- Kano Request Tracker (Phase 7)
 export type KanoFilters = {
@@ -617,20 +711,29 @@ export const useConvertSolution = () =>
       api.post<{ storyId: string; storyCode: string }>(`/ost/solutions/${v.id}/convert`, v.input),
     ["ost", "story-map", "overrides"],
   );
-export const useCreateAssumption = () =>
-  useAdminMutation(
-    (v: { solutionId: string; input: CreateAssumptionInput }) =>
-      api.post(`/ost/solutions/${v.solutionId}/assumptions`, v.input),
-    ["ost"],
-  );
-export const useUpdateAssumption = () =>
-  useAdminMutation(
-    (v: { id: string; patch: UpdateAssumptionInput }) =>
-      api.patch(`/ost/assumptions/${v.id}`, v.patch),
-    ["ost"],
-  );
-export const useDeleteAssumption = () =>
-  useAdminMutation((id: string) => api.delete(`/ost/assumptions/${id}`), ["ost"]);
+/**
+ * Ticks or unticks a solution (validated / planned) through the solution PATCH endpoint. The tree cache is
+ * updated first so the checkbox and the completion percentage move at once; a failure restores the old data.
+ */
+export const useToggleSolution = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; checked: boolean }) =>
+      api.patch(`/ost/solutions/${v.id}`, { validationStatus: statusForTick(v.checked) }),
+    onMutate: async (v) => {
+      await qc.cancelQueries({ queryKey: ["ost"] });
+      const previous = qc.getQueriesData<OstTreeDto>({ queryKey: ["ost"] });
+      qc.setQueriesData<OstTreeDto>({ queryKey: ["ost"] }, (tree) =>
+        tree ? withSolutionStatus(tree, v.id, statusForTick(v.checked)) : tree,
+      );
+      return { previous };
+    },
+    onError: (_err, _v, ctx) => {
+      ctx?.previous.forEach(([key, data]) => qc.setQueryData(key, data));
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["ost"] }),
+  });
+};
 
 // ---------------------------------------------------------------- Insights (Phase 9)
 export const useInsights = (params: { projectId?: string; subprojectId?: string; weeks: number }) =>

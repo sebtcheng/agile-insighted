@@ -1,10 +1,19 @@
-import { Alert, Badge, Button, Card, Group, Select, Stack, Text } from "@mantine/core";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Group,
+  Select,
+  SimpleGrid,
+  Stack,
+  Text,
+  UnstyledButton,
+} from "@mantine/core";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   MIN_SOLUTIONS_PER_TARGET,
-  VALIDATION_LABELS,
-  type AssumptionDto,
   type OpportunityDto,
   type OstTreeDto,
   type OutcomeDto,
@@ -27,12 +36,20 @@ import {
 } from "../api/hooks";
 import { useIsPm } from "../auth";
 import { QuickModal, type QuickField } from "../components/QuickModal";
-import { SolutionModal, VALIDATION_COLOR } from "../components/SolutionModal";
+import { SolutionModal } from "../components/SolutionModal";
+import { SolutionCheck } from "../components/SolutionCheck";
+import { OstActionBar } from "../components/OstActionBar";
+import { OstTable } from "../components/OstTable";
 import { PageHeader, QueryState, fmtDate, toast } from "../components/ui";
+import { ViewModeToggle } from "../components/ViewModeToggle";
+import { useViewMode } from "../lib/viewMode";
+import { outcomeSolutions, solutionProgress } from "../lib/ostOptimistic";
+import { CompletionMeter } from "../components/CompletionMeter";
+import { SideModal } from "../components/SideModal";
 
 type Dialog =
   | { kind: "outcome"; existing?: OutcomeDto }
-  | { kind: "opportunity"; outcomeId: string; parentId?: string; existing?: OpportunityDto }
+  | { kind: "opportunity"; outcomeId: string; existing?: OpportunityDto }
   | { kind: "solution"; opportunityId: string; existing?: SolutionDto }
   | null;
 
@@ -46,7 +63,7 @@ function metricLine(o: OutcomeDto): string | null {
   return `${o.metricName ?? "Metric"}: ${from} → ${to}${by}`;
 }
 
-type Ctx = {
+export type OstCtx = {
   tree: OstTreeDto;
   isPm: boolean;
   readOnly: boolean;
@@ -54,234 +71,245 @@ type Ctx = {
   openSolution: (id: string) => void;
 };
 
-function SolutionRow({ s, ctx }: { s: SolutionDto; ctx: Ctx }) {
+/** A solution is the action under an opportunity: tick it when done. */
+function SolutionRow({ s, ctx }: { s: SolutionDto; ctx: OstCtx }) {
   const remove = useDeleteSolution();
-  const asms = ctx.tree.assumptions.filter((a: AssumptionDto) => a.solutionId === s.id);
-  const validated = asms.filter((a) => a.validationStatus === "validated").length;
-  return (
-    <Group justify="space-between" wrap="nowrap" py={4} pl="md">
-      <div style={{ minWidth: 0 }}>
-        <Group gap={6} wrap="nowrap">
-          <Text size="xs" fw={700}>
-            {s.code}
-          </Text>
-          <Badge size="xs" variant="light" color={VALIDATION_COLOR[s.validationStatus]}>
-            {VALIDATION_LABELS[s.validationStatus]}
-          </Badge>
-          {s.convertedStoryCode ? (
-            <Badge size="xs" variant="outline">
-              {s.convertedStoryCode}
-            </Badge>
-          ) : null}
-        </Group>
-        <Text size="sm">{s.title}</Text>
-        <Text size="xs" c="dimmed">
-          {asms.length === 0
-            ? "No assumptions yet"
-            : `${validated}/${asms.length} assumptions validated`}
-          {s.ownerName ? `, owner ${s.ownerName}` : ""}
-        </Text>
-      </div>
-      <Group gap={4} wrap="nowrap">
-        <Button size="compact-xs" variant="default" onClick={() => ctx.openSolution(s.id)}>
-          Assumptions
-        </Button>
-        {ctx.isPm && !ctx.readOnly ? (
-          <>
-            <Button
-              size="compact-xs"
-              variant="subtle"
-              onClick={() =>
-                ctx.setDialog({ kind: "solution", opportunityId: s.opportunityId, existing: s })
-              }
-            >
-              Edit
-            </Button>
-            <Button
-              size="compact-xs"
-              variant="subtle"
-              color="red"
-              onClick={() => {
-                if (window.confirm(`Delete ${s.code} and its assumptions?`)) {
-                  remove.mutate(s.id, { onError: (e) => toast.error(e.message) });
-                }
-              }}
-            >
-              Delete
-            </Button>
-          </>
-        ) : null}
-      </Group>
-    </Group>
-  );
-}
-
-function OpportunityNode({ o, ctx, depth }: { o: OpportunityDto; ctx: Ctx; depth: number }) {
-  const update = useUpdateOpportunity();
-  const remove = useDeleteOpportunity();
-  const solutions = ctx.tree.solutions.filter((s) => s.opportunityId === o.id);
-  const children = ctx.tree.opportunities.filter((c) => c.parentOpportunityId === o.id);
-  const thin = o.isTargeted && solutions.length < MIN_SOLUTIONS_PER_TARGET;
   const canEdit = ctx.isPm && !ctx.readOnly;
   return (
-    <div style={{ marginLeft: depth * 20 }}>
-      <Card withBorder p="sm" mb="xs">
-        <Group justify="space-between" align="flex-start" wrap="wrap">
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <Group gap={6}>
-              <Text fw={600}>{o.title}</Text>
-              {o.isTargeted ? <Badge>Targeted</Badge> : null}
-            </Group>
-            {o.evidence ? (
-              <Text size="xs" c="dimmed">
-                Evidence: {o.evidence}
-              </Text>
-            ) : null}
-          </div>
-          {canEdit ? (
-            <Group gap={4}>
-              {!o.isTargeted ? (
-                <Button
-                  size="compact-xs"
-                  variant="light"
-                  onClick={() =>
-                    update.mutate(
-                      { id: o.id, patch: { isTargeted: true } },
-                      { onError: (e) => toast.error(e.message) },
-                    )
-                  }
-                >
-                  Target this
-                </Button>
-              ) : null}
-              <Button
-                size="compact-xs"
-                variant="default"
-                onClick={() => ctx.setDialog({ kind: "solution", opportunityId: o.id })}
-              >
-                Add solution
-              </Button>
-              <Button
-                size="compact-xs"
-                variant="default"
-                onClick={() =>
-                  ctx.setDialog({ kind: "opportunity", outcomeId: o.outcomeId, parentId: o.id })
-                }
-              >
-                Add sub-opportunity
-              </Button>
-              <Button
-                size="compact-xs"
-                variant="subtle"
-                onClick={() =>
-                  ctx.setDialog({ kind: "opportunity", outcomeId: o.outcomeId, existing: o })
-                }
-              >
-                Edit
-              </Button>
-              <Button
-                size="compact-xs"
-                variant="subtle"
-                color="red"
-                onClick={() => {
-                  if (
-                    window.confirm(`Delete "${o.title}" with its solutions and sub-opportunities?`)
-                  ) {
-                    remove.mutate(o.id, { onError: (e) => toast.error(e.message) });
-                  }
-                }}
-              >
-                Delete
-              </Button>
-            </Group>
-          ) : null}
-        </Group>
-        {thin ? (
-          <Alert color="yellow" mt="xs" p="xs">
-            This is the targeted opportunity but has {solutions.length} of{" "}
-            {MIN_SOLUTIONS_PER_TARGET} solutions. Compare at least {MIN_SOLUTIONS_PER_TARGET}{" "}
-            different ideas before committing.
-          </Alert>
-        ) : null}
-        {solutions.map((s) => (
-          <SolutionRow key={s.id} s={s} ctx={ctx} />
-        ))}
-      </Card>
-      {children.map((c) => (
-        <OpportunityNode key={c.id} o={c} ctx={ctx} depth={depth + 1} />
-      ))}
-    </div>
-  );
-}
-
-function OutcomeCard({ outcome, ctx }: { outcome: OutcomeDto; ctx: Ctx }) {
-  const remove = useDeleteOutcome();
-  const roots = ctx.tree.opportunities.filter(
-    (o) => o.outcomeId === outcome.id && !o.parentOpportunityId,
-  );
-  const line = metricLine(outcome);
-  const canEdit = ctx.isPm && !ctx.readOnly;
-  return (
-    <Card withBorder p="md">
-      <Group justify="space-between" align="flex-start" wrap="wrap" mb="sm">
-        <div>
-          <Text size="xs" fw={700} tt="uppercase" c="dimmed">
-            Outcome{outcome.subprojectCode ? `, ${outcome.subprojectCode}` : ""}
-          </Text>
-          <Text fz={18} fw={700}>
-            {outcome.title}
-          </Text>
-          {line ? <Text size="sm">{line}</Text> : null}
-          {outcome.description ? (
-            <Text size="sm" c="dimmed">
-              {outcome.description}
+    <div className="ost-solution" style={{ paddingLeft: "var(--mantine-spacing-md)" }}>
+      <Group justify="space-between" wrap="wrap" py={4} align="flex-start">
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <SolutionCheck solution={s} editable={canEdit} />
+          {s.ownerName ? (
+            <Text size="xs" c="dimmed" ml={26}>
+              Owner {s.ownerName}
             </Text>
           ) : null}
         </div>
         {canEdit ? (
-          <Group gap={4}>
-            <Button
-              size="compact-xs"
-              variant="default"
-              onClick={() => ctx.setDialog({ kind: "opportunity", outcomeId: outcome.id })}
-            >
-              Add opportunity
-            </Button>
-            <Button
-              size="compact-xs"
-              variant="subtle"
-              onClick={() => ctx.setDialog({ kind: "outcome", existing: outcome })}
-            >
-              Edit
-            </Button>
-            <Button
-              size="compact-xs"
-              variant="subtle"
-              color="red"
-              onClick={() => {
-                if (window.confirm(`Delete this outcome and everything under it?`)) {
-                  remove.mutate(outcome.id, { onError: (e) => toast.error(e.message) });
-                }
-              }}
-            >
-              Delete
-            </Button>
-          </Group>
+          <OstActionBar
+            scope={s.code}
+            workflow={
+              s.convertedStoryId
+                ? []
+                : [
+                    {
+                      label: "Convert to story",
+                      onClick: () => ctx.openSolution(s.id),
+                      hint: "Turn this solution into a user story",
+                    },
+                  ]
+            }
+            onEdit={() =>
+              ctx.setDialog({ kind: "solution", opportunityId: s.opportunityId, existing: s })
+            }
+            onDelete={() => {
+              if (window.confirm(`Delete ${s.code}?`)) {
+                remove.mutate(s.id, { onError: (e) => toast.error(e.message) });
+              }
+            }}
+          />
         ) : null}
       </Group>
-      {roots.length === 0 ? (
+    </div>
+  );
+}
+
+function OpportunityNode({ o, ctx }: { o: OpportunityDto; ctx: OstCtx }) {
+  const update = useUpdateOpportunity();
+  const remove = useDeleteOpportunity();
+  const solutions = ctx.tree.solutions.filter((s) => s.opportunityId === o.id);
+  const thin = o.isTargeted && solutions.length < MIN_SOLUTIONS_PER_TARGET;
+  const canEdit = ctx.isPm && !ctx.readOnly;
+  return (
+    <Card withBorder p="sm" mb="xs">
+      <Group justify="space-between" align="flex-start" wrap="wrap">
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <Group gap={6}>
+            <Text fw={600}>{o.title}</Text>
+            {o.isTargeted ? <Badge>Targeted</Badge> : null}
+          </Group>
+          {o.evidence ? (
+            <Text size="xs" c="dimmed">
+              Evidence: {o.evidence}
+            </Text>
+          ) : null}
+        </div>
+        {canEdit ? (
+          <OstActionBar
+            scope="opportunity"
+            create={[
+              {
+                label: "Add solution",
+                onClick: () => ctx.setDialog({ kind: "solution", opportunityId: o.id }),
+              },
+            ]}
+            workflow={
+              o.isTargeted
+                ? []
+                : [
+                    {
+                      label: "Target this",
+                      hint: "Mark as the opportunity to solve now",
+                      onClick: () =>
+                        update.mutate(
+                          { id: o.id, patch: { isTargeted: true } },
+                          { onError: (e) => toast.error(e.message) },
+                        ),
+                    },
+                  ]
+            }
+            onEdit={() =>
+              ctx.setDialog({ kind: "opportunity", outcomeId: o.outcomeId, existing: o })
+            }
+            onDelete={() => {
+              if (window.confirm(`Delete "${o.title}" with its solutions?`)) {
+                remove.mutate(o.id, { onError: (e) => toast.error(e.message) });
+              }
+            }}
+          />
+        ) : null}
+      </Group>
+      {thin ? (
+        <Alert color="yellow" mt="xs" p="xs">
+          This is the targeted opportunity but has {solutions.length} of {MIN_SOLUTIONS_PER_TARGET}{" "}
+          solutions. Compare at least {MIN_SOLUTIONS_PER_TARGET} different ideas before committing.
+        </Alert>
+      ) : null}
+      <Text size="xs" fw={700} tt="uppercase" c="dimmed" mt="xs">
+        Solutions (actions)
+      </Text>
+      {solutions.length === 0 ? (
         <Text size="sm" c="dimmed">
-          No opportunities yet. Start with the customer pain points that block this outcome.
+          No solutions yet.
         </Text>
       ) : (
-        roots.map((o) => <OpportunityNode key={o.id} o={o} ctx={ctx} depth={0} />)
+        solutions.map((s) => <SolutionRow key={s.id} s={s} ctx={ctx} />)
       )}
     </Card>
   );
 }
 
+/** The outcome, stated once: it is the side modal's header, with its own Edit and Delete. */
+function OutcomeHeader({
+  outcome,
+  ctx,
+  onDeleted,
+}: {
+  outcome: OutcomeDto;
+  ctx: OstCtx;
+  onDeleted: () => void;
+}) {
+  const remove = useDeleteOutcome();
+  const line = metricLine(outcome);
+  const canEdit = ctx.isPm && !ctx.readOnly;
+  return (
+    <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+      <div style={{ minWidth: 0 }}>
+        <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+          Outcome{outcome.subprojectName ? `, ${outcome.subprojectName}` : ""}
+        </Text>
+        <Text fz={18} fw={700}>
+          {outcome.title}
+        </Text>
+        {line ? <Text size="sm">{line}</Text> : null}
+      </div>
+      {canEdit ? (
+        <OstActionBar
+          scope="outcome"
+          onEdit={() => ctx.setDialog({ kind: "outcome", existing: outcome })}
+          onDelete={() => {
+            if (window.confirm(`Delete this outcome and everything under it?`)) {
+              remove.mutate(outcome.id, {
+                onSuccess: onDeleted,
+                onError: (e) => toast.error(e.message),
+              });
+            }
+          }}
+        />
+      ) : null}
+    </Group>
+  );
+}
+
+/** Body of the side modal: opportunities for this outcome, each with its solutions as the actions. */
+function OutcomeDetail({ outcome, ctx }: { outcome: OutcomeDto; ctx: OstCtx }) {
+  const opportunities = ctx.tree.opportunities.filter((o) => o.outcomeId === outcome.id);
+  const canEdit = ctx.isPm && !ctx.readOnly;
+  return (
+    <Stack gap="xs">
+      <Group justify="space-between" align="center">
+        <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+          Opportunities
+        </Text>
+        {canEdit ? (
+          <Button
+            size="compact-xs"
+            variant="light"
+            onClick={() => ctx.setDialog({ kind: "opportunity", outcomeId: outcome.id })}
+          >
+            Add opportunity
+          </Button>
+        ) : null}
+      </Group>
+      {opportunities.length === 0 ? (
+        <Text size="sm" c="dimmed">
+          No opportunities yet. Start with the customer pain points that block this outcome.
+        </Text>
+      ) : (
+        opportunities.map((o) => <OpportunityNode key={o.id} o={o} ctx={ctx} />)
+      )}
+    </Stack>
+  );
+}
+
+/** Compact grid card; opens the opportunities and their solution actions in a slide-over. */
+export function OutcomeCard({ outcome, ctx }: { outcome: OutcomeDto; ctx: OstCtx }) {
+  const [opened, setOpened] = useState(false);
+  const { done, total } = solutionProgress(outcomeSolutions(ctx.tree, outcome.id));
+  const line = metricLine(outcome);
+  return (
+    <>
+      <Card withBorder p="md" h="100%">
+        <UnstyledButton
+          w="100%"
+          onClick={() => setOpened(true)}
+          aria-label={`View steps for ${outcome.title}`}
+        >
+          <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+            Outcome{outcome.subprojectName ? `, ${outcome.subprojectName}` : ""}
+          </Text>
+          <Text fz={16} fw={700} lineClamp={2}>
+            {outcome.title}
+          </Text>
+          {line ? (
+            <Text size="sm" lineClamp={1}>
+              {line}
+            </Text>
+          ) : null}
+          <div style={{ marginTop: "var(--mantine-spacing-sm)" }}>
+            <CompletionMeter done={done} total={total} />
+          </div>
+          <Text size="xs" c="dimmed" mt={6}>
+            View steps
+          </Text>
+        </UnstyledButton>
+      </Card>
+      <SideModal
+        opened={opened}
+        onClose={() => setOpened(false)}
+        title={<OutcomeHeader outcome={outcome} ctx={ctx} onDeleted={() => setOpened(false)} />}
+        size="lg"
+      >
+        <OutcomeDetail outcome={outcome} ctx={ctx} />
+      </SideModal>
+    </>
+  );
+}
+
 export function OstPage() {
   const isPm = useIsPm();
+  const [viewMode, setViewMode] = useViewMode("card");
   const [params, setParams] = useSearchParams();
   const { project } = useCurrentProject();
   const subprojects = useSubprojects(project?.id);
@@ -312,7 +340,7 @@ export function OstPage() {
       key: "subprojectId",
       label: "Subproject",
       kind: "select",
-      options: (subprojects.data ?? []).map((s) => ({ value: s.id, label: `${s.code} ${s.name}` })),
+      options: (subprojects.data ?? []).map((s) => ({ value: s.id, label: s.name })),
     },
   ];
   const oppFields: QuickField[] = [
@@ -341,28 +369,35 @@ export function OstPage() {
     <>
       <PageHeader
         title="Opportunity Solution Tree"
-        subtitle="Start from an outcome, map the opportunities, compare solutions, and test the riskiest assumptions before building."
+        subtitle="Start from an outcome, map the opportunities, and compare the solutions you could take as actions."
         actions={
           isPm && !readOnly ? (
             <Button onClick={() => setDialog({ kind: "outcome" })}>Add outcome</Button>
           ) : null
         }
       />
-      <Select
-        label="Subproject"
-        w={260}
-        mb="md"
-        clearable
-        placeholder="All subprojects"
-        data={(subprojects.data ?? []).map((s) => ({ value: s.id, label: `${s.code} ${s.name}` }))}
-        value={subprojectId ?? null}
-        onChange={(v) => {
-          const next = new URLSearchParams(params);
-          if (v) next.set("subprojectId", v);
-          else next.delete("subprojectId");
-          setParams(next, { replace: true });
-        }}
-      />
+      <Group mb="md" align="flex-end" wrap="wrap">
+        <Select
+          label="Subproject"
+          w={260}
+          clearable
+          placeholder="All subprojects"
+          data={(subprojects.data ?? []).map((s) => ({
+            value: s.id,
+            label: s.name,
+          }))}
+          value={subprojectId ?? null}
+          onChange={(v) => {
+            const next = new URLSearchParams(params);
+            if (v) next.set("subprojectId", v);
+            else next.delete("subprojectId");
+            setParams(next, { replace: true });
+          }}
+        />
+        <div style={{ marginInlineStart: "auto" }}>
+          <ViewModeToggle value={viewMode} onChange={setViewMode} />
+        </div>
+      </Group>
       <QueryState
         query={query}
         isEmpty={(d) => d.outcomes.length === 0}
@@ -371,17 +406,22 @@ export function OstPage() {
         }
       >
         {(tree) => {
-          const ctx: Ctx = { tree, isPm, readOnly, setDialog, openSolution: setOpenId };
+          const ctx: OstCtx = { tree, isPm, readOnly, setDialog, openSolution: setOpenId };
           const open = tree.solutions.find((s) => s.id === openId);
           return (
             <Stack>
-              {tree.outcomes.map((o) => (
-                <OutcomeCard key={o.id} outcome={o} ctx={ctx} />
-              ))}
+              {viewMode === "table" ? (
+                <OstTable ctx={ctx} />
+              ) : (
+                <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
+                  {tree.outcomes.map((o) => (
+                    <OutcomeCard key={o.id} outcome={o} ctx={ctx} />
+                  ))}
+                </SimpleGrid>
+              )}
               {open ? (
                 <SolutionModal
                   solution={open}
-                  assumptions={tree.assumptions.filter((a) => a.solutionId === open.id)}
                   subprojects={subprojects.data ?? []}
                   defaultSubprojectId={
                     tree.outcomes.find(
@@ -463,7 +503,7 @@ export function OstPage() {
               createOpp.mutate(
                 {
                   outcomeId: dialog.outcomeId,
-                  input: { ...input, parentOpportunityId: dialog.parentId ?? null },
+                  input,
                 },
                 done,
               );

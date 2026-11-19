@@ -2,9 +2,7 @@ import {
   Alert,
   Button,
   Checkbox,
-  Drawer,
   Group,
-  Modal,
   NumberInput,
   Progress,
   Select,
@@ -37,7 +35,6 @@ import {
   useComments,
   useDependencies,
   useEvents,
-  useOstTree,
   useReleases,
   useStoryMap,
   useRemoveDependency,
@@ -58,6 +55,7 @@ import {
   toast,
 } from "./ui";
 import { useGovernedUpdate } from "./useGovernedUpdate";
+import { SideModal } from "./SideModal";
 
 const NONE = "__none__";
 const opt = (id: string | null | undefined) => id ?? NONE;
@@ -71,16 +69,15 @@ export function ActivityDrawer({
   onClose: () => void;
 }) {
   return (
-    <Drawer
+    <SideModal
       opened={!!activityId}
       onClose={onClose}
-      position="right"
       size="xl"
       title="Activity"
       aria-label="Activity details"
     >
       {activityId ? <DrawerBody id={activityId} /> : null}
-    </Drawer>
+    </SideModal>
   );
 }
 
@@ -217,7 +214,7 @@ export function GovernancePanels({
         </Alert>
       ) : null}
 
-      <Modal
+      <SideModal
         opened={gov.needsTrade}
         onClose={gov.clear}
         title="This sprint is active: one in, one out"
@@ -293,7 +290,7 @@ export function GovernancePanels({
             </Stack>
           ) : null}
         </Stack>
-      </Modal>
+      </SideModal>
     </>
   );
 }
@@ -392,7 +389,6 @@ function PmDetails({ activity }: { activity: ActivityDto }) {
   const sprints = useSprints(activity.projectId);
   const releases = useReleases(activity.projectId);
   const storyMap = useStoryMap(activity.subprojectId ?? undefined);
-  const ost = useOstTree(activity.projectId);
   const [form, setForm] = useState({
     title: activity.title,
     description: activity.description ?? "",
@@ -405,7 +401,6 @@ function PmDetails({ activity }: { activity: ActivityDto }) {
     sprintId: opt(activity.sprintId),
     releaseId: opt(activity.releaseId),
     userStoryId: opt(activity.userStoryId),
-    ostAssumptionId: opt(activity.ostAssumptionId),
     dueDate: activity.dueDate ?? "",
     percentComplete: activity.percentComplete as number | string,
   });
@@ -428,8 +423,6 @@ function PmDetails({ activity }: { activity: ActivityDto }) {
     if (unopt(form.releaseId) !== activity.releaseId) patch.releaseId = unopt(form.releaseId);
     if (unopt(form.userStoryId) !== activity.userStoryId)
       patch.userStoryId = unopt(form.userStoryId);
-    if (unopt(form.ostAssumptionId) !== activity.ostAssumptionId)
-      patch.ostAssumptionId = unopt(form.ostAssumptionId);
     if ((form.dueDate || null) !== activity.dueDate) patch.dueDate = form.dueDate || null;
     if (Number(form.percentComplete) !== activity.percentComplete)
       patch.percentComplete = Number(form.percentComplete);
@@ -457,7 +450,7 @@ function PmDetails({ activity }: { activity: ActivityDto }) {
         value={form.description}
         onChange={(e) => set("description", e.currentTarget.value)}
       />
-      <Group grow align="flex-start">
+      <Group className="side-modal-pair" grow align="flex-start">
         <Select
           label="Status"
           allowDeselect={false}
@@ -473,7 +466,7 @@ function PmDetails({ activity }: { activity: ActivityDto }) {
           data={ACTIVITY_PRIORITIES.map((s) => ({ value: s, label: ENUM_LABELS.priority[s] }))}
         />
       </Group>
-      <Group grow align="flex-start">
+      <Group className="side-modal-pair" grow align="flex-start">
         <Select
           label="Work type"
           allowDeselect={false}
@@ -503,9 +496,9 @@ function PmDetails({ activity }: { activity: ActivityDto }) {
         searchable
         value={form.subprojectId}
         onChange={(v) => set("subprojectId", v ?? NONE)}
-        data={pick(subs.data?.map((s) => ({ id: s.id, label: `${s.code} ${s.name}` })))}
+        data={pick(subs.data?.map((s) => ({ id: s.id, label: s.name })))}
       />
-      <Group grow align="flex-start">
+      <Group className="side-modal-pair" grow align="flex-start">
         <Select
           label="Sprint"
           value={form.sprintId}
@@ -524,7 +517,7 @@ function PmDetails({ activity }: { activity: ActivityDto }) {
           data={pick(releases.data?.map((r) => ({ id: r.id, label: r.name })))}
         />
       </Group>
-      <Group grow align="flex-start">
+      <Group className="side-modal-pair" grow align="flex-start">
         <Select
           label="User story"
           description={
@@ -540,21 +533,8 @@ function PmDetails({ activity }: { activity: ActivityDto }) {
             })),
           )}
         />
-        <Select
-          label="Assumption being tested"
-          description="For discovery work"
-          searchable
-          value={form.ostAssumptionId}
-          onChange={(v) => set("ostAssumptionId", v ?? NONE)}
-          data={pick(
-            ost.data?.assumptions.map((a) => {
-              const sol = ost.data?.solutions.find((x) => x.id === a.solutionId);
-              return { id: a.id, label: `${sol?.code ?? ""} ${a.statement.slice(0, 60)}` };
-            }),
-          )}
-        />
       </Group>
-      <Group grow align="flex-start">
+      <Group className="side-modal-pair" grow align="flex-start">
         <TextInput
           label="Due date"
           type="date"

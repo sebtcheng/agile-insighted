@@ -13,7 +13,6 @@ let f: Fixture;
 let pm: Agent;
 let member: Agent;
 let anon: Agent;
-let templateId: string;
 let backboneId: string;
 let stepId: string;
 let personaId: string;
@@ -31,11 +30,9 @@ beforeAll(async () => {
   pm = await loginAs(f.pm.email);
   member = await loginAs(f.m1.email);
   anon = request.agent(app);
-  templateId = json<{ id: string }>(
-    await pm
-      .post(`/api/projects/${f.project.id}/checklist-templates`)
-      .send({ kind: "ready", label: "Acceptance criteria written" }),
-  ).id;
+  await pm
+    .post(`/api/projects/${f.project.id}/checklist-templates`)
+    .send({ kind: "ready", label: "Acceptance criteria written" });
   backboneId = json<{ id: string }>(
     await pm.post(`/api/subprojects/${f.subA.id}/journey-steps`).send({ name: "Onboard" }),
   ).id;
@@ -125,13 +122,77 @@ describe("Story map API", () => {
     ]);
 
     const tick = await member
-      .put(`/api/stories/${story.id}/checklist/${templateId}`)
+      .put(`/api/stories/${story.id}/checklist/${story.dorItems[0]?.id}`)
       .send({ checked: true });
     expect(tick.status).toBe(200);
     const ok = await pm.patch(`/api/stories/${story.id}`).send({ sprintId: f.sprint.id });
     expect(ok.status).toBe(200);
     expect(json<StoryDto>(ok).sprintId).toBe(f.sprint.id);
     expect(json<StoryDto>(ok).readyChecked).toBe(1);
+    expect(json<StoryDto>(ok).dorItems.map((i) => i.isCompleted)).toEqual([true]);
+  });
+
+  it("returns each story's Definition of Ready items on the map payload, seeded from the project", async () => {
+    const story = await newStory();
+    const itemId = story.dorItems[0]?.id ?? "";
+    await member.put(`/api/stories/${story.id}/checklist/${itemId}`).send({ checked: true });
+    const map = json<StoryMapDto>(await pm.get(`/api/story-map?subprojectId=${f.subA.id}`));
+    const row = map.stories.find((s) => s.id === story.id);
+    expect(row?.dorItems.map((i) => [i.label, i.isCompleted])).toEqual([
+      ["Acceptance criteria written", true],
+    ]);
+    expect(row?.readyChecked).toBe(1);
+    expect(row?.readyTotal).toBe(1);
+    await member.put(`/api/stories/${story.id}/checklist/${itemId}`).send({ checked: false });
+    const after = json<StoryMapDto>(await pm.get(`/api/story-map?subprojectId=${f.subA.id}`));
+    expect(after.stories.find((s) => s.id === story.id)?.readyChecked).toBe(0);
+  });
+
+  it("adds, toggles and removes criteria and recalculates the readiness summary", async () => {
+    const story = await newStory();
+    const added = await member
+      .post(`/api/stories/${story.id}/dor-items`)
+      .send({ label: "Security reviewed" });
+    expect(added.status).toBe(201);
+    type Body = {
+      item: { id: string; label: string; sortOrder: number };
+      summary: { readyChecked: number; readyTotal: number; percent: number };
+    };
+    const body = json<Body>(added);
+    expect(body.item.label).toBe("Security reviewed");
+    expect(body.summary).toEqual({ readyChecked: 0, readyTotal: 2, percent: 0 });
+    const ticked = await member
+      .patch(`/api/stories/${story.id}/dor-items/${body.item.id}`)
+      .send({ isCompleted: true });
+    expect(json<Body>(ticked).summary).toEqual({ readyChecked: 1, readyTotal: 2, percent: 50 });
+    const map = json<StoryMapDto>(await pm.get(`/api/story-map?subprojectId=${f.subA.id}`));
+    expect(map.stories.find((s) => s.id === story.id)?.dorItems.map((i) => i.label)).toEqual([
+      "Acceptance criteria written",
+      "Security reviewed",
+    ]);
+    const removed = await member.delete(`/api/stories/${story.id}/dor-items/${body.item.id}`);
+    expect(json<Body>(removed).summary).toEqual({ readyChecked: 0, readyTotal: 1, percent: 0 });
+    expect(
+      (await member.post(`/api/stories/${story.id}/dor-items`).send({ label: "  " })).status,
+    ).toBe(400);
+  });
+
+  it("honours custom criteria on create and syncs the list on update", async () => {
+    const custom = await newStory({ dorItems: [{ label: "Only this" }] });
+    expect(custom.dorItems.map((i) => i.label)).toEqual(["Only this"]);
+    const synced = json<StoryDto>(
+      await pm.patch(`/api/stories/${custom.id}`).send({
+        dorItems: [
+          { id: custom.dorItems[0]?.id, label: "Renamed", isCompleted: true },
+          { label: "Brand new" },
+        ],
+      }),
+    );
+    expect(synced.dorItems.map((i) => [i.label, i.isCompleted])).toEqual([
+      ["Renamed", true],
+      ["Brand new", false],
+    ]);
+    expect(synced.readyTotal).toBe(2);
   });
 
   it("lets a PM override the gate with a reason that is logged", async () => {

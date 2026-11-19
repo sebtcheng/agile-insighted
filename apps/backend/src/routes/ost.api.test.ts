@@ -75,6 +75,7 @@ describe("OST API", () => {
     expect(o?.baselineValue).toBe(30);
     expect(o?.targetValue).toBe(24);
     expect(o?.subprojectCode).toBe("SUB-A");
+    expect(o?.subprojectName).toBeTruthy();
     expect(t.solutions.some((s) => s.id === sol.id)).toBe(true);
   });
 
@@ -91,72 +92,42 @@ describe("OST API", () => {
     expect(targeted.map((o) => o.id)).toEqual([other.id]);
   });
 
-  it("rejects a parent opportunity from another outcome", async () => {
+  it("has a flat Outcome > Opportunity > Solution tree with no nesting or assumptions", async () => {
+    const sol = await newSolution("Flat");
+    const t = (await tree()) as unknown as Record<string, unknown>;
+    expect(Object.keys(t).sort()).toEqual(["opportunities", "outcomes", "solutions"]);
+    const opp = (t.opportunities as Array<Record<string, unknown>>).find((o) => o.id === oppId);
+    expect(opp).toBeDefined();
+    expect("parentOpportunityId" in (opp ?? {})).toBe(false);
+    // The removed endpoints and fields are gone.
+    expect(
+      (await pm.post(`/api/ost/solutions/${sol.id}/assumptions`).send({ statement: "x" })).status,
+    ).toBe(404);
     const out2 = json<Id>(
       await pm.post(`/api/projects/${f.project.id}/ost/outcomes`).send({ title: "Second outcome" }),
     );
-    const res = await pm
-      .post(`/api/ost/outcomes/${out2.id}/opportunities`)
-      .send({ title: "Child", parentOpportunityId: oppId });
-    expect(res.status).toBe(404);
+    const child = json<Id>(
+      await pm
+        .post(`/api/ost/outcomes/${out2.id}/opportunities`)
+        .send({ title: "Top level", parentOpportunityId: oppId }),
+    );
+    const again = (await tree()).opportunities.find((o) => o.id === child.id);
+    expect(again?.outcomeId).toBe(out2.id);
   });
 
-  it("rolls the solution status up from the riskiest assumption", async () => {
-    const sol = await newSolution("Roll-up");
-    const a = json<Id>(
-      await member
-        .post(`/api/ost/solutions/${sol.id}/assumptions`)
-        .send({ statement: "Students will use it", category: "desirability" }),
-    );
-    // No riskiest assumption yet: stays planned even when the assumption is validated.
-    await member.patch(`/api/ost/assumptions/${a.id}`).send({ validationStatus: "validated" });
-    expect((await tree()).solutions.find((s) => s.id === sol.id)?.validationStatus).toBe("planned");
-
-    await pm.patch(`/api/ost/assumptions/${a.id}`).send({ isRiskiest: true });
+  it("lets only a PM mark a solution validated, which drives the convert gate", async () => {
+    const sol = await newSolution("Marked");
+    expect(
+      (await member.patch(`/api/ost/solutions/${sol.id}`).send({ validationStatus: "validated" }))
+        .status,
+    ).toBe(403);
+    const ok = await pm
+      .patch(`/api/ost/solutions/${sol.id}`)
+      .send({ validationStatus: "validated" });
+    expect(ok.status).toBe(200);
     expect((await tree()).solutions.find((s) => s.id === sol.id)?.validationStatus).toBe(
       "validated",
     );
-    await member.patch(`/api/ost/assumptions/${a.id}`).send({ validationStatus: "invalidated" });
-    expect((await tree()).solutions.find((s) => s.id === sol.id)?.validationStatus).toBe(
-      "invalidated",
-    );
-    await pm.delete(`/api/ost/assumptions/${a.id}`);
-    expect((await tree()).solutions.find((s) => s.id === sol.id)?.validationStatus).toBe("planned");
-  });
-
-  it("lets members record results but not change the statement or riskiest flag", async () => {
-    const sol = await newSolution("Member limits");
-    const a = json<Id>(
-      await member
-        .post(`/api/ost/solutions/${sol.id}/assumptions`)
-        .send({ statement: "Teachers have time", category: "feasibility" }),
-    );
-    expect(
-      (await member.patch(`/api/ost/assumptions/${a.id}`).send({ resultNotes: "5 of 6 agreed" }))
-        .status,
-    ).toBe(200);
-    expect(
-      (await member.patch(`/api/ost/assumptions/${a.id}`).send({ isRiskiest: true })).status,
-    ).toBe(403);
-    expect(
-      (await member.patch(`/api/ost/assumptions/${a.id}`).send({ statement: "x" })).status,
-    ).toBe(403);
-    expect((await member.delete(`/api/ost/assumptions/${a.id}`)).status).toBe(403);
-  });
-
-  it("moves the riskiest flag instead of failing on a second one", async () => {
-    const sol = await newSolution("Flag move");
-    const make = async (statement: string) =>
-      json<Id>(
-        await pm
-          .post(`/api/ost/solutions/${sol.id}/assumptions`)
-          .send({ statement, category: "viability", isRiskiest: true }),
-      );
-    const a = await make("First");
-    const b = await make("Second");
-    const mine = (await tree()).assumptions.filter((x) => x.solutionId === sol.id);
-    expect(mine.find((x) => x.id === a.id)?.isRiskiest).toBe(false);
-    expect(mine.find((x) => x.id === b.id)?.isRiskiest).toBe(true);
   });
 
   it("blocks converting an unvalidated solution, allows a logged PM override", async () => {
@@ -185,14 +156,7 @@ describe("OST API", () => {
 
   it("converts a validated solution into a backlog story and links it", async () => {
     const sol = await newSolution("Validated one");
-    const a = json<Id>(
-      await pm.post(`/api/ost/solutions/${sol.id}/assumptions`).send({
-        statement: "It works",
-        category: "usability",
-        isRiskiest: true,
-      }),
-    );
-    await member.patch(`/api/ost/assumptions/${a.id}`).send({ validationStatus: "validated" });
+    await pm.patch(`/api/ost/solutions/${sol.id}`).send({ validationStatus: "validated" });
     const res = await pm
       .post(`/api/ost/solutions/${sol.id}/convert`)
       .send({ subprojectId: f.subA.id });

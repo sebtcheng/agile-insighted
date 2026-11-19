@@ -1,15 +1,12 @@
 import {
-  ActionIcon,
   Badge,
-  Box,
   Button,
   Group,
-  Menu,
-  Modal,
   Paper,
-  ScrollArea,
   Select,
+  SimpleGrid,
   Stack,
+  Table,
   Text,
   Textarea,
   TextInput,
@@ -17,9 +14,10 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useDisclosure } from "@mantine/hooks";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { STORY_STATUS_LABELS, type JourneyStepDto, type StoryDto } from "@myapp/shared";
+import { StoryReadyChecklist } from "../components/StoryReadyChecklist";
 import {
   useCreatePersona,
   useCreateStep,
@@ -35,16 +33,51 @@ import {
 import { useIsPm } from "../auth";
 import { StoryModal } from "../components/StoryModal";
 import { PageHeader, QueryState, toast } from "../components/ui";
-
-const COL_WIDTH = 240;
+import { ViewModeToggle } from "../components/ViewModeToggle";
+import { useViewMode } from "../lib/viewMode";
+import { SideModal } from "../components/SideModal";
+import { CompletionMeter } from "../components/CompletionMeter";
 
 type Column = { key: string; backbone: JourneyStepDto; step: JourneyStepDto | null };
 
-function StoryCard({ story, onOpen }: { story: StoryDto; onOpen: (s: StoryDto) => void }) {
-  const ready = story.readyTotal === 0 || story.readyChecked >= story.readyTotal;
+/** One-click "Mark complete" for a story; disabled once done. */
+function CompleteButton({ story, disabled }: { story: StoryDto; disabled?: boolean }) {
+  const update = useUpdateStory();
+  const done = story.status === "completed";
   return (
-    <UnstyledButton onClick={() => onOpen(story)} w="100%" aria-label={`Open ${story.code}`}>
-      <Paper withBorder p="xs" radius="sm">
+    <Button
+      size="compact-xs"
+      variant={done ? "light" : "default"}
+      color={done ? "teal" : undefined}
+      disabled={done || disabled}
+      loading={update.isPending}
+      aria-label={done ? `${story.code} is completed` : `Mark ${story.code} complete`}
+      onClick={(e) => {
+        e.stopPropagation();
+        update.mutate(
+          { id: story.id, patch: { status: "completed" } },
+          { onError: (err) => toast.error(err.message) },
+        );
+      }}
+    >
+      {done ? "Completed" : "Mark complete"}
+    </Button>
+  );
+}
+
+/** Compact grid card: code, title, badges and completion. Steps live in the slide-over. */
+function StoryCard({
+  story,
+  onOpen,
+  context,
+}: {
+  story: StoryDto;
+  onOpen: (s: StoryDto) => void;
+  context?: string | null;
+}) {
+  return (
+    <Paper withBorder p="xs" radius="sm" h="100%">
+      <UnstyledButton onClick={() => onOpen(story)} w="100%" aria-label={`Open ${story.code}`}>
         <Group justify="space-between" gap={4} wrap="nowrap">
           <Text size="xs" fw={700}>
             {story.code}
@@ -60,21 +93,230 @@ function StoryCard({ story, onOpen }: { story: StoryDto; onOpen: (s: StoryDto) =
             </Badge>
           </Group>
         </Group>
-        <Text size="sm" lineClamp={3} mt={4}>
+        <Text size="sm" lineClamp={2} mt={4}>
           {story.story}
         </Text>
-        <Group justify="space-between" mt={6} gap={4}>
-          <Text size="xs" c="dimmed" lineClamp={1}>
+        <Text size="xs" c="dimmed" lineClamp={1} mt={4}>
+          {story.personaName ?? "No persona"}
+          {context ? ` · ${context}` : ""}
+        </Text>
+        <div style={{ marginTop: "var(--mantine-spacing-xs)" }}>
+          <CompletionMeter done={story.readyChecked} total={story.readyTotal} />
+        </div>
+      </UnstyledButton>
+    </Paper>
+  );
+}
+
+/** Slide-over with the story's readiness steps (tickable), status and ordering actions. */
+function StoryDrawer({
+  story,
+  context,
+  subprojectId,
+  canAct,
+  cell,
+  canReorder,
+  onMove,
+  onEdit,
+  onClose,
+}: {
+  story: StoryDto;
+  context: string | null;
+  subprojectId: string;
+  canAct: boolean;
+  cell: StoryDto[];
+  canReorder: boolean;
+  onMove: (cell: StoryDto[], index: number, dir: -1 | 1) => void;
+  onEdit: (s: StoryDto) => void;
+  onClose: () => void;
+}) {
+  const idx = cell.findIndex((x) => x.id === story.id);
+  return (
+    <SideModal opened onClose={onClose} title={`${story.code}`} size="lg">
+      <Stack gap="md">
+        <div>
+          <Group gap={6}>
+            <Badge size="sm" variant="light">
+              {STORY_STATUS_LABELS[story.status]}
+            </Badge>
+            {story.storyPoints ? (
+              <Badge size="sm" variant="outline" color="gray">
+                {story.storyPoints} SP
+              </Badge>
+            ) : null}
+          </Group>
+          <Text mt="xs">{story.story}</Text>
+          <Text size="xs" c="dimmed" mt={4}>
             {story.personaName ?? "No persona"}
+            {context ? ` · ${context}` : ""}
           </Text>
-          {story.readyTotal > 0 ? (
-            <Text size="xs" c={ready ? "teal" : "dimmed"}>
-              Ready {story.readyChecked}/{story.readyTotal}
-            </Text>
+        </div>
+        <CompletionMeter done={story.readyChecked} total={story.readyTotal} />
+        <StoryReadyChecklist story={story} subprojectId={subprojectId} canTick={canAct} />
+        <Group gap="xs">
+          <CompleteButton story={story} disabled={!canAct} />
+          <Button
+            size="compact-xs"
+            variant="default"
+            disabled={!canAct}
+            onClick={() => onEdit(story)}
+          >
+            Edit
+          </Button>
+          {canReorder && cell.length > 1 ? (
+            <>
+              <Button
+                size="compact-xs"
+                variant="subtle"
+                color="gray"
+                disabled={idx <= 0}
+                aria-label={`Move ${story.code} up`}
+                onClick={() => onMove(cell, idx, -1)}
+              >
+                ▲ Move up
+              </Button>
+              <Button
+                size="compact-xs"
+                variant="subtle"
+                color="gray"
+                disabled={idx === cell.length - 1}
+                aria-label={`Move ${story.code} down`}
+                onClick={() => onMove(cell, idx, 1)}
+              >
+                ▼ Move down
+              </Button>
+            </>
           ) : null}
         </Group>
-      </Paper>
-    </UnstyledButton>
+      </Stack>
+    </SideModal>
+  );
+}
+
+function StoryTable({
+  stories,
+  stepNames,
+  releaseNames,
+  onOpen,
+  subprojectId,
+  canAct,
+}: {
+  stories: StoryDto[];
+  stepNames: Map<string, string>;
+  releaseNames: Map<string, string>;
+  onOpen: (s: StoryDto) => void;
+  subprojectId: string;
+  canAct: boolean;
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const flip = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  return (
+    <Table.ScrollContainer minWidth={900}>
+      <Table verticalSpacing="xs" highlightOnHover>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>ID</Table.Th>
+            <Table.Th>Story</Table.Th>
+            <Table.Th>Step</Table.Th>
+            <Table.Th>Release</Table.Th>
+            <Table.Th>Persona</Table.Th>
+            <Table.Th>Status</Table.Th>
+            <Table.Th ta="right">SP</Table.Th>
+            <Table.Th>Ready</Table.Th>
+            <Table.Th />
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {stories.map((s) => {
+            const ready = s.readyTotal === 0 || s.readyChecked >= s.readyTotal;
+            return (
+              <Fragment key={s.id}>
+                <Table.Tr style={{ cursor: "pointer" }} onClick={() => onOpen(s)}>
+                  <Table.Td>
+                    <Text size="sm" fw={600}>
+                      {s.code}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td maw={380}>
+                    <Text size="sm" lineClamp={2}>
+                      {s.story}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    {(s.journeyStepId && stepNames.get(s.journeyStepId)) || (
+                      <Text size="sm" c="dimmed">
+                        Not on the map
+                      </Text>
+                    )}
+                  </Table.Td>
+                  <Table.Td>
+                    {(s.releaseId && releaseNames.get(s.releaseId)) || (
+                      <Text size="sm" c="dimmed">
+                        Unplanned
+                      </Text>
+                    )}
+                  </Table.Td>
+                  <Table.Td>{s.personaName ?? <Text c="dimmed">No persona</Text>}</Table.Td>
+                  <Table.Td>
+                    <Badge size="sm" variant="light">
+                      {STORY_STATUS_LABELS[s.status]}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td ta="right">{s.storyPoints ?? "–"}</Table.Td>
+                  <Table.Td>
+                    {s.readyTotal > 0 ? (
+                      <Button
+                        size="compact-xs"
+                        variant="subtle"
+                        color={ready ? "teal" : "gray"}
+                        aria-expanded={expanded.has(s.id)}
+                        aria-label={`${expanded.has(s.id) ? "Hide" : "Show"} readiness steps for ${s.code}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          flip(s.id);
+                        }}
+                      >
+                        {s.readyChecked}/{s.readyTotal} {expanded.has(s.id) ? "▴" : "▾"}
+                      </Button>
+                    ) : (
+                      "–"
+                    )}
+                  </Table.Td>
+                  <Table.Td>
+                    <Group gap={6} wrap="nowrap">
+                      <CompleteButton story={s} disabled={!canAct} />
+                      <Button
+                        size="compact-xs"
+                        variant="default"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpen(s);
+                        }}
+                      >
+                        Open
+                      </Button>
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+                {expanded.has(s.id) ? (
+                  <Table.Tr>
+                    <Table.Td />
+                    <Table.Td colSpan={8}>
+                      <StoryReadyChecklist story={s} subprojectId={subprojectId} canTick={canAct} />
+                    </Table.Td>
+                  </Table.Tr>
+                ) : null}
+              </Fragment>
+            );
+          })}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
   );
 }
 
@@ -87,42 +329,44 @@ function StepHeader({ step, isPm, label }: { step: JourneyStepDto; isPm: boolean
         {label}
       </Text>
       {isPm ? (
-        <Menu position="bottom-end" withinPortal>
-          <Menu.Target>
-            <ActionIcon variant="subtle" color="gray" size="sm" aria-label={`Options for ${label}`}>
-              ⋯
-            </ActionIcon>
-          </Menu.Target>
-          <Menu.Dropdown>
-            <Menu.Item
-              onClick={() => {
-                const name = window.prompt("Rename", step.name)?.trim();
-                if (name && name !== step.name) {
-                  update.mutate(
-                    { id: step.id, patch: { name } },
-                    { onError: (e) => toast.error(e.message) },
-                  );
-                }
-              }}
-            >
-              Rename
-            </Menu.Item>
-            <Menu.Item
-              color="red"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Delete "${step.name}"${step.parentStepId ? "" : " and its steps"}? Stories stay in the backlog as unmapped.`,
-                  )
-                ) {
-                  remove.mutate(step.id, { onError: (e) => toast.error(e.message) });
-                }
-              }}
-            >
-              Delete
-            </Menu.Item>
-          </Menu.Dropdown>
-        </Menu>
+        <Group gap={2} wrap="nowrap" role="group" aria-label={`Edit actions for ${label}`}>
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            color="gray"
+            className="usm-action"
+            aria-label={`Rename ${label}`}
+            onClick={() => {
+              const name = window.prompt("Rename", step.name)?.trim();
+              if (name && name !== step.name) {
+                update.mutate(
+                  { id: step.id, patch: { name } },
+                  { onError: (e) => toast.error(e.message) },
+                );
+              }
+            }}
+          >
+            Rename
+          </Button>
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            color="red"
+            className="usm-action"
+            aria-label={`Delete ${label}`}
+            onClick={() => {
+              if (
+                window.confirm(
+                  `Delete "${step.name}"${step.parentStepId ? "" : " and its steps"}? Stories stay in the backlog as unmapped.`,
+                )
+              ) {
+                remove.mutate(step.id, { onError: (e) => toast.error(e.message) });
+              }
+            }}
+          >
+            Delete
+          </Button>
+        </Group>
       ) : null}
     </Group>
   );
@@ -145,7 +389,7 @@ function AddStepModal({
     validate: { name: (v) => (v.trim() ? null : "Enter a name") },
   });
   return (
-    <Modal opened={opened} onClose={onClose} title="Add to the map">
+    <SideModal opened={opened} onClose={onClose} title="Add to the map">
       <form
         onSubmit={form.onSubmit((v) =>
           create.mutate(
@@ -170,7 +414,7 @@ function AddStepModal({
             {...form.getInputProps("parentStepId")}
           />
           <TextInput label="Name" data-autofocus {...form.getInputProps("name")} />
-          <Group justify="flex-end">
+          <Group justify="flex-end" className="side-modal-footer">
             <Button variant="default" onClick={onClose}>
               Cancel
             </Button>
@@ -180,7 +424,7 @@ function AddStepModal({
           </Group>
         </Stack>
       </form>
-    </Modal>
+    </SideModal>
   );
 }
 
@@ -199,7 +443,7 @@ function AddPersonaModal({
     validate: { name: (v) => (v.trim() ? null : "Enter a name") },
   });
   return (
-    <Modal opened={opened} onClose={onClose} title="Add persona">
+    <SideModal opened={opened} onClose={onClose} title="Add persona">
       <form
         onSubmit={form.onSubmit((v) =>
           create.mutate(
@@ -222,7 +466,7 @@ function AddPersonaModal({
             minRows={2}
             {...form.getInputProps("description")}
           />
-          <Group justify="flex-end">
+          <Group justify="flex-end" className="side-modal-footer">
             <Button variant="default" onClick={onClose}>
               Cancel
             </Button>
@@ -232,12 +476,13 @@ function AddPersonaModal({
           </Group>
         </Stack>
       </form>
-    </Modal>
+    </SideModal>
   );
 }
 
 export function StoryMapPage() {
   const isPm = useIsPm();
+  const [viewMode, setViewMode] = useViewMode("card");
   const [params, setParams] = useSearchParams();
   const { project } = useCurrentProject();
   const subprojects = useSubprojects(project?.id);
@@ -251,6 +496,7 @@ export function StoryMapPage() {
     stepId: null,
     releaseId: null,
   });
+  const [openStoryId, setOpenStoryId] = useState<string | null>(null);
   const [storyOpen, story] = useDisclosure(false);
   const [stepOpen, stepModal] = useDisclosure(false);
   const [personaOpen, personaModal] = useDisclosure(false);
@@ -335,16 +581,23 @@ export function StoryMapPage() {
           </>
         }
       />
-      <Select
-        label="Subproject"
-        w={280}
-        mb="md"
-        allowDeselect={false}
-        placeholder="Choose a subproject"
-        data={(subprojects.data ?? []).map((s) => ({ value: s.id, label: `${s.code} ${s.name}` }))}
-        value={subprojectId ?? null}
-        onChange={select}
-      />
+      <Group mb="md" align="flex-end" wrap="wrap">
+        <Select
+          label="Subproject"
+          w={280}
+          allowDeselect={false}
+          placeholder="Choose a subproject"
+          data={(subprojects.data ?? []).map((s) => ({
+            value: s.id,
+            label: s.name,
+          }))}
+          value={subprojectId ?? null}
+          onChange={select}
+        />
+        <div style={{ marginInlineStart: "auto" }}>
+          <ViewModeToggle value={viewMode} onChange={setViewMode} />
+        </div>
+      </Group>
       {!subprojectId ? (
         <Text c="dimmed">Create a subproject first to start a story map.</Text>
       ) : (
@@ -361,141 +614,118 @@ export function StoryMapPage() {
             const unmapped = data.stories.filter(
               (s) => !s.journeyStepId || !layout.leafIds.has(s.journeyStepId),
             );
+            if (viewMode === "table") {
+              return (
+                <StoryTable
+                  stories={data.stories}
+                  stepNames={new Map(data.steps.map((x) => [x.id, x.name]))}
+                  releaseNames={new Map((releases.data ?? []).map((r) => [r.id, r.name]))}
+                  onOpen={(x) => openStory(x)}
+                  subprojectId={subprojectId}
+                  canAct={!readOnly}
+                />
+              );
+            }
+            const stepLabel = (id: string | null) => {
+              const st = data.steps.find((x) => x.id === id);
+              if (!st) return null;
+              const bb = st.parentStepId ? data.steps.find((x) => x.id === st.parentStepId) : null;
+              return bb ? `${bb.name} › ${st.name}` : st.name;
+            };
+            const cellOf = (s: StoryDto) =>
+              data.stories.filter(
+                (x) => x.journeyStepId === s.journeyStepId && x.releaseId === s.releaseId,
+              );
+            const openStoryDto = data.stories.find((x) => x.id === openStoryId);
+            const cardGrid = (list: StoryDto[]) => (
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
+                {list.map((s) => (
+                  <StoryCard
+                    key={s.id}
+                    story={s}
+                    context={stepLabel(s.journeyStepId)}
+                    onOpen={(x) => setOpenStoryId(x.id)}
+                  />
+                ))}
+              </SimpleGrid>
+            );
             return (
               <Stack gap="lg">
-                {layout.columns.length > 0 ? (
-                  <ScrollArea type="auto" offsetScrollbars>
-                    <Box
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: `repeat(${layout.columns.length}, ${COL_WIDTH}px)`,
-                        gap: 8,
-                        width: "max-content",
-                      }}
-                    >
-                      {layout.columns.map((c, i) => {
-                        const first =
-                          layout.columns.findIndex((x) => x.backbone.id === c.backbone.id) === i;
-                        const span = layout.columns.filter(
-                          (x) => x.backbone.id === c.backbone.id,
-                        ).length;
-                        return first ? (
-                          <Paper
-                            key={`b-${c.backbone.id}`}
-                            withBorder
-                            p="xs"
-                            bg="var(--mantine-color-gray-light)"
-                            style={{ gridColumn: `span ${span}`, gridRow: 1 }}
-                          >
-                            <StepHeader
-                              step={c.backbone}
-                              isPm={isPm && !readOnly}
-                              label={c.backbone.name}
-                            />
-                          </Paper>
-                        ) : null;
+                {layout.columns.map((c, i) => {
+                  const firstOfBackbone =
+                    layout.columns.findIndex((x) => x.backbone.id === c.backbone.id) === i;
+                  return (
+                    <Stack key={c.key} gap="xs">
+                      {firstOfBackbone ? (
+                        <Paper withBorder p="xs" bg="var(--mantine-color-gray-light)">
+                          <StepHeader
+                            step={c.backbone}
+                            isPm={isPm && !readOnly}
+                            label={c.backbone.name}
+                          />
+                        </Paper>
+                      ) : null}
+                      {c.step ? (
+                        <StepHeader step={c.step} isPm={isPm && !readOnly} label={c.step.name} />
+                      ) : (
+                        <Text size="xs" c="dimmed">
+                          No steps yet
+                        </Text>
+                      )}
+                      {lanes.map((lane) => {
+                        const cell = data.stories.filter(
+                          (s) => s.journeyStepId === c.key && s.releaseId === lane.id,
+                        );
+                        if (cell.length === 0 && readOnly) return null;
+                        return (
+                          <Stack key={`${lane.id}-${c.key}`} gap={6}>
+                            <Group gap="xs">
+                              <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+                                {lane.name}
+                              </Text>
+                              {lane.isMvp ? <Badge size="xs">MVP</Badge> : null}
+                              {!readOnly ? (
+                                <Button
+                                  size="compact-xs"
+                                  variant="light"
+                                  color="blue"
+                                  onClick={() => openStory(undefined, c.key, lane.id)}
+                                  aria-label={`Add story to ${c.step?.name ?? c.backbone.name}, ${lane.name}`}
+                                >
+                                  + Story
+                                </Button>
+                              ) : null}
+                            </Group>
+                            {cell.length > 0 ? cardGrid(cell) : null}
+                          </Stack>
+                        );
                       })}
-                      {layout.columns.map((c) => (
-                        <Box key={`s-${c.key}`} style={{ gridRow: 2 }} px={4}>
-                          {c.step ? (
-                            <StepHeader
-                              step={c.step}
-                              isPm={isPm && !readOnly}
-                              label={c.step.name}
-                            />
-                          ) : (
-                            <Text size="xs" c="dimmed">
-                              No steps yet
-                            </Text>
-                          )}
-                        </Box>
-                      ))}
-                      {lanes.map((lane, li) => (
-                        <Box key={lane.id ?? "none"} style={{ display: "contents" }}>
-                          <Group
-                            gap="xs"
-                            style={{ gridColumn: "1 / -1", gridRow: 3 + li * 2 }}
-                            mt="sm"
-                          >
-                            <Text size="xs" fw={700} tt="uppercase" c="dimmed">
-                              {lane.name}
-                            </Text>
-                            {lane.isMvp ? <Badge size="xs">MVP</Badge> : null}
-                          </Group>
-                          {layout.columns.map((c) => {
-                            const cell = data.stories.filter(
-                              (s) => s.journeyStepId === c.key && s.releaseId === lane.id,
-                            );
-                            return (
-                              <Stack
-                                key={`${lane.id}-${c.key}`}
-                                gap={6}
-                                style={{ gridRow: 4 + li * 2 }}
-                                mih={40}
-                              >
-                                {cell.map((s, idx) => (
-                                  <Group key={s.id} gap={2} wrap="nowrap" align="flex-start">
-                                    <Box style={{ flex: 1, minWidth: 0 }}>
-                                      <StoryCard story={s} onOpen={(x) => openStory(x)} />
-                                    </Box>
-                                    {isPm && !readOnly && cell.length > 1 ? (
-                                      <Stack gap={2}>
-                                        <ActionIcon
-                                          variant="subtle"
-                                          color="gray"
-                                          size="xs"
-                                          disabled={idx === 0}
-                                          aria-label={`Move ${s.code} up`}
-                                          onClick={() => moveStory(cell, idx, -1)}
-                                        >
-                                          ▲
-                                        </ActionIcon>
-                                        <ActionIcon
-                                          variant="subtle"
-                                          color="gray"
-                                          size="xs"
-                                          disabled={idx === cell.length - 1}
-                                          aria-label={`Move ${s.code} down`}
-                                          onClick={() => moveStory(cell, idx, 1)}
-                                        >
-                                          ▼
-                                        </ActionIcon>
-                                      </Stack>
-                                    ) : null}
-                                  </Group>
-                                ))}
-                                {!readOnly ? (
-                                  <Button
-                                    size="compact-xs"
-                                    variant="subtle"
-                                    color="gray"
-                                    onClick={() => openStory(undefined, c.key, lane.id)}
-                                    aria-label={`Add story to ${c.step?.name ?? c.backbone.name}, ${lane.name}`}
-                                  >
-                                    + Story
-                                  </Button>
-                                ) : null}
-                              </Stack>
-                            );
-                          })}
-                        </Box>
-                      ))}
-                    </Box>
-                  </ScrollArea>
-                ) : null}
+                    </Stack>
+                  );
+                })}
                 {unmapped.length > 0 ? (
                   <div>
                     <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb={6}>
                       Not on the map yet ({unmapped.length})
                     </Text>
-                    <Group align="flex-start" gap="xs">
-                      {unmapped.map((s) => (
-                        <Box key={s.id} w={COL_WIDTH}>
-                          <StoryCard story={s} onOpen={(x) => openStory(x)} />
-                        </Box>
-                      ))}
-                    </Group>
+                    {cardGrid(unmapped)}
                   </div>
+                ) : null}
+                {openStoryDto ? (
+                  <StoryDrawer
+                    story={openStoryDto}
+                    context={stepLabel(openStoryDto.journeyStepId)}
+                    subprojectId={subprojectId}
+                    canAct={!readOnly}
+                    cell={cellOf(openStoryDto)}
+                    canReorder={isPm && !readOnly && !!openStoryDto.journeyStepId}
+                    onMove={moveStory}
+                    onEdit={(x) => {
+                      setOpenStoryId(null);
+                      openStory(x);
+                    }}
+                    onClose={() => setOpenStoryId(null)}
+                  />
                 ) : null}
               </Stack>
             );

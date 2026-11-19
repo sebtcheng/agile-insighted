@@ -6,10 +6,8 @@ import {
   checklistTemplates,
   journeySteps,
   kanoRequests,
-  ostAssumptions,
   ostOpportunities,
   ostOutcomes,
-  ostSolutions,
   personas,
   raidItems,
   releases,
@@ -83,23 +81,6 @@ describe("OST constraints", () => {
     // A different outcome may have its own targeted opportunity.
     const other = await m.createOutcome({ ...k, title: "Other outcome" });
     await db.insert(ostOpportunities).values({ ...base, outcomeId: other.id, title: "Elsewhere" });
-  });
-
-  it("rejects a second riskiest assumption per solution", async () => {
-    const outcome = await m.createOutcome({ ...k, title: "O" });
-    const opp = await m.createOpportunity({ ...k, outcomeId: outcome.id, title: "Opp" });
-    const sol = await m.createSolution({ ...k, opportunityId: opp.id, title: "Sol" });
-    const base = {
-      ...k,
-      solutionId: sol.id,
-      statement: "s",
-      category: "desirability" as const,
-      isRiskiest: true,
-    };
-    await db.insert(ostAssumptions).values(base);
-    expect(await rejectedBy(db.insert(ostAssumptions).values(base))).toBe(
-      "ost_assumptions_one_riskiest_per_solution",
-    );
   });
 });
 
@@ -429,92 +410,6 @@ describe("sequence assignment under concurrency", () => {
       .from(kanoRequests)
       .where(eq(kanoRequests.description, "rolled back"));
     expect(rows).toHaveLength(0);
-  });
-});
-
-describe("OST validation roll-up", () => {
-  it("is validated only when the riskiest assumption is validated (pure function)", () => {
-    expect(m.computeSolutionValidation([{ isRiskiest: true, validationStatus: "validated" }])).toBe(
-      "validated",
-    );
-    expect(
-      m.computeSolutionValidation([
-        { isRiskiest: true, validationStatus: "validated" },
-        { isRiskiest: false, validationStatus: "invalidated" },
-      ]),
-    ).toBe("validated");
-    expect(
-      m.computeSolutionValidation([
-        { isRiskiest: false, validationStatus: "validated" },
-        { isRiskiest: true, validationStatus: "planned" },
-      ]),
-    ).toBe("planned");
-  });
-  it("is invalidated if the riskiest assumption is invalidated", () => {
-    expect(
-      m.computeSolutionValidation([{ isRiskiest: true, validationStatus: "invalidated" }]),
-    ).toBe("invalidated");
-  });
-  it("stays planned with no riskiest assumption, even if others are validated", () => {
-    expect(m.computeSolutionValidation([])).toBe("planned");
-    expect(
-      m.computeSolutionValidation([
-        { isRiskiest: false, validationStatus: "validated" },
-        { isRiskiest: false, validationStatus: "validated" },
-      ]),
-    ).toBe("planned");
-  });
-  it("mirrors an in-progress riskiest assumption", () => {
-    expect(
-      m.computeSolutionValidation([{ isRiskiest: true, validationStatus: "in_progress" }]),
-    ).toBe("in_progress");
-  });
-
-  it("keeps the stored solution status in step with assumption changes, in the same transaction", async () => {
-    const outcome = await m.createOutcome({ ...k, title: "Rollup" });
-    const opp = await m.createOpportunity({ ...k, outcomeId: outcome.id, title: "Opp" });
-    const sol = await m.createSolution({ ...k, opportunityId: opp.id, title: "Sol" });
-    const status = async () =>
-      (await db.select().from(ostSolutions).where(eq(ostSolutions.id, sol.id)))[0]
-        ?.validationStatus;
-
-    const a1 = await m.createAssumption({
-      ...k,
-      solutionId: sol.id,
-      statement: "a1",
-      category: "desirability",
-      isRiskiest: true,
-    });
-    const a2 = await m.createAssumption({
-      ...k,
-      solutionId: sol.id,
-      statement: "a2",
-      category: "feasibility",
-    });
-    expect(await status()).toBe("planned");
-
-    await m.updateAssumption(a2.id, { validationStatus: "validated" });
-    expect(await status()).toBe("planned"); // not the riskiest
-    await m.updateAssumption(a1.id, { validationStatus: "validated" });
-    expect(await status()).toBe("validated");
-
-    await m.updateAssumption(a2.id, { isRiskiest: true }); // moves the riskiest flag to a2 (validated)
-    const flags = await m.listSolutionAssumptions(sol.id);
-    expect(flags.filter((a) => a.isRiskiest).map((a) => a.id)).toEqual([a2.id]);
-    await m.updateAssumption(a2.id, { validationStatus: "invalidated" });
-    expect(await status()).toBe("invalidated");
-
-    await m.deleteAssumption(a2.id);
-    expect(await status()).toBe("planned");
-
-    // A failure after the assumption change rolls the roll-up back too.
-    await db
-      .transaction(async (tx) => {
-        await m.updateAssumption(a1.id, { isRiskiest: true, validationStatus: "invalidated" }, tx);
-        throw new Error("abort");
-      })
-      .catch(() => undefined);
-    expect(await status()).toBe("planned");
   });
 });
 

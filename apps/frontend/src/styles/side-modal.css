@@ -1,0 +1,137 @@
+/* Shared styling for every side modal (slide-over drawer). Reference: "Add RAID item". */
+:root {
+  --shadow-left-md: -8px 0 24px rgba(15, 23, 42, 0.14), -2px 0 6px rgba(15, 23, 42, 0.08);
+}
+
+.side-modal {
+  position: relative;
+  background: #fff;
+  box-shadow: var(--shadow-left-md);
+  font-family: var(--font-body);
+  --mantine-color-dimmed: var(--text-secondary);
+  --input-placeholder-color: var(--text-secondary);
+}
+/* Dual accent bar along the top edge. */
+.side-modal::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  z-index: 3;
+  background: linear-gradient(90deg, var(--accent-left) 50%, var(--accent-right) 50%);
+  pointer-events: none;
+}
+
+.side-modal-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-muted);
+  background: #fff;
+}
+.side-modal-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+.side-modal-close {
+  border-radius: 4px;
+  transition: var(--ui-transition);
+}
+.side-modal-body {
+  padding: 16px;
+}
+
+/* Footer pinned to the bottom of the scrolling drawer, full-bleed over the body padding. */
+.side-modal .side-modal-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 16px -16px -16px;
+  padding: 12px 16px;
+  background: #fff;
+  border-top: 1px solid var(--border-muted);
+}
+
+/* Labels and controls. */
+.side-modal .mantine-InputWrapper-label,
+.side-modal .mantine-Checkbox-label.side-modal-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.side-modal .mantine-Input-input,
+.side-modal .mantine-Select-input,
+.side-modal .mantine-Textarea-input,
+.side-modal .mantine-TextInput-input {
+  background: #fff;
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+  font-family: var(--font-body);
+  transition: var(--ui-transition);
+}
+.side-modal input[type="date"] {
+  font-family: var(--font-mono);
+}
+.side-modal .mantine-Input-input::placeholder,
+.side-modal .mantine-Textarea-input::placeholder {
+  color: var(--text-secondary);
+}
+.side-modal .mantine-Input-input:focus,
+.side-modal .mantine-Input-input:focus-within,
+.side-modal .mantine-Select-input:focus,
+.side-modal .mantine-Textarea-input:focus {
+  border-color: var(--brand-primary);
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 0;
+}
+.side-modal .mantine-Button-root:focus-visible,
+.side-modal .mantine-Checkbox-input:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+.side-modal .mantine-Select-option,
+.side-modal .mantine-Combobox-option {
+  font-family: var(--font-body);
+  transition: var(--ui-transition);
+}
+
+/* Buttons. */
+.side-modal .mantine-Button-root {
+  font-family: var(--font-display);
+  border-radius: 6px;
+  transition: var(--ui-transition);
+}
+.side-modal .mantine-Button-root[data-variant="default"] {
+  background: #fff;
+  border: 1px solid var(--border-muted);
+  color: inherit;
+}
+.side-modal .mantine-Button-root[type="submit"],
+.side-modal .mantine-Button-root[data-variant="filled"] {
+  --button-bg: var(--brand-primary);
+  --button-hover: var(--nav-gradient-mid);
+  --button-color: #fff;
+  background: var(--brand-primary);
+  color: #fff;
+}
+.side-modal .mantine-Button-root[type="submit"]:hover:not(:disabled),
+.side-modal .mantine-Button-root[data-variant="filled"]:hover:not(:disabled) {
+  background: var(--nav-gradient-mid);
+}
+.side-modal .side-modal-inline-btn {
+  border-radius: 4px;
+}
+
+/* Paired fields: equal columns with the same gutter as the stacked groups. */
+.side-modal .side-modal-pair {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+.side-modal .mantine-SimpleGrid-root {
+  gap: 16px;
+}
+/* Empty-state copy reads as one unit with the button beneath it. */
+.side-modal .side-modal-empty {
+  margin-bottom: -4px;
+}

@@ -6,7 +6,6 @@ import {
   Card,
   Checkbox,
   Group,
-  Modal,
   NumberInput,
   PasswordInput,
   Select,
@@ -42,6 +41,7 @@ import {
 } from "../api/hooks";
 import { useAuth, useIsPm } from "../auth";
 import { PageHeader, QueryState, fmtDateTime, toast } from "../components/ui";
+import { SideModal } from "../components/SideModal";
 
 export function SettingsPage() {
   const isPm = useIsPm();
@@ -107,7 +107,7 @@ function UsersPanel() {
   });
   return (
     <Stack>
-      <Group justify="flex-end">
+      <Group justify="flex-end" className="side-modal-footer">
         <Button onClick={open}>New user</Button>
       </Group>
       <QueryState query={users} isEmpty={(d) => d.length === 0}>
@@ -189,7 +189,7 @@ function UsersPanel() {
         )}
       </QueryState>
 
-      <Modal opened={opened} onClose={close} title="New user">
+      <SideModal opened={opened} onClose={close} title="New user">
         <form
           onSubmit={form.onSubmit((v) =>
             create.mutate(v, {
@@ -216,7 +216,7 @@ function UsersPanel() {
               data={USER_ROLES.map((r) => ({ value: r, label: ENUM_LABELS.role[r] }))}
               {...form.getInputProps("role")}
             />
-            <Group justify="flex-end">
+            <Group justify="flex-end" className="side-modal-footer">
               <Button variant="default" onClick={close}>
                 Cancel
               </Button>
@@ -226,9 +226,9 @@ function UsersPanel() {
             </Group>
           </Stack>
         </form>
-      </Modal>
+      </SideModal>
 
-      <Modal
+      <SideModal
         opened={!!resetFor}
         onClose={() => {
           setResetFor(null);
@@ -246,7 +246,7 @@ function UsersPanel() {
             value={newPassword}
             onChange={(e) => setNewPassword(e.currentTarget.value)}
           />
-          <Group justify="flex-end">
+          <Group justify="flex-end" className="side-modal-footer">
             <Button
               disabled={newPassword.length < 10}
               loading={update.isPending}
@@ -269,7 +269,7 @@ function UsersPanel() {
             </Button>
           </Group>
         </Stack>
-      </Modal>
+      </SideModal>
     </Stack>
   );
 }

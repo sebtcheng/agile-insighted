@@ -1,9 +1,9 @@
 import {
   Badge,
   Button,
+  Card,
   Checkbox,
   Group,
-  Modal,
   NumberInput,
   Select,
   SimpleGrid,
@@ -42,6 +42,9 @@ import {
 } from "../api/hooks";
 import { useAuth, useIsPm } from "../auth";
 import { PageHeader, QueryState, toast } from "../components/ui";
+import { SideModal } from "../components/SideModal";
+import { ViewModeToggle } from "../components/ViewModeToggle";
+import { useViewMode } from "../lib/viewMode";
 
 const CATEGORY_OPTIONS = KANO_CATEGORIES.map((c) => ({ value: c, label: KANO_LABELS[c] }));
 const DECISION_OPTIONS = KANO_DECISIONS.map((d) => ({ value: d, label: KANO_DECISION_LABELS[d] }));
@@ -85,7 +88,7 @@ function SubmitModal({
     },
   });
   return (
-    <Modal opened={opened} onClose={onClose} title="Submit a request" size="lg">
+    <SideModal opened={opened} onClose={onClose} title="Submit a request" size="lg">
       <form
         onSubmit={form.onSubmit((v) =>
           create.mutate(
@@ -113,7 +116,7 @@ function SubmitModal({
             data-autofocus
             {...form.getInputProps("description")}
           />
-          <Group grow align="flex-start">
+          <Group className="side-modal-pair" grow align="flex-start">
             <TextInput label="Requested by" {...form.getInputProps("requesterName")} />
             <TextInput label="Their role" {...form.getInputProps("requesterRole")} />
           </Group>
@@ -123,11 +126,11 @@ function SubmitModal({
             placeholder="Not sure yet"
             data={(subprojects.data ?? []).map((s) => ({
               value: s.id,
-              label: `${s.code} ${s.name}`,
+              label: s.name,
             }))}
             {...form.getInputProps("subprojectId")}
           />
-          <Group justify="flex-end">
+          <Group justify="flex-end" className="side-modal-footer">
             <Button variant="default" onClick={onClose}>
               Cancel
             </Button>
@@ -137,7 +140,7 @@ function SubmitModal({
           </Group>
         </Stack>
       </form>
-    </Modal>
+    </SideModal>
   );
 }
 
@@ -232,21 +235,21 @@ function EditModal({
     ),
   );
   return (
-    <Modal opened onClose={onClose} title={request.code} size="xl">
+    <SideModal opened onClose={onClose} title={request.code} size="xl">
       <form onSubmit={save}>
         <Stack>
           <Textarea label="Request" autosize minRows={2} {...form.getInputProps("description")} />
-          <Group grow align="flex-start">
+          <Group className="side-modal-pair" grow align="flex-start">
             <TextInput label="Requested by" {...form.getInputProps("requesterName")} />
             <TextInput label="Their role" {...form.getInputProps("requesterRole")} />
             <Select
               label="Subproject"
               clearable
-              data={(subprojects.data ?? []).map((s) => ({ value: s.id, label: s.code }))}
+              data={(subprojects.data ?? []).map((s) => ({ value: s.id, label: s.name }))}
               {...form.getInputProps("subprojectId")}
             />
           </Group>
-          <Group grow align="flex-start">
+          <Group className="side-modal-pair" grow align="flex-start">
             <Select
               label="Kano category"
               clearable
@@ -262,7 +265,7 @@ function EditModal({
               {...form.getInputProps("decision")}
             />
           </Group>
-          <Group grow align="flex-start">
+          <Group className="side-modal-pair" grow align="flex-start">
             <Select
               label="Target sprint"
               clearable
@@ -428,7 +431,98 @@ function EditModal({
           </Group>
         </Stack>
       </form>
-    </Modal>
+    </SideModal>
+  );
+}
+
+function KanoCards({
+  items,
+  canEdit,
+  onEdit,
+}: {
+  items: KanoDto[];
+  canEdit: boolean;
+  onEdit: (r: KanoDto) => void;
+}) {
+  return (
+    <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+      {items.map((r) => (
+        <Card
+          key={r.id}
+          className="item-card"
+          p="md"
+          data-clickable={canEdit ? "" : undefined}
+          onClick={canEdit ? () => onEdit(r) : undefined}
+        >
+          <Group justify="space-between" align="flex-start" wrap="nowrap" mb="xs">
+            <div>
+              <Text size="sm" fw={600}>
+                {r.code}
+              </Text>
+              <Text size="xs" c="dimmed">
+                {r.subprojectCode ?? "No subproject"}
+              </Text>
+            </div>
+            {r.kanoCategory ? (
+              <Badge color={CATEGORY_COLOR[r.kanoCategory]} variant="light">
+                {KANO_LABELS[r.kanoCategory]}
+              </Badge>
+            ) : (
+              <Text size="sm" c="dimmed">
+                Not evaluated
+              </Text>
+            )}
+          </Group>
+          <Text size="sm">{r.description}</Text>
+          <Text size="xs" c="dimmed">
+            {r.requesterName}
+            {r.requesterRole ? `, ${r.requesterRole}` : ""}
+          </Text>
+          <SimpleGrid cols={2} spacing="xs" mt="sm">
+            <div>
+              <Text size="xs" c="dimmed">
+                WSJF
+              </Text>
+              <Text size="sm">{fmtScore(r.wsjfScore)}</Text>
+            </div>
+            <div>
+              <Text size="xs" c="dimmed">
+                RICE
+              </Text>
+              <Text size="sm">{fmtScore(r.riceScore)}</Text>
+            </div>
+            <div>
+              <Text size="xs" c="dimmed">
+                Decision
+              </Text>
+              <Text size="sm" c={r.decision ? undefined : "dimmed"}>
+                {r.decision ? KANO_DECISION_LABELS[r.decision] : "Undecided"}
+              </Text>
+            </div>
+            <div>
+              <Text size="xs" c="dimmed">
+                Story
+              </Text>
+              <Text size="sm">{r.promotedStoryCode ?? "–"}</Text>
+            </div>
+          </SimpleGrid>
+          {canEdit ? (
+            <Group mt="sm" justify="flex-end">
+              <Button
+                size="compact-xs"
+                variant="default"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(r);
+                }}
+              >
+                Evaluate
+              </Button>
+            </Group>
+          ) : null}
+        </Card>
+      ))}
+    </SimpleGrid>
   );
 }
 
@@ -445,6 +539,7 @@ export function KanoPage() {
     sort: (params.get("sort") as "wsjf" | "rice" | "code" | null) ?? "wsjf",
   };
   const query = useKano(project?.id, filters);
+  const [viewMode, setViewMode] = useViewMode("table");
   const [submitOpen, submit] = useDisclosure(false);
   const [editing, setEditing] = useState<KanoDto | null>(null);
   const readOnly = !project || !!project.archivedAt;
@@ -490,7 +585,7 @@ export function KanoPage() {
           label="Subproject"
           clearable
           placeholder="All"
-          data={(subprojects.data ?? []).map((s) => ({ value: s.id, label: s.code }))}
+          data={(subprojects.data ?? []).map((s) => ({ value: s.id, label: s.name }))}
           value={filters.subprojectId ?? null}
           onChange={(v) => setParam("subprojectId", v)}
           w={150}
@@ -513,77 +608,95 @@ export function KanoPage() {
           checked={filters.unevaluated}
           onChange={(e) => setParam("unevaluated", e.currentTarget.checked ? "true" : null)}
         />
+        <div style={{ marginInlineStart: "auto" }}>
+          <ViewModeToggle value={viewMode} onChange={setViewMode} />
+        </div>
       </Group>
       <QueryState query={query} isEmpty={(d) => d.length === 0} empty="No requests match.">
-        {(items) => (
-          <Table.ScrollContainer minWidth={900}>
-            <Table verticalSpacing="xs" highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>ID</Table.Th>
-                  <Table.Th>Request</Table.Th>
-                  <Table.Th>Category</Table.Th>
-                  <Table.Th ta="right">WSJF</Table.Th>
-                  <Table.Th ta="right">RICE</Table.Th>
-                  <Table.Th>Decision</Table.Th>
-                  <Table.Th>Story</Table.Th>
-                  <Table.Th />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {items.map((r) => (
-                  <Table.Tr key={r.id}>
-                    <Table.Td>
-                      <Text size="sm" fw={600}>
-                        {r.code}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        {r.subprojectCode ?? "No subproject"}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td maw={380}>
-                      <Text size="sm">{r.description}</Text>
-                      <Text size="xs" c="dimmed">
-                        {r.requesterName}
-                        {r.requesterRole ? `, ${r.requesterRole}` : ""}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      {r.kanoCategory ? (
-                        <Badge color={CATEGORY_COLOR[r.kanoCategory]} variant="light">
-                          {KANO_LABELS[r.kanoCategory]}
-                        </Badge>
-                      ) : (
-                        <Text size="sm" c="dimmed">
-                          Not evaluated
-                        </Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td ta="right">{fmtScore(r.wsjfScore)}</Table.Td>
-                    <Table.Td ta="right">{fmtScore(r.riceScore)}</Table.Td>
-                    <Table.Td>
-                      {r.decision ? (
-                        KANO_DECISION_LABELS[r.decision]
-                      ) : (
-                        <Text size="sm" c="dimmed">
-                          Undecided
-                        </Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td>{r.promotedStoryCode ?? "–"}</Table.Td>
-                    <Table.Td>
-                      {isPm && !readOnly ? (
-                        <Button size="compact-xs" variant="default" onClick={() => setEditing(r)}>
-                          Evaluate
-                        </Button>
-                      ) : null}
-                    </Table.Td>
+        {(items) =>
+          viewMode === "card" ? (
+            <KanoCards items={items} canEdit={isPm && !readOnly} onEdit={setEditing} />
+          ) : (
+            <Table.ScrollContainer minWidth={900}>
+              <Table verticalSpacing="xs" highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>ID</Table.Th>
+                    <Table.Th>Request</Table.Th>
+                    <Table.Th>Category</Table.Th>
+                    <Table.Th ta="right">WSJF</Table.Th>
+                    <Table.Th ta="right">RICE</Table.Th>
+                    <Table.Th>Decision</Table.Th>
+                    <Table.Th>Story</Table.Th>
+                    <Table.Th />
                   </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
-        )}
+                </Table.Thead>
+                <Table.Tbody>
+                  {items.map((r) => (
+                    <Table.Tr
+                      key={r.id}
+                      style={isPm && !readOnly ? { cursor: "pointer" } : undefined}
+                      onClick={isPm && !readOnly ? () => setEditing(r) : undefined}
+                    >
+                      <Table.Td>
+                        <Text size="sm" fw={600}>
+                          {r.code}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {r.subprojectCode ?? "No subproject"}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td maw={380}>
+                        <Text size="sm">{r.description}</Text>
+                        <Text size="xs" c="dimmed">
+                          {r.requesterName}
+                          {r.requesterRole ? `, ${r.requesterRole}` : ""}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        {r.kanoCategory ? (
+                          <Badge color={CATEGORY_COLOR[r.kanoCategory]} variant="light">
+                            {KANO_LABELS[r.kanoCategory]}
+                          </Badge>
+                        ) : (
+                          <Text size="sm" c="dimmed">
+                            Not evaluated
+                          </Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td ta="right">{fmtScore(r.wsjfScore)}</Table.Td>
+                      <Table.Td ta="right">{fmtScore(r.riceScore)}</Table.Td>
+                      <Table.Td>
+                        {r.decision ? (
+                          KANO_DECISION_LABELS[r.decision]
+                        ) : (
+                          <Text size="sm" c="dimmed">
+                            Undecided
+                          </Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td>{r.promotedStoryCode ?? "–"}</Table.Td>
+                      <Table.Td>
+                        {isPm && !readOnly ? (
+                          <Button
+                            size="compact-xs"
+                            variant="default"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditing(r);
+                            }}
+                          >
+                            Evaluate
+                          </Button>
+                        ) : null}
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          )
+        }
       </QueryState>
       {project ? (
         <SubmitModal opened={submitOpen} onClose={submit.close} projectId={project.id} />

@@ -2,12 +2,10 @@ import { Router } from "express";
 import { z } from "zod";
 import {
   convertSolutionSchema,
-  createAssumptionSchema,
   createJourneyStepSchema,
   createOpportunitySchema,
   createOutcomeSchema,
   createSolutionSchema,
-  updateAssumptionSchema,
   updateOpportunitySchema,
   updateOutcomeSchema,
   updateSolutionSchema,
@@ -19,8 +17,11 @@ import {
   createRaidSchema,
   createStorySchema,
   raidListQuerySchema,
+  toggleMitigatingActionSchema,
   setChecklistCheckSchema,
   storyMapQuerySchema,
+  createDorItemSchema,
+  updateDorItemSchema,
   updateJourneyStepSchema,
   updatePersonaSchema,
   updateRaidSchema,
@@ -65,6 +66,16 @@ modules.patch(
   requireAction("raid.manage"),
   asyncHandler(async (req, res) => {
     res.json(await raid.updateRaid(idParam(req), parse(updateRaidSchema, req.body)));
+  }),
+);
+modules.patch(
+  "/raid/:id/mitigating-actions/:actionId",
+  requireAction("raid.manage"),
+  asyncHandler(async (req, res) => {
+    const { isCompleted } = parse(toggleMitigatingActionSchema, req.body);
+    res.json(
+      await raid.setMitigatingActionCompleted(idParam(req), idParam(req, "actionId"), isCompleted),
+    );
   }),
 );
 modules.delete(
@@ -195,6 +206,34 @@ modules.put(
         checked,
       ),
     });
+  }),
+);
+modules.post(
+  "/stories/:id/dor-items",
+  requireAction("checklist_check.write"),
+  asyncHandler(async (req, res) => {
+    const { label } = parse(createDorItemSchema, req.body);
+    res.status(201).json(await stories.addStoryDorItem(idParam(req), label));
+  }),
+);
+modules.patch(
+  "/stories/:id/dor-items/:itemId",
+  requireAction("checklist_check.write"),
+  asyncHandler(async (req, res) => {
+    res.json(
+      await stories.updateStoryDorItem(
+        idParam(req),
+        idParam(req, "itemId"),
+        parse(updateDorItemSchema, req.body),
+      ),
+    );
+  }),
+);
+modules.delete(
+  "/stories/:id/dor-items/:itemId",
+  requireAction("checklist_check.write"),
+  asyncHandler(async (req, res) => {
+    res.json(await stories.removeStoryDorItem(idParam(req), idParam(req, "itemId")));
   }),
 );
 
@@ -351,41 +390,5 @@ modules.post(
           parse(convertSolutionSchema, req.body),
         ),
       );
-  }),
-);
-modules.post(
-  "/ost/solutions/:id/assumptions",
-  requireAction("ost.contribute"),
-  asyncHandler(async (req, res) => {
-    res
-      .status(201)
-      .json(
-        await ost.createAssumption(
-          actorOf(res),
-          idParam(req),
-          parse(createAssumptionSchema, req.body),
-        ),
-      );
-  }),
-);
-modules.patch(
-  "/ost/assumptions/:id",
-  requireAction("ost.contribute"),
-  asyncHandler(async (req, res) => {
-    res.json(
-      await ost.updateAssumption(
-        actorOf(res),
-        idParam(req),
-        parse(updateAssumptionSchema, req.body),
-      ),
-    );
-  }),
-);
-modules.delete(
-  "/ost/assumptions/:id",
-  requireAction("ost.manage"),
-  asyncHandler(async (req, res) => {
-    await ost.deleteAssumption(idParam(req));
-    res.status(204).end();
   }),
 );

@@ -22,12 +22,6 @@ export const OVERRIDE_ENTITY_TYPES = ["story", "activity", "solution"] as const;
 
 // Module data layer (Phase 4). Enum values are additive-only.
 export const VALIDATION_STATUSES = ["planned", "in_progress", "validated", "invalidated"] as const;
-export const ASSUMPTION_CATEGORIES = [
-  "desirability",
-  "viability",
-  "usability",
-  "feasibility",
-] as const;
 export const STORY_STATUSES = ["backlog", "planning", "in_progress", "completed"] as const;
 export const KANO_CATEGORIES = [
   "must_be",
@@ -45,7 +39,7 @@ export const KANO_DECISIONS = [
 ] as const;
 export const RAID_TYPES = ["risk", "assumption", "issue", "dependency"] as const;
 export const RAID_STATUSES = ["open", "in_progress", "mitigated", "closed"] as const;
-export const CODE_SCOPES = ["ost", "usm", "req", "raid"] as const;
+export const CODE_SCOPES = ["ost", "usm", "req", "raid", "sub"] as const;
 export const STORY_POINT_VALUES = [1, 2, 3, 5, 8, 13, 21] as const;
 export const WSJF_VALUES = [1, 2, 3, 5, 8, 13, 20] as const;
 

@@ -1,8 +1,6 @@
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import type {
-  AssumptionDto,
   ConvertSolutionInput,
-  CreateAssumptionInput,
   CreateOpportunityInput,
   CreateOutcomeInput,
   CreateSolutionInput,
@@ -10,14 +8,12 @@ import type {
   OstTreeDto,
   OutcomeDto,
   SolutionDto,
-  UpdateAssumptionInput,
   UpdateOpportunityInput,
   UpdateOutcomeInput,
   UpdateSolutionInput,
 } from "@myapp/shared";
 import { db, type DbOrTx } from "../db/client";
 import {
-  ostAssumptions,
   ostOpportunities,
   ostOutcomes,
   ostSolutions,
@@ -30,19 +26,16 @@ import { AppError, conflict, forbidden, notFound, unprocessable } from "../error
 import { can, type Actor } from "../permissions";
 import { recordOverride } from "./governanceService";
 import {
-  createAssumption as insertAssumption,
   createOpportunity as insertOpportunity,
   createOutcome as insertOutcome,
   createSolution as insertSolution,
   createStory,
-  recalcSolutionValidation,
 } from "./moduleService";
 
 /**
- * Opportunity Solution Tree: outcome > opportunities (nestable) > solutions > assumptions with tests.
- * A solution's validation status is a roll-up of its riskiest assumption, maintained in the same
- * transaction as every assumption change (moduleService.recalcSolutionValidation). A solution converts
- * to a user story only once validated; a PM can override with a reason that is logged.
+ * Opportunity Solution Tree: outcome > opportunities > solutions (the actions).
+ * A solution is marked validated by the PM; it converts to a user story only once validated, or a PM can
+ * override with a reason that is logged.
  */
 
 async function assertOpen(tx: DbOrTx, projectId: string) {
@@ -62,7 +55,7 @@ const str = (n: number | null | undefined): string | null | undefined =>
 // ---------------------------------------------------------------- read
 export async function getTree(projectId: string, subprojectId?: string): Promise<OstTreeDto> {
   const outcomeRows = await db
-    .select({ o: ostOutcomes, subprojectCode: subprojects.code })
+    .select({ o: ostOutcomes, subprojectCode: subprojects.code, subprojectName: subprojects.name })
     .from(ostOutcomes)
     .leftJoin(subprojects, eq(subprojects.id, ostOutcomes.subprojectId))
     .where(
@@ -73,8 +66,7 @@ export async function getTree(projectId: string, subprojectId?: string): Promise
     )
     .orderBy(asc(ostOutcomes.createdAt), asc(ostOutcomes.id));
   const outcomeIds = outcomeRows.map((r) => r.o.id);
-  if (outcomeIds.length === 0)
-    return { outcomes: [], opportunities: [], solutions: [], assumptions: [] };
+  if (outcomeIds.length === 0) return { outcomes: [], opportunities: [], solutions: [] };
 
   const opps = await db
     .select()
@@ -92,20 +84,11 @@ export async function getTree(projectId: string, subprojectId?: string): Promise
           .leftJoin(userStories, eq(userStories.id, ostSolutions.convertedStoryId))
           .where(inArray(ostSolutions.opportunityId, oppIds))
           .orderBy(asc(ostSolutions.seq));
-  const solIds = sols.map((s) => s.s.id);
-  const asms =
-    solIds.length === 0
-      ? []
-      : await db
-          .select()
-          .from(ostAssumptions)
-          .where(inArray(ostAssumptions.solutionId, solIds))
-          .orderBy(asc(ostAssumptions.position), asc(ostAssumptions.id));
-
-  const outcomes: OutcomeDto[] = outcomeRows.map(({ o, subprojectCode }) => ({
+  const outcomes: OutcomeDto[] = outcomeRows.map(({ o, subprojectCode, subprojectName }) => ({
     id: o.id,
     subprojectId: o.subprojectId,
     subprojectCode,
+    subprojectName,
     title: o.title,
     description: o.description,
     metricName: o.metricName,
@@ -116,7 +99,6 @@ export async function getTree(projectId: string, subprojectId?: string): Promise
   const opportunities: OpportunityDto[] = opps.map((o) => ({
     id: o.id,
     outcomeId: o.outcomeId,
-    parentOpportunityId: o.parentOpportunityId,
     title: o.title,
     description: o.description,
     evidence: o.evidence,
@@ -133,18 +115,7 @@ export async function getTree(projectId: string, subprojectId?: string): Promise
     convertedStoryId: s.convertedStoryId,
     convertedStoryCode: storyCode,
   }));
-  const assumptions: AssumptionDto[] = asms.map((a) => ({
-    id: a.id,
-    solutionId: a.solutionId,
-    statement: a.statement,
-    category: a.category,
-    isRiskiest: a.isRiskiest,
-    validationTest: a.validationTest,
-    validationStatus: a.validationStatus,
-    resultNotes: a.resultNotes,
-    position: a.position,
-  }));
-  return { outcomes, opportunities, solutions, assumptions };
+  return { outcomes, opportunities, solutions };
 }
 
 // ---------------------------------------------------------------- outcomes
@@ -208,20 +179,11 @@ export async function createOpportunity(
       .limit(1);
     if (!outcome) throw notFound("Outcome");
     await assertOpen(tx, outcome.projectId);
-    if (input.parentOpportunityId) {
-      const [parent] = await tx
-        .select({ outcomeId: ostOpportunities.outcomeId })
-        .from(ostOpportunities)
-        .where(eq(ostOpportunities.id, input.parentOpportunityId))
-        .limit(1);
-      if (!parent || parent.outcomeId !== outcomeId) throw notFound("Parent opportunity");
-    }
     return insertOpportunity(
       {
         projectId: outcome.projectId,
         createdById: actor.id,
         outcomeId,
-        parentOpportunityId: input.parentOpportunityId ?? null,
         title: input.title,
         description: input.description ?? undefined,
         evidence: input.evidence ?? undefined,
@@ -315,84 +277,6 @@ export async function deleteSolution(id: string) {
     .where(eq(ostSolutions.id, id))
     .returning({ id: ostSolutions.id });
   if (!row) throw notFound("Solution");
-}
-
-// ---------------------------------------------------------------- assumptions
-export async function createAssumption(
-  actor: Actor,
-  solutionId: string,
-  input: CreateAssumptionInput,
-) {
-  return db.transaction(async (tx) => {
-    const [sol] = await tx
-      .select({ projectId: ostSolutions.projectId })
-      .from(ostSolutions)
-      .where(eq(ostSolutions.id, solutionId))
-      .limit(1);
-    if (!sol) throw notFound("Solution");
-    await assertOpen(tx, sol.projectId);
-    const [last] = await tx
-      .select({ p: sql<number | null>`max(${ostAssumptions.position})` })
-      .from(ostAssumptions)
-      .where(eq(ostAssumptions.solutionId, solutionId));
-    return insertAssumption(
-      {
-        projectId: sol.projectId,
-        createdById: actor.id,
-        solutionId,
-        statement: input.statement,
-        category: input.category,
-        isRiskiest: input.isRiskiest,
-        validationTest: input.validationTest ?? undefined,
-        position: (last?.p ?? -1) + 1,
-      },
-      tx,
-    );
-  });
-}
-
-const MEMBER_ASSUMPTION_FIELDS = ["validationStatus", "resultNotes", "validationTest"];
-
-export async function updateAssumption(actor: Actor, id: string, patch: UpdateAssumptionInput) {
-  const fields = Object.keys(patch);
-  if (fields.length === 0) throw unprocessable("Nothing to change");
-  // Team members run the tests and record results; the PM owns the statement and the riskiest flag.
-  if (!can(actor, "ost.manage") && !fields.every((f) => MEMBER_ASSUMPTION_FIELDS.includes(f))) {
-    throw forbidden("Only a PM can change the statement, category or riskiest flag");
-  }
-  return db.transaction(async (tx) => {
-    const [current] = await tx
-      .select()
-      .from(ostAssumptions)
-      .where(eq(ostAssumptions.id, id))
-      .for("update")
-      .limit(1);
-    if (!current) throw notFound("Assumption");
-    await assertOpen(tx, current.projectId);
-    // Lock the parent first so concurrent flag moves on one solution serialize.
-    if (patch.isRiskiest) {
-      await tx
-        .update(ostAssumptions)
-        .set({ isRiskiest: false })
-        .where(and(eq(ostAssumptions.solutionId, current.solutionId), ne(ostAssumptions.id, id)));
-    }
-    const [row] = await tx
-      .update(ostAssumptions)
-      .set(patch)
-      .where(eq(ostAssumptions.id, id))
-      .returning();
-    if (!row) throw notFound("Assumption");
-    await recalcSolutionValidation(tx, current.solutionId);
-    return row;
-  });
-}
-
-export async function deleteAssumption(id: string) {
-  await db.transaction(async (tx) => {
-    const [row] = await tx.delete(ostAssumptions).where(eq(ostAssumptions.id, id)).returning();
-    if (!row) throw notFound("Assumption");
-    await recalcSolutionValidation(tx, row.solutionId);
-  });
 }
 
 // ---------------------------------------------------------------- convert to story

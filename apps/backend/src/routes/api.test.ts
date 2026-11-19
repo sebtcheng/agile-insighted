@@ -1,6 +1,9 @@
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { inArray } from "drizzle-orm";
 import { createApp } from "../app";
+import { db } from "../db/client";
+import { projects } from "../db/schema";
 import { createFixture, type Fixture } from "../test/helpers";
 
 type ErrorBody = { error: { code: string; message: string } };
@@ -38,7 +41,10 @@ beforeAll(async () => {
   memberActivityId = json<ActivityBody>(own).activity.id;
   otherActivityId = json<ActivityBody>(other).activity.id;
 });
+/** Projects created through the API in these tests; removed before the fixture so the PM user can be deleted. */
+const projectIds: string[] = [];
 afterAll(async () => {
+  if (projectIds.length > 0) await db.delete(projects).where(inArray(projects.id, projectIds));
   await f.cleanup();
 });
 
@@ -89,7 +95,7 @@ describe("permission map per write endpoint", () => {
     },
     {
       name: "POST /projects",
-      call: (a) => a.post("/api/projects").send({ name: "P", code: "PX" }),
+      call: (a) => a.post("/api/projects").send({ name: "P" }),
     },
     {
       name: "PATCH /projects/:id",
@@ -97,8 +103,7 @@ describe("permission map per write endpoint", () => {
     },
     {
       name: "POST /projects/:id/subprojects",
-      call: (a) =>
-        a.post(`/api/projects/${f.project.id}/subprojects`).send({ code: "NEW-1", name: "New" }),
+      call: (a) => a.post(`/api/projects/${f.project.id}/subprojects`).send({ name: "New" }),
     },
     {
       name: "PATCH /subprojects/:id",
@@ -200,11 +205,98 @@ describe("errors and validation", () => {
     expect((await pm.get("/api/nope")).status).toBe(404);
     expect((await pm.get("/api/activities/00000000-0000-7000-8000-000000000000")).status).toBe(404);
   });
-  it("translates a duplicate project code into 409", async () => {
-    const res = await pm
-      .post("/api/projects")
-      .send({ name: "Dup", code: f.project.code.toLowerCase() });
-    expect(res.status).toBe(409);
+  it("generates unique sequential project codes and ignores a client code", async () => {
+    const created: string[] = [];
+    for (const name of ["Gen A", "Gen B"]) {
+      const res = await pm.post("/api/projects").send({ name, code: "HACK" });
+      expect(res.status).toBe(201);
+      created.push(json<{ id: string; code: string }>(res).code);
+      projectIds.push(json<{ id: string }>(res).id);
+    }
+    expect(created[0]).toMatch(/^PROJ-\d{2,}$/);
+    expect(created[1]).toMatch(/^PROJ-\d{2,}$/);
+    expect(created).not.toContain("HACK");
+    expect(Number(created[1]?.slice(5))).toBeGreaterThan(Number(created[0]?.slice(5)));
+    expect(f.project.code).not.toBe(created[0]);
+  });
+  it("never produces a duplicate project code under parallel creates", async () => {
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => pm.post("/api/projects").send({ name: `Par ${i}` })),
+    );
+    expect(results.every((r) => r.status === 201)).toBe(true);
+    const codes = results.map((r) => json<{ code: string }>(r).code);
+    projectIds.push(...results.map((r) => json<{ id: string }>(r).id));
+    expect(new Set(codes).size).toBe(8);
+  });
+  it("does not let a project code be edited", async () => {
+    const res = await pm.post("/api/projects").send({ name: "Fixed code" });
+    const p = json<{ id: string; code: string }>(res);
+    projectIds.push(p.id);
+    const patched = await pm.patch(`/api/projects/${p.id}`).send({ name: "Renamed", code: "NOPE" });
+    expect(patched.status).toBe(200);
+    expect(json<{ code: string; name: string }>(patched)).toMatchObject({
+      code: p.code,
+      name: "Renamed",
+    });
+  });
+  it("keeps the subproject code system-generated and persists the assigned team member", async () => {
+    const made = json<{ id: string; code: string; leadId: string | null }>(
+      await pm
+        .post(`/api/projects/${f.project.id}/subprojects`)
+        .send({ name: "Assigned", leadId: f.m1.id, code: "HACK-1" }),
+    );
+    expect(made.code).toMatch(/^PRJ-\d{2,}$/);
+    expect(made.leadId).toBe(f.m1.id);
+    const patched = json<{ code: string; name: string }>(
+      await pm.patch(`/api/subprojects/${made.id}`).send({ name: "Renamed", code: "HACK-2" }),
+    );
+    expect(patched.code).toBe(made.code);
+    expect(patched.name).toBe("Renamed");
+    const list = json<{ items: Array<{ id: string; leadId: string | null; leadName?: string }> }>(
+      await pm.get(`/api/projects/${f.project.id}/subprojects`),
+    );
+    const row = list.items.find((x) => x.id === made.id);
+    expect(row?.leadId).toBe(f.m1.id);
+    expect(row?.leadName).toBeTruthy();
+    const cleared = json<{ leadId: string | null }>(
+      await pm.patch(`/api/subprojects/${made.id}`).send({ leadId: null }),
+    );
+    expect(cleared.leadId).toBeNull();
+    expect(
+      (
+        await pm
+          .patch(`/api/subprojects/${made.id}`)
+          .send({ leadId: "00000000-0000-4000-8000-000000000000" })
+      ).status,
+    ).toBe(404);
+    await pm.delete(`/api/subprojects/${made.id}`);
+  });
+  it("lists projects with subprojects, and guards deletes", async () => {
+    const tree = await pm.get("/api/projects?withSubprojects=true");
+    expect(tree.status).toBe(200);
+    const row = json<{ items: Array<{ id: string; subprojects: Array<{ projectId: string }> }> }>(
+      tree,
+    ).items.find((p) => p.id === f.project.id);
+    expect(row?.subprojects.length).toBeGreaterThan(0);
+    expect(row?.subprojects.every((s) => s.projectId === f.project.id)).toBe(true);
+
+    const made = await pm
+      .post(`/api/projects/${f.project.id}/subprojects`)
+      .send({ name: "Disposable", code: "IGNORED" });
+    expect(made.status).toBe(201);
+    const next = await pm.post(`/api/projects/${f.project.id}/subprojects`).send({ name: "Again" });
+    expect(next.status).toBe(201);
+    const a = json<{ id: string; code: string }>(made).code;
+    const b = json<{ id: string; code: string }>(next).code;
+    expect(a).toMatch(/^PRJ-\d{2,}$/);
+    expect(Number(b.slice(4))).toBe(Number(a.slice(4)) + 1);
+    expect((await pm.delete(`/api/subprojects/${json<{ id: string }>(next).id}`)).status).toBe(204);
+    const id = json<{ id: string }>(made).id;
+    expect((await pm.delete(`/api/subprojects/${id}`)).status).toBe(204);
+    expect((await pm.delete(`/api/subprojects/${id}`)).status).toBe(404);
+    // in use: subA has activities/stories in the fixture or at least the project has subprojects
+    expect((await pm.delete(`/api/projects/${f.project.id}`)).status).toBe(409);
+    expect((await member.delete(`/api/subprojects/${id}`)).status).toBe(403);
   });
   it("requires JSON bodies on writes", async () => {
     const res = await pm.post("/api/tags").set("Content-Type", "text/plain").send("name=x");

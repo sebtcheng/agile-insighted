@@ -12,7 +12,6 @@ import {
   activityEvents,
   activityTags,
   checklistTemplates,
-  ostAssumptions,
   projects,
   sprintScopeChanges,
   sprints,
@@ -47,13 +46,8 @@ type Governance = { removeActivityId?: string; tradeReason?: string; overrideRea
  * It also enforces the Definition of Done gate and the one-in-one-out rule for active sprints.
  */
 
-/** A discovery or delivery link (story, assumption) must point inside the activity's own project. */
-async function assertLinks(
-  tx: DbOrTx,
-  projectId: string,
-  storyId: string | null | undefined,
-  assumptionId: string | null | undefined,
-) {
+/** A delivery link (story) must point inside the activity's own project. */
+async function assertLinks(tx: DbOrTx, projectId: string, storyId: string | null | undefined) {
   if (storyId) {
     const [s] = await tx
       .select({ projectId: userStories.projectId })
@@ -62,16 +56,6 @@ async function assertLinks(
       .limit(1);
     if (!s) throw notFound("Story");
     if (s.projectId !== projectId) throw unprocessable("That story belongs to a different project");
-  }
-  if (assumptionId) {
-    const [a] = await tx
-      .select({ projectId: ostAssumptions.projectId })
-      .from(ostAssumptions)
-      .where(eq(ostAssumptions.id, assumptionId))
-      .limit(1);
-    if (!a) throw notFound("Assumption");
-    if (a.projectId !== projectId)
-      throw unprocessable("That assumption belongs to a different project");
   }
 }
 
@@ -186,7 +170,6 @@ export function rowToDto(
     sprintId: a.sprintId,
     releaseId: a.releaseId,
     userStoryId: a.userStoryId,
-    ostAssumptionId: a.ostAssumptionId,
     assigneeId: a.assigneeId,
     assigneeName,
     waitingOnDependency: waiting,
@@ -345,7 +328,7 @@ export async function create(
     const sprintId = input.sprintId ?? null;
     const assigneeId = input.assigneeId ?? null;
     await assertProjectWritable(t, projectId, subprojectId, sprintId);
-    await assertLinks(t, projectId, input.userStoryId, input.ostAssumptionId);
+    await assertLinks(t, projectId, input.userStoryId);
 
     const done = input.status === "done";
     const dodOverride = done
@@ -360,7 +343,6 @@ export async function create(
         sprintId,
         releaseId: input.releaseId ?? null,
         userStoryId: input.userStoryId ?? null,
-        ostAssumptionId: input.ostAssumptionId ?? null,
         assigneeId,
         createdById: ctx.actor.id,
         title: input.title,
@@ -446,7 +428,7 @@ export async function update(
       patch.subprojectId === undefined ? null : patch.subprojectId,
       patch.sprintId === undefined ? null : patch.sprintId,
     );
-    await assertLinks(t, current.projectId, patch.userStoryId, patch.ostAssumptionId);
+    await assertLinks(t, current.projectId, patch.userStoryId);
     // Writes to an already-archived subproject are rejected even when the subproject is unchanged.
     if (current.subprojectId && patch.subprojectId === undefined) {
       await assertProjectWritable(t, current.projectId, current.subprojectId, null);
@@ -543,7 +525,6 @@ export async function update(
         ...(patch.dueDate === undefined ? {} : { dueDate: patch.dueDate }),
         ...(patch.releaseId === undefined ? {} : { releaseId: patch.releaseId }),
         ...(patch.userStoryId === undefined ? {} : { userStoryId: patch.userStoryId }),
-        ...(patch.ostAssumptionId === undefined ? {} : { ostAssumptionId: patch.ostAssumptionId }),
         ...(ctx.now ? { updatedAt: now } : {}),
       })
       .where(eq(activities.id, activityId));

@@ -98,8 +98,20 @@ api.patch(
 // ---- projects, subprojects, sprints
 api.get(
   "/projects",
-  asyncHandler(async (_req, res) => {
-    res.json({ items: await projects.listProjects() });
+  asyncHandler(async (req, res) => {
+    const q = parse(
+      z.object({
+        withSubprojects: z.enum(["true", "false"]).optional(),
+        includeArchived: z.enum(["true", "false"]).optional(),
+      }),
+      req.query,
+    );
+    res.json({
+      items:
+        q.withSubprojects === "true"
+          ? await projects.listProjectsWithSubprojects(q.includeArchived === "true")
+          : await projects.listProjects(),
+    });
   }),
 );
 api.post(
@@ -122,6 +134,23 @@ api.patch(
   requireAction("project.write"),
   asyncHandler(async (req, res) => {
     res.json(await projects.updateProject(idParam(req), parse(updateProjectSchema, req.body)));
+  }),
+);
+
+api.delete(
+  "/projects/:id",
+  requireAction("project.write"),
+  asyncHandler(async (req, res) => {
+    await projects.deleteProject(idParam(req));
+    res.status(204).end();
+  }),
+);
+api.delete(
+  "/subprojects/:id",
+  requireAction("subproject.write"),
+  asyncHandler(async (req, res) => {
+    await projects.deleteSubproject(idParam(req));
+    res.status(204).end();
   }),
 );
 

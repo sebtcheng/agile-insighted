@@ -12,7 +12,7 @@ import * as gov from "../services/governanceService";
 import { updateSprint } from "../services/projectService";
 import { db, pool } from "./client";
 import { seedModules } from "./seedModules";
-import { projects, sprints, subprojects, users } from "./schema";
+import { codeCounters, projects, sprints, subprojects, users } from "./schema";
 
 const SUBPROJECTS: Array<[code: string, name: string, health: Health, note: string | null]> = [
   ["PRJ-01", "Student Engagement Analytics", "on_track", null],
@@ -204,6 +204,10 @@ export async function seedDatabase(opts: SeedOptions): Promise<{ projectId: stri
       })),
     )
     .returning();
+  // The seeded codes are PRJ-01..PRJ-nn; new subprojects continue after them.
+  await db
+    .insert(codeCounters)
+    .values({ projectId: project.id, scope: "sub", lastValue: SUBPROJECTS.length });
 
   const [completedSprint, activeSprint] = await db
     .insert(sprints)

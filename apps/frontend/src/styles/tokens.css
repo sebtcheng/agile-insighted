@@ -1,0 +1,44 @@
+/* Semantic design tokens. Keep in sync with DESIGN.md. */
+:root {
+  --font-serif: "Source Serif 4", system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-body: "Public Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", system-ui, sans-serif;
+
+  --nav-gradient-from: #0f4b88;
+  --nav-gradient-mid: #0b3868;
+  --nav-gradient-to: #092e58;
+  --brand-primary: #0f4c8a;
+  --nav-active-overlay: rgba(255, 255, 255, 0.14);
+  --nav-active-marker: #ffc629;
+  --accent-left: #d4182f;
+  --accent-right: #ffc629;
+
+  --danger-bg: #fbe6e9;
+  --danger-fg: #9b1022;
+  --warning-bg: #fdf0d8;
+  --warning-fg: #8a5605;
+  --info-bg: #d3e1f0;
+  --info-fg: #0f4c8a;
+  --success-bg: #e2f3eb;
+  --success-fg: #14603f;
+
+  --text-secondary: #586679;
+  --border-muted: #cbd5e1;
+
+  --ui-duration: 120ms;
+  --ui-ease: cubic-bezier(0.2, 0, 0, 1);
+  --ui-transition:
+    background-color var(--ui-duration) var(--ui-ease),
+    border-color var(--ui-duration) var(--ui-ease), color var(--ui-duration) var(--ui-ease),
+    box-shadow var(--ui-duration) var(--ui-ease);
+}
+
+/* Base typography hierarchy: serif page titles, body-font subtitles. */
+.page-title {
+  font-family: var(--font-serif);
+}
+.page-subtitle {
+  font-family: var(--font-body);
+  color: var(--text-secondary);
+}

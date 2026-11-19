@@ -1,9 +1,15 @@
-import { and, asc, desc, eq, ne, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import type { CreateRaidInput, RaidItemDto, UpdateRaidInput } from "@myapp/shared";
+import type {
+  CreateRaidInput,
+  RaidItemDto,
+  RaidMitigatingActionDto,
+  RaidMitigatingActionInput,
+  UpdateRaidInput,
+} from "@myapp/shared";
 import { db, type DbOrTx } from "../db/client";
-import { projects, raidItems, subprojects, users } from "../db/schema";
-import { conflict, notFound } from "../errors";
+import { projects, raidItems, raidMitigatingActions, subprojects, users } from "../db/schema";
+import { conflict, notFound, unprocessable } from "../errors";
 import type { Actor } from "../permissions";
 import { createRaidItem } from "./moduleService";
 
@@ -23,7 +29,87 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function toDto(r: Row): RaidItemDto {
+function toActionDto(a: typeof raidMitigatingActions.$inferSelect): RaidMitigatingActionDto {
+  return {
+    id: a.id,
+    description: a.description,
+    isCompleted: a.isCompleted,
+    completedAt: a.completedAt ? a.completedAt.toISOString() : null,
+    sortOrder: a.sortOrder,
+  };
+}
+
+/** One batched query for the whole page of items (no per-item lookups). */
+async function loadActions(
+  tx: DbOrTx,
+  raidItemIds: string[],
+): Promise<Map<string, RaidMitigatingActionDto[]>> {
+  const byItem = new Map<string, RaidMitigatingActionDto[]>();
+  if (raidItemIds.length === 0) return byItem;
+  const rows = await tx
+    .select()
+    .from(raidMitigatingActions)
+    .where(inArray(raidMitigatingActions.raidItemId, raidItemIds))
+    .orderBy(asc(raidMitigatingActions.sortOrder), asc(raidMitigatingActions.createdAt));
+  for (const a of rows) {
+    const list = byItem.get(a.raidItemId) ?? [];
+    list.push(toActionDto(a));
+    byItem.set(a.raidItemId, list);
+  }
+  return byItem;
+}
+
+/**
+ * Makes the stored checklist equal to the input: rows missing from the input are deleted, rows with an id are
+ * updated, rows without one are inserted. Array order becomes sort_order. completed_at follows is_completed.
+ * Runs inside the transaction of the caller.
+ */
+async function syncActions(tx: DbOrTx, raidItemId: string, input: RaidMitigatingActionInput[]) {
+  const existing = await tx
+    .select()
+    .from(raidMitigatingActions)
+    .where(eq(raidMitigatingActions.raidItemId, raidItemId));
+  const byId = new Map(existing.map((e) => [e.id, e]));
+  const keep = new Set<string>();
+  for (const a of input) {
+    if (!a.id) continue;
+    if (!byId.has(a.id)) throw unprocessable("Unknown mitigating action for this RAID item");
+    if (keep.has(a.id)) throw unprocessable("Duplicate mitigating action id");
+    keep.add(a.id);
+  }
+  const removed = existing.filter((e) => !keep.has(e.id)).map((e) => e.id);
+  if (removed.length > 0) {
+    await tx.delete(raidMitigatingActions).where(inArray(raidMitigatingActions.id, removed));
+  }
+  if (input.length === 0) return;
+  const now = new Date();
+  await tx
+    .insert(raidMitigatingActions)
+    .values(
+      input.map((a, i) => {
+        const done = a.isCompleted ?? false;
+        return {
+          id: a.id,
+          raidItemId,
+          description: a.description,
+          isCompleted: done,
+          completedAt: done ? (a.id && byId.get(a.id)?.completedAt) || now : null,
+          sortOrder: i,
+        };
+      }),
+    )
+    .onConflictDoUpdate({
+      target: raidMitigatingActions.id,
+      set: {
+        description: sql`excluded.description`,
+        isCompleted: sql`excluded.is_completed`,
+        completedAt: sql`excluded.completed_at`,
+        sortOrder: sql`excluded.sort_order`,
+      },
+    });
+}
+
+function toDto(r: Row, actions: RaidMitigatingActionDto[]): RaidItemDto {
   const x = r.row;
   return {
     id: x.id,
@@ -36,7 +122,7 @@ function toDto(r: Row): RaidItemDto {
     impact: x.impact,
     likelihood: x.likelihood,
     severityScore: x.severityScore,
-    mitigatingAction: x.mitigatingAction,
+    mitigatingActions: actions,
     ownerId: x.ownerId,
     ownerName: r.ownerName,
     raisedById: x.raisedById,
@@ -95,13 +181,18 @@ export async function listRaid(projectId: string, f: RaidFilters = {}): Promise<
       desc(sql`coalesce(${raidItems.severityScore}, ${raidItems.impact})`),
       asc(raidItems.seq),
     );
-  return rows.map(toDto);
+  const actions = await loadActions(
+    db,
+    rows.map((r) => r.row.id),
+  );
+  return rows.map((r) => toDto(r, actions.get(r.row.id) ?? []));
 }
 
 export async function getRaid(id: string): Promise<RaidItemDto> {
   const [row] = await baseQuery(db).where(eq(raidItems.id, id)).limit(1);
   if (!row) throw notFound("RAID item");
-  return toDto(row);
+  const actions = await loadActions(db, [row.row.id]);
+  return toDto(row, actions.get(row.row.id) ?? []);
 }
 
 export async function createRaid(
@@ -120,12 +211,12 @@ export async function createRaid(
         description: input.description,
         impact: input.impact,
         likelihood: input.likelihood ?? null,
-        mitigatingAction: input.mitigatingAction ?? undefined,
         ownerId: input.ownerId ?? null,
         targetDate: input.targetDate ?? null,
       },
       tx,
     );
+    await syncActions(tx, row.id, input.mitigatingActions ?? []);
     return row.id;
   });
   return getRaid(id);
@@ -147,7 +238,6 @@ export async function updateRaid(id: string, patch: UpdateRaidInput): Promise<Ra
     if (patch.description !== undefined) set.description = patch.description;
     if (patch.impact !== undefined) set.impact = patch.impact;
     if (patch.likelihood !== undefined) set.likelihood = patch.likelihood;
-    if (patch.mitigatingAction !== undefined) set.mitigatingAction = patch.mitigatingAction;
     if (patch.ownerId !== undefined) set.ownerId = patch.ownerId;
     if (patch.targetDate !== undefined) set.targetDate = patch.targetDate;
     if (patch.status !== undefined && patch.status !== current.status) {
@@ -158,8 +248,45 @@ export async function updateRaid(id: string, patch: UpdateRaidInput): Promise<Ra
     if (Object.keys(set).length > 0) {
       await tx.update(raidItems).set(set).where(eq(raidItems.id, id));
     }
+    if (patch.mitigatingActions !== undefined) {
+      await syncActions(tx, id, patch.mitigatingActions);
+    }
   });
   return getRaid(id);
+}
+
+/** Flips one checklist entry without touching the parent item. completed_at is set on first completion, cleared on undo. */
+export async function setMitigatingActionCompleted(
+  raidItemId: string,
+  actionId: string,
+  isCompleted: boolean,
+): Promise<RaidMitigatingActionDto> {
+  return db.transaction(async (tx) => {
+    const [item] = await tx
+      .select({ projectId: raidItems.projectId })
+      .from(raidItems)
+      .where(eq(raidItems.id, raidItemId))
+      .limit(1);
+    if (!item) throw notFound("RAID item");
+    await assertWritable(tx, item.projectId);
+    const [row] = await tx
+      .update(raidMitigatingActions)
+      .set({
+        isCompleted,
+        completedAt: isCompleted
+          ? sql`coalesce(${raidMitigatingActions.completedAt}, now())`
+          : null,
+      })
+      .where(
+        and(
+          eq(raidMitigatingActions.id, actionId),
+          eq(raidMitigatingActions.raidItemId, raidItemId),
+        ),
+      )
+      .returning();
+    if (!row) throw notFound("Mitigating action");
+    return toActionDto(row);
+  });
 }
 
 export async function deleteRaid(id: string): Promise<void> {

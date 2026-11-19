@@ -114,11 +114,11 @@ export function PageHeader({
   return (
     <Group justify="space-between" align="flex-start" mb="md" wrap="wrap">
       <div>
-        <Text component="h1" fz={26} fw={700} lh={1.2} m={0}>
+        <Text component="h1" fz={26} fw={700} lh={1.2} m={0} className="page-title">
           {title}
         </Text>
         {subtitle ? (
-          <Text c="dimmed" size="sm" mt={4}>
+          <Text c="dimmed" size="sm" mt={8} className="page-subtitle">
             {subtitle}
           </Text>
         ) : null}

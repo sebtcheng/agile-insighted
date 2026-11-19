@@ -2,9 +2,7 @@ import {
   Alert,
   Badge,
   Button,
-  Checkbox,
   Group,
-  Modal,
   Select,
   Stack,
   Text,
@@ -28,14 +26,10 @@ import {
   type WorkType,
 } from "@myapp/shared";
 import { ApiClientError } from "../api/client";
-import {
-  useCreateStory,
-  useDeleteStory,
-  useSetStoryCheck,
-  useStoryChecklist,
-  useUpdateStory,
-} from "../api/hooks";
+import { useCreateStory, useDeleteStory, useStoryMap, useUpdateStory } from "../api/hooks";
 import { toast } from "./ui";
+import { SideModal } from "./SideModal";
+import { StoryReadyChecklist } from "./StoryReadyChecklist";
 
 type Lookups = {
   steps: JourneyStepDto[];
@@ -71,38 +65,10 @@ const stepLabel = (s: JourneyStepDto, all: JourneyStepDto[]) => {
   return parent ? `${parent.name} › ${s.name}` : s.name;
 };
 
-function ReadyChecklist({ story, canTick }: { story: StoryDto; canTick: boolean }) {
-  const list = useStoryChecklist(story.id);
-  const tick = useSetStoryCheck(story.id);
-  const items = list.data ?? [];
-  if (items.length === 0) {
-    return (
-      <Text size="sm" c="dimmed">
-        No Definition of Ready items are set for this project (a PM adds them in Settings).
-      </Text>
-    );
-  }
-  return (
-    <Stack gap={6}>
-      <Text size="sm" fw={600}>
-        Definition of Ready ({items.filter((i) => i.checked).length}/{items.length})
-      </Text>
-      {items.map((i) => (
-        <Checkbox
-          key={i.templateId}
-          label={i.label}
-          checked={i.checked}
-          disabled={!canTick || tick.isPending}
-          onChange={(e) =>
-            tick.mutate(
-              { templateId: i.templateId, checked: e.currentTarget.checked },
-              { onError: (err) => toast.error(err.message) },
-            )
-          }
-        />
-      ))}
-    </Stack>
-  );
+function ReadyChecklist({ story, subprojectId }: { story: StoryDto; subprojectId: string }) {
+  // The prop is a snapshot taken when the drawer opened; read the live row so ticks and edits show at once.
+  const live = useStoryMap(subprojectId).data?.stories.find((s) => s.id === story.id) ?? story;
+  return <StoryReadyChecklist story={live} subprojectId={subprojectId} canTick />;
 }
 
 export function StoryModal(props: Props) {
@@ -169,7 +135,7 @@ export function StoryModal(props: Props) {
   });
 
   return (
-    <Modal
+    <SideModal
       opened={opened}
       onClose={onClose}
       size="lg"
@@ -206,7 +172,7 @@ export function StoryModal(props: Props) {
             disabled={!canEdit}
             {...form.getInputProps("acceptanceCriteria")}
           />
-          <Group grow align="flex-start">
+          <Group className="side-modal-pair" grow align="flex-start">
             <Select
               label="Persona"
               clearable
@@ -223,7 +189,7 @@ export function StoryModal(props: Props) {
               {...form.getInputProps("journeyStepId")}
             />
           </Group>
-          <Group grow align="flex-start">
+          <Group className="side-modal-pair" grow align="flex-start">
             <Select
               label="Release"
               clearable
@@ -252,7 +218,7 @@ export function StoryModal(props: Props) {
             />
           </Group>
           {story && isPm ? (
-            <Group grow align="flex-start">
+            <Group className="side-modal-pair" grow align="flex-start">
               <Select
                 label="Sprint target"
                 clearable
@@ -271,7 +237,7 @@ export function StoryModal(props: Props) {
               />
             </Group>
           ) : null}
-          {story ? <ReadyChecklist story={story} canTick /> : null}
+          {story ? <ReadyChecklist story={story} subprojectId={subprojectId} /> : null}
           {missing ? (
             <Alert color="yellow" title="Not ready yet">
               <Stack gap={6}>
@@ -335,6 +301,6 @@ export function StoryModal(props: Props) {
           </Group>
         </Stack>
       </form>
-    </Modal>
+    </SideModal>
   );
 }

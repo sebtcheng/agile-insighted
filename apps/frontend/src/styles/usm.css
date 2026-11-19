@@ -1,0 +1,15 @@
+/* User Story Mapping: visible actions with the shared 120ms / 160ms ease from tokens.css. */
+.usm-action {
+  transition:
+    background-color 120ms var(--ui-ease),
+    color 120ms var(--ui-ease),
+    border-color 160ms var(--ui-ease);
+}
+.usm-action:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 1px;
+}
+.usm-order {
+  border-inline-start: 1px solid var(--mantine-color-default-border);
+  padding-inline-start: 2px;
+}

@@ -45,7 +45,7 @@ export function LoginPage() {
             <div>
               <Title order={2}>Sign in</Title>
               <Text c="dimmed" size="sm">
-                InsightED PM
+                InsightED AGILE
               </Text>
             </div>
             {login.isError ? (
