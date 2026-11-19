@@ -198,3 +198,30 @@ Decisions where the plan was silent:
 - Deleting a converted solution keeps its story.
 
 Not done: dragging opportunities to re-parent them, a tree diagram view, and linking discovery activities to assumptions from the activity drawer.
+
+## Gap closing and Phase 9: Insights
+
+Status: complete. Plain default Mantine; charts are hand-written SVG (no chart library added).
+
+Gaps closed:
+
+- Activities can link to a user story and to the assumption they test: `userStoryId` and `ostAssumptionId` on create and update, returned on every activity DTO, validated to the activity's own project (422 otherwise), editable by a PM in the activity drawer. The story map already showed the linked count.
+- Kano promotion lets the PM pick the journey step for the new story.
+- Story map: PMs reorder stories inside a cell with up and down buttons (positions are rewritten 0..n-1 so earlier ties resolve).
+- README: `npm run dev` runs both servers; `concurrently` is justified in "Dependencies worth a note".
+- Browser-checked: RAID add form (created and removed a test row), Insights, plus the module pages from the earlier phases.
+
+Phase 9, Insights (`/insights`, `GET /api/insights`):
+
+- `services/insightsService.ts` computes, from `activities` only: weekly throughput (zeros filled in, current week flagged partial), cycle time percentiles (50, 85, 95) and average from `started_at` to `completed_at`, current WIP with blocked count, the five oldest items in progress, and the mix of completed work by type. Weeks run Monday to Sunday in `APP_TIMEZONE`.
+- `services/forecast.ts` is a pure Monte Carlo: it draws whole weeks of past throughput with replacement, 5,000 runs, seeded so the numbers do not jitter between loads. It reports weeks to finish the open items at 50, 85 and 95% confidence, and items done in 2, 4 and 8 weeks (the 85% figure is the 15th percentile of outcomes). It only uses complete weeks, needs at least four, and says why when it cannot forecast.
+- Team-level only: no per-person grouping, no ranking (a build-plan rule). Aggregated over all activities or one subproject.
+- Tests: `services/forecast.test.ts` (percentiles, determinism, exact results for constant throughput, confidence ordering, empty history) and `routes/insights.api.test.ts` (throughput weeks, cycle time, WIP and aging, flow split, forecast, subproject scoping, validation).
+
+Decisions where the plan was silent:
+
+- Forecast dates count forward from the time the numbers were generated (`generatedAt`), not from the browser clock.
+- Open items for the forecast means every activity that is not done, including backlog items with no sprint.
+- The weekly bucket is grouped by ordinal in SQL because the timezone is a bind parameter.
+
+Not done: Playwright is still not installed (it needs a browser download), a per-sprint burndown, and an Impeccable design pass (waiting for design direction approval, see `DESIGN.md`).

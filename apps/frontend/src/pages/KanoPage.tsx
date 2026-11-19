@@ -34,6 +34,7 @@ import {
   useDeleteKano,
   useKano,
   usePromoteKano,
+  useStoryMap,
   useReleases,
   useSprints,
   useSubprojects,
@@ -176,6 +177,10 @@ function EditModal({
   const update = useUpdateKano();
   const remove = useDeleteKano();
   const promote = usePromoteKano();
+  const storyMap = useStoryMap(request.subprojectId ?? undefined);
+  const [stepId, setStepId] = useState<string | null>(null);
+  const steps = storyMap.data?.steps ?? [];
+  const leafSteps = steps.filter((st) => !steps.some((x) => x.parentStepId === st.id));
   const form = useForm<EditValues>({
     initialValues: {
       description: request.description,
@@ -367,30 +372,49 @@ function EditModal({
               {request.promotedStoryId ? (
                 <Badge variant="light">Promoted to {request.promotedStoryCode}</Badge>
               ) : (
-                <Button
-                  variant="light"
-                  loading={promote.isPending}
-                  disabled={!request.subprojectId}
-                  title={
-                    request.subprojectId
-                      ? undefined
-                      : "Choose a subproject and save before promoting"
-                  }
-                  onClick={() =>
-                    promote.mutate(
-                      { id: request.id, input: {} },
-                      {
-                        onSuccess: (r) => {
-                          toast.ok(`Created ${r.request.promotedStoryCode} in the story map`);
-                          onClose();
+                <>
+                  {leafSteps.length > 0 ? (
+                    <Select
+                      aria-label="Journey step for the new story"
+                      placeholder="Journey step (optional)"
+                      clearable
+                      w={220}
+                      value={stepId}
+                      onChange={setStepId}
+                      data={leafSteps.map((st) => {
+                        const parent = steps.find((x) => x.id === st.parentStepId);
+                        return {
+                          value: st.id,
+                          label: parent ? `${parent.name} › ${st.name}` : st.name,
+                        };
+                      })}
+                    />
+                  ) : null}
+                  <Button
+                    variant="light"
+                    loading={promote.isPending}
+                    disabled={!request.subprojectId}
+                    title={
+                      request.subprojectId
+                        ? undefined
+                        : "Choose a subproject and save before promoting"
+                    }
+                    onClick={() =>
+                      promote.mutate(
+                        { id: request.id, input: { journeyStepId: stepId } },
+                        {
+                          onSuccess: (r) => {
+                            toast.ok(`Created ${r.request.promotedStoryCode} in the story map`);
+                            onClose();
+                          },
+                          onError: (e) => toast.error(e.message),
                         },
-                        onError: (e) => toast.error(e.message),
-                      },
-                    )
-                  }
-                >
-                  Promote to story
-                </Button>
+                      )
+                    }
+                  >
+                    Promote to story
+                  </Button>
+                </>
               )}
             </Group>
             <Group>

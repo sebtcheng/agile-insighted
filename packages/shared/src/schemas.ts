@@ -154,6 +154,8 @@ export const createActivitySchema = z.object({
   dueDate: isoDate.nullable().optional(),
   tagIds: z.array(id).max(20).optional(),
   releaseId: id.nullable().optional(),
+  userStoryId: id.nullable().optional(),
+  ostAssumptionId: id.nullable().optional(),
   ...governanceFields(),
 });
 
@@ -175,6 +177,8 @@ export const updateActivitySchema = z
     dueDate: isoDate.nullable(),
     tagIds: z.array(id).max(20),
     releaseId: id.nullable(),
+    userStoryId: id.nullable(),
+    ostAssumptionId: id.nullable(),
   })
   .partial()
   .extend(governanceFields());
@@ -257,6 +261,8 @@ export const activityDtoSchema = z.object({
   subprojectName: z.string().nullable(),
   sprintId: id.nullable(),
   releaseId: id.nullable(),
+  userStoryId: id.nullable(),
+  ostAssumptionId: id.nullable(),
   assigneeId: id.nullable(),
   assigneeName: z.string().nullable(),
   /** Derived, not stored: an unfinished blocking dependency exists. */

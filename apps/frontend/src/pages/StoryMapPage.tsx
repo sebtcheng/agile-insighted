@@ -28,6 +28,7 @@ import {
   useReleases,
   useSprints,
   useStoryMap,
+  useUpdateStory,
   useSubprojects,
   useUpdateStep,
 } from "../api/hooks";
@@ -254,6 +255,22 @@ export function StoryMapPage() {
   const [stepOpen, stepModal] = useDisclosure(false);
   const [personaOpen, personaModal] = useDisclosure(false);
   const readOnly = !project || !!project.archivedAt;
+  const reorder = useUpdateStory();
+  // Rewrites the cell's positions as 0..n-1 with the swap applied, so ties from earlier inserts resolve too.
+  const moveStory = (cell: StoryDto[], index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (j < 0 || j >= cell.length) return;
+    const order = [...cell];
+    [order[index], order[j]] = [order[j] as StoryDto, order[index] as StoryDto];
+    order.forEach((st, i) => {
+      if (st.position !== i) {
+        reorder.mutate(
+          { id: st.id, patch: { position: i } },
+          { onError: (e) => toast.error(e.message) },
+        );
+      }
+    });
+  };
 
   const layout = useMemo(() => {
     const steps = map.data?.steps ?? [];
@@ -416,8 +433,36 @@ export function StoryMapPage() {
                                 style={{ gridRow: 4 + li * 2 }}
                                 mih={40}
                               >
-                                {cell.map((s) => (
-                                  <StoryCard key={s.id} story={s} onOpen={(x) => openStory(x)} />
+                                {cell.map((s, idx) => (
+                                  <Group key={s.id} gap={2} wrap="nowrap" align="flex-start">
+                                    <Box style={{ flex: 1, minWidth: 0 }}>
+                                      <StoryCard story={s} onOpen={(x) => openStory(x)} />
+                                    </Box>
+                                    {isPm && !readOnly && cell.length > 1 ? (
+                                      <Stack gap={2}>
+                                        <ActionIcon
+                                          variant="subtle"
+                                          color="gray"
+                                          size="xs"
+                                          disabled={idx === 0}
+                                          aria-label={`Move ${s.code} up`}
+                                          onClick={() => moveStory(cell, idx, -1)}
+                                        >
+                                          ▲
+                                        </ActionIcon>
+                                        <ActionIcon
+                                          variant="subtle"
+                                          color="gray"
+                                          size="xs"
+                                          disabled={idx === cell.length - 1}
+                                          aria-label={`Move ${s.code} down`}
+                                          onClick={() => moveStory(cell, idx, 1)}
+                                        >
+                                          ▼
+                                        </ActionIcon>
+                                      </Stack>
+                                    ) : null}
+                                  </Group>
                                 ))}
                                 {!readOnly ? (
                                   <Button

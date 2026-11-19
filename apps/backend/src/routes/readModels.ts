@@ -1,7 +1,8 @@
 import { Router } from "express";
-import { portfolioQuerySchema, searchQuerySchema } from "@myapp/shared";
+import { insightsQuerySchema, portfolioQuerySchema, searchQuerySchema } from "@myapp/shared";
 import { z } from "zod";
 import { actorOf, asyncHandler, idParam, parse } from "../middleware";
+import { getInsights } from "../services/insightsService";
 import { getPortfolio } from "../services/portfolioService";
 import { search } from "../services/searchService";
 import { getPersonItems, getWorkload } from "../services/workloadService";
@@ -36,5 +37,12 @@ readModels.get(
   asyncHandler(async (req, res) => {
     const { q, limit } = parse(searchQuerySchema, req.query);
     res.json(await search(q, limit));
+  }),
+);
+
+readModels.get(
+  "/insights",
+  asyncHandler(async (req, res) => {
+    res.json(await getInsights(parse(insightsQuerySchema, req.query)));
   }),
 );

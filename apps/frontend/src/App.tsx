@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthGate } from "./auth";
 import { Layout } from "./components/Layout";
 import { HomePage } from "./pages/HomePage";
+import { InsightsPage } from "./pages/InsightsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { OstPage } from "./pages/OstPage";
 import { PortfolioPage } from "./pages/PortfolioPage";
@@ -28,6 +29,7 @@ export function App() {
         <Route index element={<HomePage />} />
         <Route path="portfolio" element={<PortfolioPage />} />
         <Route path="workload" element={<WorkloadPage />} />
+        <Route path="insights" element={<InsightsPage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/:projectId" element={<ProjectPage />} />
         <Route path="projects/:projectId/sprints/:sprintId" element={<SprintPage />} />

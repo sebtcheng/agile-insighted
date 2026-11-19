@@ -30,6 +30,7 @@ import type {
   DependenciesDto,
   GateOverrideDto,
   HomeResponse,
+  InsightsDto,
   MeDto,
   PersonItemsDto,
   PortfolioResponse,
@@ -630,3 +631,11 @@ export const useUpdateAssumption = () =>
   );
 export const useDeleteAssumption = () =>
   useAdminMutation((id: string) => api.delete(`/ost/assumptions/${id}`), ["ost"]);
+
+// ---------------------------------------------------------------- Insights (Phase 9)
+export const useInsights = (params: { projectId?: string; subprojectId?: string; weeks: number }) =>
+  useQuery({
+    queryKey: ["insights", params],
+    placeholderData: keepPreviousData,
+    queryFn: () => api.get<InsightsDto>("/insights", params),
+  });

@@ -12,6 +12,7 @@ const NAV = [
   { to: "/", label: "Home", end: true },
   { to: "/portfolio", label: "Portfolio" },
   { to: "/workload", label: "Workload" },
+  { to: "/insights", label: "Insights" },
   { to: "/projects", label: "Projects" },
   { to: "/ost", label: "Opportunity Solution Tree" },
   { to: "/usm", label: "User Story Mapping" },

@@ -37,7 +37,9 @@ import {
   useComments,
   useDependencies,
   useEvents,
+  useOstTree,
   useReleases,
+  useStoryMap,
   useRemoveDependency,
   useSearch,
   useSetCheck,
@@ -389,6 +391,8 @@ function PmDetails({ activity }: { activity: ActivityDto }) {
   const subs = useSubprojects(activity.projectId);
   const sprints = useSprints(activity.projectId);
   const releases = useReleases(activity.projectId);
+  const storyMap = useStoryMap(activity.subprojectId ?? undefined);
+  const ost = useOstTree(activity.projectId);
   const [form, setForm] = useState({
     title: activity.title,
     description: activity.description ?? "",
@@ -400,6 +404,8 @@ function PmDetails({ activity }: { activity: ActivityDto }) {
     subprojectId: opt(activity.subprojectId),
     sprintId: opt(activity.sprintId),
     releaseId: opt(activity.releaseId),
+    userStoryId: opt(activity.userStoryId),
+    ostAssumptionId: opt(activity.ostAssumptionId),
     dueDate: activity.dueDate ?? "",
     percentComplete: activity.percentComplete as number | string,
   });
@@ -420,6 +426,10 @@ function PmDetails({ activity }: { activity: ActivityDto }) {
       patch.subprojectId = unopt(form.subprojectId);
     if (unopt(form.sprintId) !== activity.sprintId) patch.sprintId = unopt(form.sprintId);
     if (unopt(form.releaseId) !== activity.releaseId) patch.releaseId = unopt(form.releaseId);
+    if (unopt(form.userStoryId) !== activity.userStoryId)
+      patch.userStoryId = unopt(form.userStoryId);
+    if (unopt(form.ostAssumptionId) !== activity.ostAssumptionId)
+      patch.ostAssumptionId = unopt(form.ostAssumptionId);
     if ((form.dueDate || null) !== activity.dueDate) patch.dueDate = form.dueDate || null;
     if (Number(form.percentComplete) !== activity.percentComplete)
       patch.percentComplete = Number(form.percentComplete);
@@ -512,6 +522,36 @@ function PmDetails({ activity }: { activity: ActivityDto }) {
           value={form.releaseId}
           onChange={(v) => set("releaseId", v ?? NONE)}
           data={pick(releases.data?.map((r) => ({ id: r.id, label: r.name })))}
+        />
+      </Group>
+      <Group grow align="flex-start">
+        <Select
+          label="User story"
+          description={
+            activity.subprojectId ? undefined : "Set a subproject to pick from its stories"
+          }
+          searchable
+          value={form.userStoryId}
+          onChange={(v) => set("userStoryId", v ?? NONE)}
+          data={pick(
+            storyMap.data?.stories.map((st) => ({
+              id: st.id,
+              label: `${st.code} ${st.story.slice(0, 60)}`,
+            })),
+          )}
+        />
+        <Select
+          label="Assumption being tested"
+          description="For discovery work"
+          searchable
+          value={form.ostAssumptionId}
+          onChange={(v) => set("ostAssumptionId", v ?? NONE)}
+          data={pick(
+            ost.data?.assumptions.map((a) => {
+              const sol = ost.data?.solutions.find((x) => x.id === a.solutionId);
+              return { id: a.id, label: `${sol?.code ?? ""} ${a.statement.slice(0, 60)}` };
+            }),
+          )}
         />
       </Group>
       <Group grow align="flex-start">
