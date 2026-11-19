@@ -6,6 +6,9 @@ import { activities, subprojects } from "../db/schema";
 import { env } from "../env";
 import { homeRanges, localDate } from "./dateBuckets";
 import { WAITING_CTE_BODY } from "./portfolioService";
+import { loadWorkItems } from "./workItemService";
+import { memberRollups } from "./workItemRollups";
+import { scopeCondition, scopeSql, type ProjectScope } from "./visibilityService";
 
 type Row = {
   user_id: string;
@@ -29,6 +32,7 @@ export function workloadSql(
   weekStart: string,
   weekEnd: string,
   projectId: string | null = null,
+  scope: ProjectScope = null,
 ): SQL {
   // projectId scopes the WIP limit and active sprint to one project; null means the oldest open project.
   return sql`
@@ -36,6 +40,7 @@ export function workloadSql(
     cfg AS (
       SELECT (SELECT wip_limit_per_person FROM projects
               WHERE archived_at IS NULL AND (${projectId}::uuid IS NULL OR id = ${projectId}::uuid)
+                AND ${scopeSql(sql`id`, scope)}
               ORDER BY created_at LIMIT 1) AS wip_limit,
              sp.id AS sprint_id, sp.name AS sprint_name
       FROM (SELECT 1) one
@@ -43,6 +48,7 @@ export function workloadSql(
         SELECT s.id, s.name FROM sprints s JOIN projects p ON p.id = s.project_id AND p.archived_at IS NULL
         WHERE s.status = 'active' AND s.subproject_id IS NULL
           AND (${projectId}::uuid IS NULL OR p.id = ${projectId}::uuid)
+          AND ${scopeSql(sql`p.id`, scope)}
         ORDER BY s.end_date LIMIT 1
       ) sp ON true
     )
@@ -60,18 +66,23 @@ export function workloadSql(
              count(*) FILTER (WHERE cfg.sprint_id IS NOT NULL AND x.sprint_id = cfg.sprint_id)::int AS sprint_assigned
       FROM activities x
       LEFT JOIN waiting w ON w.blocked_activity_id = x.id
-      WHERE x.assignee_id = u.id AND x.status <> 'done'
+      WHERE x.assignee_id = u.id AND x.status <> 'done' AND ${scopeSql(sql`x.project_id`, scope)}
     ) a
     LEFT JOIN sprint_member_capacity cap ON cap.sprint_id = cfg.sprint_id AND cap.user_id = u.id
     WHERE u.is_active
+      AND (${sql.raw(scope === null ? "true" : "false")} OR u.id IN (
+        SELECT pm.user_id FROM project_members pm WHERE ${scopeSql(sql`pm.project_id`, scope)}
+        UNION SELECT po.owner_id FROM projects po WHERE ${scopeSql(sql`po.id`, scope)}))
     ORDER BY u.full_name, u.id`;
 }
 
 export async function getWorkload(
-  opts: { now?: Date; projectId?: string } = {},
+  opts: { now?: Date; projectId?: string; scope?: ProjectScope } = {},
 ): Promise<WorkloadResponse> {
   const r = homeRanges(localDate(opts.now ?? new Date(), env.APP_TIMEZONE));
-  const res = await db.execute<Row>(workloadSql(r.weekStart, r.weekEnd, opts.projectId ?? null));
+  const res = await db.execute<Row>(
+    workloadSql(r.weekStart, r.weekEnd, opts.projectId ?? null, opts.scope ?? null),
+  );
   const items: WorkloadRow[] = res.rows.map((x) => ({
     userId: x.user_id,
     fullName: x.full_name,
@@ -86,11 +97,20 @@ export async function getWorkload(
     sprintCapacity: x.sprint_capacity,
     overCapacity: x.sprint_capacity !== null && x.sprint_assigned > x.sprint_capacity,
   }));
-  return { items };
+  const loaded = await loadWorkItems(
+    { projectId: opts.projectId },
+    opts.scope ?? null,
+    opts.now ?? new Date(),
+  );
+  const members = memberRollups(
+    loaded.items,
+    items.map((i) => ({ id: i.userId, fullName: i.fullName })),
+  ).map((m) => ({ ...m, items: m.items.slice(0, 300) }));
+  return { items, members };
 }
 
 /** A person's open items grouped by subproject, for the expandable row. Nothing here scores output. */
-export async function getPersonItems(userId: string) {
+export async function getPersonItems(userId: string, scope: ProjectScope = null) {
   const rows = await db
     .select({
       id: activities.id,
@@ -105,7 +125,13 @@ export async function getPersonItems(userId: string) {
     })
     .from(activities)
     .leftJoin(subprojects, eq(subprojects.id, activities.subprojectId))
-    .where(and(eq(activities.assigneeId, userId), ne(activities.status, "done")))
+    .where(
+      and(
+        eq(activities.assigneeId, userId),
+        ne(activities.status, "done"),
+        scopeCondition(activities.projectId, scope),
+      ),
+    )
     .orderBy(asc(subprojects.code), asc(activities.dueDate), asc(activities.id))
     .limit(500);
   const groups = new Map<

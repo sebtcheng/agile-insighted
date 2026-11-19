@@ -30,7 +30,7 @@ import {
   useCurrentProject,
   useDeleteRaid,
   useRaid,
-  useSubprojects,
+  useProjects,
   useUpdateRaid,
   useUsers,
 } from "../api/hooks";
@@ -76,7 +76,7 @@ type FormValues = {
   likelihood: string;
   mitigatingActions: MitigatingActionDraft[];
   ownerId: string;
-  subprojectId: string;
+  projectId: string;
   targetDate: string;
 };
 
@@ -85,13 +85,16 @@ function RaidForm({
   existing,
   isPm,
   onDone,
+  onSaved,
 }: {
   projectId: string;
   existing?: RaidItemDto;
   isPm: boolean;
   onDone: () => void;
+  /** Called with the project the item now belongs to, so the log can switch to it. */
+  onSaved?: (projectId: string) => void;
 }) {
-  const subprojects = useSubprojects(projectId);
+  const projects = useProjects();
   const users = useUsers();
   const create = useCreateRaid(projectId);
   const update = useUpdateRaid();
@@ -105,12 +108,20 @@ function RaidForm({
         id: a.id,
         description: a.description,
         isCompleted: a.isCompleted,
+        targetDate: a.targetDate ?? "",
+        responsibleId: a.responsibleId ?? "",
       })),
       ownerId: existing?.ownerId ?? "",
-      subprojectId: existing?.subprojectId ?? "",
+      projectId: existing?.projectId ?? projectId,
       targetDate: existing?.targetDate ?? "",
     },
-    validate: { description: (v) => (v.trim() ? null : "Describe the item") },
+    validate: {
+      description: (v) => (v.trim() ? null : "Describe the item"),
+      mitigatingActions: (list) =>
+        list.some((a) => a.description.trim() !== "" && (!a.targetDate || !a.responsibleId))
+          ? "Every mitigating action needs a target date and a staff member responsible"
+          : null,
+    },
   });
   const pending = create.isPending || update.isPending;
   const submit = form.onSubmit((v) => {
@@ -123,10 +134,16 @@ function RaidForm({
         .map((a) => ({ ...a, description: a.description.trim() }))
         .filter((a) => a.description !== ""),
       ownerId: v.ownerId || null,
-      subprojectId: v.subprojectId || null,
       targetDate: v.targetDate || null,
+      projectId: v.projectId,
     };
-    const opts = { onSuccess: onDone, onError: (e: Error) => toast.error(e.message) };
+    const opts = {
+      onSuccess: () => {
+        onSaved?.(v.projectId);
+        onDone();
+      },
+      onError: (e: Error) => toast.error(e.message),
+    };
     if (existing) update.mutate({ id: existing.id, patch: payload }, opts);
     else create.mutate(payload, opts);
   });
@@ -162,18 +179,22 @@ function RaidForm({
           />
         </SimpleGrid>
         <Select
-          label="Subproject"
-          clearable
-          placeholder="Whole project"
-          data={(subprojects.data ?? []).map((s) => ({
-            value: s.id,
-            label: s.name,
-          }))}
-          {...form.getInputProps("subprojectId")}
+          label="Project"
+          allowDeselect={false}
+          data={(projects.data ?? [])
+            .filter((p) => !p.archivedAt || p.id === form.values.projectId)
+            .map((p) => ({ value: p.id, label: p.name }))}
+          {...form.getInputProps("projectId")}
         />
         <MitigatingActionsField
           value={form.values.mitigatingActions}
           onChange={(next) => form.setFieldValue("mitigatingActions", next)}
+          staffOptions={(users.data ?? [])
+            .filter(
+              (u) =>
+                u.isActive || form.values.mitigatingActions.some((a) => a.responsibleId === u.id),
+            )
+            .map((u) => ({ value: u.id, label: u.fullName }))}
         />
         {isPm ? (
           <Select
@@ -182,7 +203,7 @@ function RaidForm({
             searchable
             placeholder="Unassigned"
             data={(users.data ?? [])
-              .filter((u) => u.isActive)
+              .filter((u) => u.isActive || u.id === form.values.ownerId)
               .map((u) => ({ value: u.id, label: u.fullName }))}
             {...form.getInputProps("ownerId")}
           />
@@ -291,9 +312,9 @@ export function MitigationSummary({
         onOpen(item);
       }}
     >
-      <Text size="xs" mt={2} className="raid-sub">
-        Mitigation: <span className="raid-mono">{mitigationPercent(item.mitigatingActions)}%</span>
-      </Text>
+      <Badge size="lg" variant="light" className="raid-mono">
+        {mitigationPercent(item.mitigatingActions)}%
+      </Badge>
     </UnstyledButton>
   );
 }
@@ -318,64 +339,60 @@ export function RaidCards({
           onClick={canEdit ? () => onEdit(i) : undefined}
         >
           <Group justify="space-between" align="baseline" wrap="nowrap" mb="xs">
-            <div>
-              <Text size="sm" fw={600} className="raid-mono">
-                {i.code}
+            <div style={{ minWidth: 0 }}>
+              <Badge size="xs" variant="light" mb={4} className="raid-mono raid-project-badge">
+                {i.projectName || i.projectCode}
+              </Badge>
+              <Text size="sm" fw={600} className="raid-card-title">
+                {i.description}
               </Text>
-              <Text size="xs" mt={2} className="raid-mono raid-sub">
-                {i.subprojectCode ?? "Project"}
+              <Text size="xs" mt={2} className="raid-sub raid-card-owner">
+                {i.ownerName ?? "Unassigned"}
               </Text>
             </div>
-            <Group gap={6} wrap="nowrap" align="baseline">
-              <Text size="xs" className="raid-sub raid-type">
-                {ENUM_LABELS.raidType[i.itemType]}
-              </Text>
-              <Badge className="raid-badge" data-severity={i.impact} variant="light">
-                {level(i.impact)}
-              </Badge>
-            </Group>
+            <MitigationSummary item={i} onOpen={onEdit} />
           </Group>
-          <Text size="sm">{i.description}</Text>
-          <MitigationSummary item={i} onOpen={onEdit} />
+          <div className="raid-card-mitigations">
+            {i.mitigatingActions.length === 0 ? (
+              <Text size="xs" className="raid-sub">
+                No mitigating actions
+              </Text>
+            ) : (
+              <MitigationChecklist item={i} editable={canEdit} hideCount />
+            )}
+          </div>
           <div className="raid-card-foot">
-            <SimpleGrid cols={2} spacing="xs" verticalSpacing="md" mt="sm" className="raid-meta">
-              <div>
-                <Text size="xs" className="raid-sub">
-                  Likelihood
-                </Text>
-                <Text size="sm">{level(i.likelihood)}</Text>
-              </div>
-              <div>
-                <Text size="xs" className="raid-sub">
-                  Owner
-                </Text>
-                <Text size="sm">{i.ownerName ?? "Unassigned"}</Text>
-              </div>
-              <div>
-                <Text size="xs" className="raid-sub">
-                  Target
-                </Text>
-                <Text size="sm" c={i.isOverdue ? "red" : undefined} className="raid-mono">
-                  {fmtDate(i.targetDate)}
-                </Text>
-                {i.isOverdue ? (
-                  <Text size="xs" c="red">
-                    Overdue
+            <Group
+              mt="sm"
+              pt="sm"
+              justify="space-between"
+              align="flex-end"
+              wrap="wrap"
+              className="raid-card-actions"
+            >
+              <Group gap="md" align="flex-end" wrap="nowrap" className="raid-meta">
+                <div>
+                  <Text size="xs" className="raid-sub">
+                    Target
                   </Text>
-                ) : null}
-              </div>
-              <div>
-                <Text size="xs" className="raid-sub" mb={2}>
-                  Status
-                </Text>
-                <RaidStatusControl item={i} editable={canEdit} />
-              </div>
-            </SimpleGrid>
-            {canEdit ? (
-              <Group mt="sm" pt="sm" justify="flex-end" className="raid-card-actions">
-                <RaidActions item={i} onEdit={onEdit} />
+                  <Text size="sm" c={i.isOverdue ? "red" : undefined} className="raid-mono">
+                    {fmtDate(i.targetDate)}
+                  </Text>
+                  {i.isOverdue ? (
+                    <Text size="xs" c="red">
+                      Overdue
+                    </Text>
+                  ) : null}
+                </div>
+                <div>
+                  <Text size="xs" className="raid-sub" mb={2}>
+                    Status
+                  </Text>
+                  <RaidStatusControl item={i} editable={canEdit} />
+                </div>
               </Group>
-            ) : null}
+              {canEdit ? <RaidActions item={i} onEdit={onEdit} /> : null}
+            </Group>
           </div>
         </Card>
       ))}
@@ -386,15 +403,17 @@ export function RaidCards({
 export function RaidPage() {
   const isPm = useIsPm();
   const [params, setParams] = useSearchParams();
-  const { project } = useCurrentProject();
-  const subprojects = useSubprojects(project?.id);
+  // PMs see every project by default; others see one project at a time.
+  const scope = params.get("project") ?? (isPm ? "all" : null);
+  const isAll = scope === "all";
+  const { project } = useCurrentProject(isAll ? null : scope);
+  const allProjects = useProjects();
   const filters = {
     itemType: (params.get("type") as RaidType | null) ?? undefined,
     status: (params.get("status") as RaidStatus | null) ?? undefined,
-    subprojectId: params.get("subprojectId") ?? undefined,
     openOnly: params.get("all") !== "true",
   };
-  const query = useRaid(project?.id, filters);
+  const query = useRaid(isAll ? "all" : project?.id, filters);
   const [viewMode, setViewMode] = useViewMode("card");
   const [opened, { open, close }] = useDisclosure(false);
   const [editing, setEditing] = useState<RaidItemDto | undefined>();
@@ -429,6 +448,20 @@ export function RaidPage() {
       <Group mb="md" align="flex-end" wrap="wrap" className="raid-filters">
         <Select
           {...SELECT_UI}
+          label="Project"
+          allowDeselect={false}
+          data={[
+            ...(isPm ? [{ value: "all", label: "All projects" }] : []),
+            ...(allProjects.data ?? [])
+              .filter((p) => !p.archivedAt)
+              .map((p) => ({ value: p.id, label: p.name })),
+          ]}
+          value={isAll ? "all" : (project?.id ?? null)}
+          onChange={(v) => setParam("project", v)}
+          w={200}
+        />
+        <Select
+          {...SELECT_UI}
           label="Type"
           clearable
           placeholder="All types"
@@ -445,16 +478,6 @@ export function RaidPage() {
           data={STATUS_OPTIONS}
           value={filters.status ?? null}
           onChange={(v) => setParam("status", v)}
-          w={160}
-        />
-        <Select
-          {...SELECT_UI}
-          label="Subproject"
-          clearable
-          placeholder="All"
-          data={(subprojects.data ?? []).map((s) => ({ value: s.id, label: s.name }))}
-          value={filters.subprojectId ?? null}
-          onChange={(v) => setParam("subprojectId", v)}
           w={160}
         />
         <Checkbox
@@ -504,7 +527,7 @@ export function RaidPage() {
                             {i.code}
                           </Text>
                           <Text size="xs" mt={2} className="raid-mono raid-sub">
-                            {i.subprojectCode ?? "Project"}
+                            {i.projectCode}
                           </Text>
                         </Table.Td>
                         <Table.Td>{ENUM_LABELS.raidType[i.itemType]}</Table.Td>
@@ -548,7 +571,7 @@ export function RaidPage() {
         opened={opened}
         onClose={close}
         title={editing ? `Edit ${editing.code}` : "Add RAID item"}
-        size="lg"
+        size="xl"
       >
         {project ? (
           <RaidForm
@@ -557,6 +580,7 @@ export function RaidPage() {
             existing={editing}
             isPm={isPm}
             onDone={close}
+            onSaved={(pid) => (isAll ? undefined : setParam("project", pid))}
           />
         ) : null}
       </SideModal>

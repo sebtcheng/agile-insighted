@@ -1,7 +1,7 @@
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { addDays } from "../services/dateBuckets";
 import * as m from "../services/moduleService";
-import { activities, ostSolutions, raidMitigatingActions, storyDorItems } from "./schema";
+import { activities, ostSolutions, raidMitigatingActions, storyActionSteps } from "./schema";
 import { db } from "./client";
 
 export type ModuleSeedContext = {
@@ -20,7 +20,6 @@ export type ModuleSeedContext = {
 /** Seeds the four discovery modules through the normal transaction paths (nextSeq, roll-up). Domain-realistic, spread over the 15 subprojects. */
 export async function seedModules(c: ModuleSeedContext): Promise<void> {
   const k = { projectId: c.projectId, createdById: c.pmId };
-  const sub = (i: number) => c.subprojectIds[i % c.subprojectIds.length] ?? null;
   const member = (i: number) => c.memberIds[i % c.memberIds.length] ?? null;
 
   // ---------------------------------------------------------------- Opportunity Solution Tree
@@ -110,18 +109,13 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
   for (const [i, o] of OST.entries()) {
     const outcome = await m.createOutcome({
       ...k,
-      subprojectId: sub(i),
       title: o[0],
-      metricName: o[1],
-      baselineValue: o[2],
-      targetValue: o[3],
       targetDate: addDays(c.today, 60 + i * 7),
     });
     const opportunity = await m.createOpportunity({
       ...k,
       outcomeId: outcome.id,
       title: o[4],
-      evidence: "Raised in five teacher and student interviews during discovery.",
       isTargeted: true,
     });
     const solution = await m.createSolution({
@@ -153,12 +147,11 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
     ["LMS Administrator", "Connects the platform to the school's learning system"],
   ] as const;
   const personaIds: string[] = [];
-  for (const [i, p] of PERSONAS.entries()) {
+  for (const p of PERSONAS) {
     personaIds.push(
       (
         await m.createPersona({
           ...k,
-          subprojectId: i < 4 ? null : sub(i),
           name: p[0],
           description: p[1],
         })
@@ -178,15 +171,12 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
   ] as const;
   const stepIds: string[] = [];
   for (const [i, b] of BACKBONE.entries()) {
-    const subprojectId = sub(i);
-    if (!subprojectId) continue;
-    const parent = await m.createJourneyStep({ ...k, subprojectId, name: b[0], position: i });
+    const parent = await m.createJourneyStep({ ...k, name: b[0], position: i });
     for (const [j, name] of b[1].entries()) {
       stepIds.push(
         (
           await m.createJourneyStep({
             ...k,
-            subprojectId,
             parentStepId: parent.id,
             name,
             position: j,
@@ -284,12 +274,10 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
   ] as const;
   const storyIds: string[] = [];
   for (const [i, s] of STORIES.entries()) {
-    const idx = i % BACKBONE.length;
-    const subprojectId = sub(idx);
-    if (!subprojectId) continue;
     const story = await m.createStory({
       ...k,
-      subprojectId,
+      responsibleId: member(i),
+      targetDate: addDays(c.today, 14 + i * 7),
       personaId: personaIds[i % personaIds.length] ?? null,
       journeyStepId: stepIds[(i * 2) % Math.max(stepIds.length, 1)] ?? null,
       story: s[0],
@@ -303,16 +291,25 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
     storyIds.push(story.id);
   }
 
-  // Definition of Ready ticks on the first two stories (items were seeded when each story was created).
-  for (const storyId of storyIds.slice(0, 2)) {
-    const items = await db
-      .select({ id: storyDorItems.id })
-      .from(storyDorItems)
-      .where(eq(storyDorItems.storyId, storyId))
-      .orderBy(asc(storyDorItems.sortOrder));
-    for (const it of items.slice(0, 3)) {
-      await db.update(storyDorItems).set({ isCompleted: true }).where(eq(storyDorItems.id, it.id));
-    }
+  // Action steps: who does what by when. Completed stories have every step done (the 100% rule).
+  const STEP_LABELS = [
+    "Confirm acceptance criteria",
+    "Build and unit test",
+    "Demo to the product owner",
+  ];
+  for (const [i, storyId] of storyIds.entries()) {
+    const done = STORIES[i]?.[4] === "completed" ? STEP_LABELS.length : i % STEP_LABELS.length;
+    await db.insert(storyActionSteps).values(
+      STEP_LABELS.map((label, j) => ({
+        storyId,
+        label,
+        isCompleted: j < done,
+        completedAt: j < done ? new Date() : null,
+        responsibleId: member(i + j),
+        targetDate: addDays(c.today, 7 + i * 7 + j * 2),
+        sortOrder: j,
+      })),
+    );
   }
 
   // ---------------------------------------------------------------- Kano Request Tracker
@@ -323,8 +320,6 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
       "District Data Officer",
       "must_be",
       "approve_mvp",
-      [8, 5, 5, 3],
-      [200, "2", 80, "3"],
     ],
     [
       "Dark mode for the student app",
@@ -332,8 +327,6 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
       "Student council",
       "attractive",
       "schedule_release",
-      [3, 1, 1, 5],
-      null,
     ],
     [
       "Bulk upload of student rosters from Excel",
@@ -341,8 +334,6 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
       "School Administrator",
       "must_be",
       "prioritize_sprint",
-      [13, 8, 5, 8],
-      [500, "1", 90, "5"],
     ],
     [
       "Emoji reactions on teacher feedback",
@@ -350,8 +341,6 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
       "Teacher",
       "indifferent",
       "deprioritize",
-      [1, 1, 1, 2],
-      null,
     ],
     [
       "Parent notifications in Filipino and English",
@@ -359,8 +348,6 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
       "Guardian",
       "performance",
       "approve_mvp",
-      [8, 5, 3, 5],
-      [1200, "1", 70, "8"],
     ],
     [
       "Offline mode for the mobile companion",
@@ -368,8 +355,6 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
       "Student",
       "performance",
       "research_spike",
-      [8, 3, 5, 13],
-      [800, "2", 50, "13"],
     ],
     [
       "Gamified badges for completing modules",
@@ -377,8 +362,6 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
       "Teacher",
       "attractive",
       "schedule_release",
-      [3, 2, 1, 5],
-      null,
     ],
     [
       "Automatic rostering from the SIS",
@@ -386,57 +369,23 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
       "LMS Administrator",
       "must_be",
       "approve_mvp",
-      [13, 8, 8, 8],
-      [300, "3", 80, "8"],
     ],
-    [
-      "Hide the risk score from guardians",
-      "Corazon Reyes",
-      "Counselor",
-      "reverse",
-      "deprioritize",
-      null,
-      null,
-    ],
-    ["Voice notes on student records", "Edgar Santos", "Counselor", null, null, null, null],
-    ["Printable class engagement report", "Nina Flores", "Teacher", null, null, null, null],
+    ["Hide the risk score from guardians", "Corazon Reyes", "Counselor", "reverse", "deprioritize"],
+    ["Voice notes on student records", "Edgar Santos", "Counselor", null, null],
+    ["Printable class engagement report", "Nina Flores", "Teacher", null, null],
     [
       "Single sign-on with the school's identity provider",
       "Ricardo Tan",
       "School Administrator",
       "must_be",
       "prioritize_sprint",
-      [13, 5, 8, 13],
-      [900, "2", 60, "13"],
     ],
   ] as const;
-  for (const [i, q] of KANO.entries()) {
+  for (const q of KANO) {
     await m.createKanoRequest({
       ...k,
-      subprojectId: sub(i * 2),
-      description: q[0],
-      requesterName: q[1],
-      requesterRole: q[2],
+      revisionRequest: q[0],
       kanoCategory: q[3] ?? undefined,
-      decision: q[4] ?? undefined,
-      targetSprintId: q[4] === "prioritize_sprint" ? c.planningSprintId : null,
-      targetReleaseId:
-        q[4] === "approve_mvp"
-          ? c.mvpReleaseId
-          : q[4] === "schedule_release"
-            ? c.laterReleaseId
-            : null,
-      wsjf: q[5]
-        ? {
-            businessValue: q[5][0],
-            timeCriticality: q[5][1],
-            riskReduction: q[5][2],
-            jobSize: q[5][3],
-          }
-        : undefined,
-      rice: q[6]
-        ? { reach: q[6][0], impact: q[6][1], confidence: q[6][2], effort: q[6][3] }
-        : undefined,
     });
   }
 
@@ -542,7 +491,6 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
   for (const [i, r] of RAID.entries()) {
     const item = await m.createRaidItem({
       ...k,
-      subprojectId: sub(i + 1),
       itemType: r[0],
       description: r[1],
       impact: r[2],

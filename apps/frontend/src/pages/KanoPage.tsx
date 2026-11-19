@@ -4,52 +4,41 @@ import {
   Card,
   Checkbox,
   Group,
-  NumberInput,
   Select,
   SimpleGrid,
   Stack,
   Table,
   Text,
   Textarea,
-  TextInput,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useDisclosure } from "@mantine/hooks";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import {
-  KANO_CATEGORIES,
-  KANO_DECISIONS,
-  KANO_DECISION_LABELS,
-  KANO_LABELS,
-  RICE_IMPACT_VALUES,
-  WSJF_VALUES,
-  type KanoCategory,
-  type KanoDecision,
-  type KanoDto,
-} from "@myapp/shared";
+import { KANO_CATEGORIES, KANO_LABELS, type KanoCategory, type KanoDto } from "@myapp/shared";
 import {
   useCreateKano,
   useCurrentProject,
   useDeleteKano,
   useKano,
-  usePromoteKano,
-  useStoryMap,
-  useReleases,
-  useSprints,
-  useSubprojects,
+  useProjects,
   useUpdateKano,
+  useUsers,
 } from "../api/hooks";
-import { useAuth, useIsPm } from "../auth";
+import { useIsPm } from "../auth";
 import { PageHeader, QueryState, toast } from "../components/ui";
+import {
+  draftsToSpecs,
+  KanoSpecChecklist,
+  KanoSpecsField,
+  type KanoSpecDraft,
+  specsToDrafts,
+} from "../components/KanoSpecs";
 import { SideModal } from "../components/SideModal";
 import { ViewModeToggle } from "../components/ViewModeToggle";
 import { useViewMode } from "../lib/viewMode";
 
 const CATEGORY_OPTIONS = KANO_CATEGORIES.map((c) => ({ value: c, label: KANO_LABELS[c] }));
-const DECISION_OPTIONS = KANO_DECISIONS.map((d) => ({ value: d, label: KANO_DECISION_LABELS[d] }));
-const WSJF_OPTIONS = WSJF_VALUES.map((n) => ({ value: String(n), label: String(n) }));
-const IMPACT_OPTIONS = RICE_IMPACT_VALUES.map((n) => ({ value: String(n), label: String(n) }));
 
 const CATEGORY_COLOR: Record<KanoCategory, string> = {
   must_be: "red",
@@ -59,11 +48,7 @@ const CATEGORY_COLOR: Record<KanoCategory, string> = {
   reverse: "orange",
 };
 
-const toNum = (v: string): number | null => (v === "" ? null : Number(v));
-const fmtScore = (n: number | null) =>
-  n === null ? "–" : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-
-function SubmitModal({
+export function SubmitModal({
   opened,
   onClose,
   projectId,
@@ -72,19 +57,18 @@ function SubmitModal({
   onClose: () => void;
   projectId: string;
 }) {
-  const me = useAuth();
-  const subprojects = useSubprojects(projectId);
+  const projects = useProjects();
+  const users = useUsers();
   const create = useCreateKano(projectId);
   const form = useForm({
     initialValues: {
-      description: "",
-      requesterName: me.fullName,
-      requesterRole: "",
-      subprojectId: "",
+      revisionRequest: "",
+      projectId: "",
+      specs: [] as KanoSpecDraft[],
+      responsibleId: "",
     },
     validate: {
-      description: (v) => (v.trim() ? null : "Describe the request"),
-      requesterName: (v) => (v.trim() ? null : "Who asked for this?"),
+      revisionRequest: (v) => (v.trim() ? null : "Describe the revision request"),
     },
   });
   return (
@@ -93,10 +77,10 @@ function SubmitModal({
         onSubmit={form.onSubmit((v) =>
           create.mutate(
             {
-              description: v.description.trim(),
-              requesterName: v.requesterName.trim(),
-              requesterRole: v.requesterRole.trim() || null,
-              subprojectId: v.subprojectId || null,
+              revisionRequest: v.revisionRequest.trim(),
+              specs: draftsToSpecs(v.specs),
+              projectId: v.projectId || undefined,
+              responsibleId: v.responsibleId || null,
             },
             {
               onSuccess: () => {
@@ -110,25 +94,34 @@ function SubmitModal({
       >
         <Stack>
           <Textarea
-            label="Request"
+            label="Revision Request"
             autosize
             minRows={2}
             data-autofocus
-            {...form.getInputProps("description")}
+            {...form.getInputProps("revisionRequest")}
           />
-          <Group className="side-modal-pair" grow align="flex-start">
-            <TextInput label="Requested by" {...form.getInputProps("requesterName")} />
-            <TextInput label="Their role" {...form.getInputProps("requesterRole")} />
-          </Group>
+          <KanoSpecsField
+            value={form.values.specs}
+            onChange={(next) => form.setFieldValue("specs", next)}
+          />
           <Select
-            label="Subproject"
+            label="Project"
             clearable
             placeholder="Not sure yet"
-            data={(subprojects.data ?? []).map((s) => ({
-              value: s.id,
-              label: s.name,
-            }))}
-            {...form.getInputProps("subprojectId")}
+            data={(projects.data ?? [])
+              .filter((p) => !p.archivedAt)
+              .map((p) => ({ value: p.id, label: p.name }))}
+            {...form.getInputProps("projectId")}
+          />
+          <Select
+            label="Person responsible"
+            clearable
+            searchable
+            placeholder="Unassigned"
+            data={(users.data ?? [])
+              .filter((u) => u.isActive)
+              .map((u) => ({ value: u.id, label: u.fullName }))}
+            {...form.getInputProps("responsibleId")}
           />
           <Group justify="flex-end" className="side-modal-footer">
             <Button variant="default" onClick={onClose}>
@@ -145,67 +138,28 @@ function SubmitModal({
 }
 
 type EditValues = {
-  description: string;
-  requesterName: string;
-  requesterRole: string;
-  subprojectId: string;
+  revisionRequest: string;
+  specs: KanoSpecDraft[];
+  projectId: string;
   kanoCategory: string;
-  decision: string;
-  targetSprintId: string;
-  targetReleaseId: string;
-  wsjfBusinessValue: string;
-  wsjfTimeCriticality: string;
-  wsjfRiskReduction: string;
-  wsjfJobSize: string;
-  riceReach: number | string;
-  riceImpact: string;
-  riceConfidence: number | string;
-  riceEffort: number | string;
+  responsibleId: string;
 };
 
-const numOrNull = (v: number | string): number | null => (v === "" ? null : Number(v));
-
-function EditModal({
-  request,
-  onClose,
-  projectId,
-}: {
-  request: KanoDto;
-  onClose: () => void;
-  projectId: string;
-}) {
-  const subprojects = useSubprojects(projectId);
-  const sprints = useSprints(projectId);
-  const releases = useReleases(projectId);
+export function EditModal({ request, onClose }: { request: KanoDto; onClose: () => void }) {
+  const projects = useProjects();
+  const users = useUsers();
   const update = useUpdateKano();
   const remove = useDeleteKano();
-  const promote = usePromoteKano();
-  const storyMap = useStoryMap(request.subprojectId ?? undefined);
-  const [stepId, setStepId] = useState<string | null>(null);
-  const steps = storyMap.data?.steps ?? [];
-  const leafSteps = steps.filter((st) => !steps.some((x) => x.parentStepId === st.id));
   const form = useForm<EditValues>({
     initialValues: {
-      description: request.description,
-      requesterName: request.requesterName,
-      requesterRole: request.requesterRole ?? "",
-      subprojectId: request.subprojectId ?? "",
+      revisionRequest: request.revisionRequest,
+      specs: specsToDrafts(request.specs),
+      projectId: request.projectId,
       kanoCategory: request.kanoCategory ?? "",
-      decision: request.decision ?? "",
-      targetSprintId: request.targetSprintId ?? "",
-      targetReleaseId: request.targetReleaseId ?? "",
-      wsjfBusinessValue: request.wsjfBusinessValue ? String(request.wsjfBusinessValue) : "",
-      wsjfTimeCriticality: request.wsjfTimeCriticality ? String(request.wsjfTimeCriticality) : "",
-      wsjfRiskReduction: request.wsjfRiskReduction ? String(request.wsjfRiskReduction) : "",
-      wsjfJobSize: request.wsjfJobSize ? String(request.wsjfJobSize) : "",
-      riceReach: request.riceReach ?? "",
-      riceImpact: request.riceImpact !== null ? String(request.riceImpact) : "",
-      riceConfidence: request.riceConfidence ?? "",
-      riceEffort: request.riceEffort ?? "",
+      responsibleId: request.responsibleId ?? "",
     },
     validate: {
-      description: (v) => (v.trim() ? null : "Describe the request"),
-      requesterName: (v) => (v.trim() ? null : "Who asked for this?"),
+      revisionRequest: (v) => (v.trim() ? null : "Describe the revision request"),
     },
   });
   const save = form.onSubmit((v) =>
@@ -213,22 +167,11 @@ function EditModal({
       {
         id: request.id,
         patch: {
-          description: v.description.trim(),
-          requesterName: v.requesterName.trim(),
-          requesterRole: v.requesterRole.trim() || null,
-          subprojectId: v.subprojectId || null,
+          revisionRequest: v.revisionRequest.trim(),
+          specs: draftsToSpecs(v.specs),
+          projectId: v.projectId,
           kanoCategory: (v.kanoCategory || null) as KanoCategory | null,
-          decision: (v.decision || null) as KanoDecision | null,
-          targetSprintId: v.targetSprintId || null,
-          targetReleaseId: v.targetReleaseId || null,
-          wsjfBusinessValue: toNum(v.wsjfBusinessValue),
-          wsjfTimeCriticality: toNum(v.wsjfTimeCriticality),
-          wsjfRiskReduction: toNum(v.wsjfRiskReduction),
-          wsjfJobSize: toNum(v.wsjfJobSize),
-          riceReach: numOrNull(v.riceReach),
-          riceImpact: toNum(v.riceImpact),
-          riceConfidence: numOrNull(v.riceConfidence),
-          riceEffort: numOrNull(v.riceEffort),
+          responsibleId: v.responsibleId || null,
         },
       },
       { onSuccess: onClose, onError: (e) => toast.error(e.message) },
@@ -238,15 +181,24 @@ function EditModal({
     <SideModal opened onClose={onClose} title={request.code} size="xl">
       <form onSubmit={save}>
         <Stack>
-          <Textarea label="Request" autosize minRows={2} {...form.getInputProps("description")} />
+          <Textarea
+            label="Revision Request"
+            autosize
+            minRows={2}
+            {...form.getInputProps("revisionRequest")}
+          />
+          <KanoSpecsField
+            value={form.values.specs}
+            onChange={(next) => form.setFieldValue("specs", next)}
+          />
           <Group className="side-modal-pair" grow align="flex-start">
-            <TextInput label="Requested by" {...form.getInputProps("requesterName")} />
-            <TextInput label="Their role" {...form.getInputProps("requesterRole")} />
             <Select
-              label="Subproject"
-              clearable
-              data={(subprojects.data ?? []).map((s) => ({ value: s.id, label: s.name }))}
-              {...form.getInputProps("subprojectId")}
+              label="Project"
+              allowDeselect={false}
+              data={(projects.data ?? [])
+                .filter((p) => !p.archivedAt || p.id === form.values.projectId)
+                .map((p) => ({ value: p.id, label: p.name }))}
+              {...form.getInputProps("projectId")}
             />
           </Group>
           <Group className="side-modal-pair" grow align="flex-start">
@@ -257,105 +209,19 @@ function EditModal({
               data={CATEGORY_OPTIONS}
               {...form.getInputProps("kanoCategory")}
             />
-            <Select
-              label="Decision"
-              clearable
-              placeholder="Undecided"
-              data={DECISION_OPTIONS}
-              {...form.getInputProps("decision")}
-            />
           </Group>
           <Group className="side-modal-pair" grow align="flex-start">
             <Select
-              label="Target sprint"
+              label="Person responsible"
               clearable
-              data={(sprints.data ?? []).map((s) => ({ value: s.id, label: s.name }))}
-              {...form.getInputProps("targetSprintId")}
-            />
-            <Select
-              label="Target release"
-              clearable
-              data={(releases.data ?? []).map((r) => ({
-                value: r.id,
-                label: r.isMvp ? `${r.name} (MVP)` : r.name,
-              }))}
-              {...form.getInputProps("targetReleaseId")}
+              searchable
+              placeholder="Unassigned"
+              data={(users.data ?? [])
+                .filter((u) => u.isActive || u.id === form.values.responsibleId)
+                .map((u) => ({ value: u.id, label: u.fullName }))}
+              {...form.getInputProps("responsibleId")}
             />
           </Group>
-          <div>
-            <Group justify="space-between" mb={4}>
-              <Text fw={600} size="sm">
-                WSJF
-              </Text>
-              <Text size="xs" c="dimmed">
-                (value + time criticality + risk reduction) ÷ job size. Needs all four inputs.
-              </Text>
-            </Group>
-            <SimpleGrid cols={{ base: 2, sm: 4 }}>
-              <Select
-                label="Business value"
-                clearable
-                data={WSJF_OPTIONS}
-                {...form.getInputProps("wsjfBusinessValue")}
-              />
-              <Select
-                label="Time criticality"
-                clearable
-                data={WSJF_OPTIONS}
-                {...form.getInputProps("wsjfTimeCriticality")}
-              />
-              <Select
-                label="Risk reduction"
-                clearable
-                data={WSJF_OPTIONS}
-                {...form.getInputProps("wsjfRiskReduction")}
-              />
-              <Select
-                label="Job size"
-                clearable
-                data={WSJF_OPTIONS}
-                {...form.getInputProps("wsjfJobSize")}
-              />
-            </SimpleGrid>
-            <Text size="sm" mt={4}>
-              Score now: <b>{fmtScore(request.wsjfScore)}</b> (recalculated when you save)
-            </Text>
-          </div>
-          <div>
-            <Group justify="space-between" mb={4}>
-              <Text fw={600} size="sm">
-                RICE (optional)
-              </Text>
-              <Text size="xs" c="dimmed">
-                reach × impact × confidence ÷ effort
-              </Text>
-            </Group>
-            <SimpleGrid cols={{ base: 2, sm: 4 }}>
-              <NumberInput
-                label="Reach"
-                min={0}
-                allowDecimal={false}
-                {...form.getInputProps("riceReach")}
-              />
-              <Select
-                label="Impact"
-                clearable
-                data={IMPACT_OPTIONS}
-                {...form.getInputProps("riceImpact")}
-              />
-              <NumberInput
-                label="Confidence %"
-                min={0}
-                max={100}
-                allowDecimal={false}
-                {...form.getInputProps("riceConfidence")}
-              />
-              <NumberInput label="Effort" min={0.01} {...form.getInputProps("riceEffort")} />
-            </SimpleGrid>
-            <Text size="sm" mt={4}>
-              Score now: <b>{fmtScore(request.riceScore)}</b>
-            </Text>
-          </div>
           <Group justify="space-between">
             <Group gap="xs">
               <Button
@@ -372,53 +238,6 @@ function EditModal({
               >
                 Delete
               </Button>
-              {request.promotedStoryId ? (
-                <Badge variant="light">Promoted to {request.promotedStoryCode}</Badge>
-              ) : (
-                <>
-                  {leafSteps.length > 0 ? (
-                    <Select
-                      aria-label="Journey step for the new story"
-                      placeholder="Journey step (optional)"
-                      clearable
-                      w={220}
-                      value={stepId}
-                      onChange={setStepId}
-                      data={leafSteps.map((st) => {
-                        const parent = steps.find((x) => x.id === st.parentStepId);
-                        return {
-                          value: st.id,
-                          label: parent ? `${parent.name} › ${st.name}` : st.name,
-                        };
-                      })}
-                    />
-                  ) : null}
-                  <Button
-                    variant="light"
-                    loading={promote.isPending}
-                    disabled={!request.subprojectId}
-                    title={
-                      request.subprojectId
-                        ? undefined
-                        : "Choose a subproject and save before promoting"
-                    }
-                    onClick={() =>
-                      promote.mutate(
-                        { id: request.id, input: { journeyStepId: stepId } },
-                        {
-                          onSuccess: (r) => {
-                            toast.ok(`Created ${r.request.promotedStoryCode} in the story map`);
-                            onClose();
-                          },
-                          onError: (e) => toast.error(e.message),
-                        },
-                      )
-                    }
-                  >
-                    Promote to story
-                  </Button>
-                </>
-              )}
             </Group>
             <Group>
               <Button variant="default" onClick={onClose}>
@@ -460,8 +279,13 @@ function KanoCards({
                 {r.code}
               </Text>
               <Text size="xs" c="dimmed">
-                {r.subprojectCode ?? "No subproject"}
+                {r.projectName}
               </Text>
+              {r.responsibleName ? (
+                <Text size="xs" c="dimmed">
+                  {r.responsibleName}
+                </Text>
+              ) : null}
             </div>
             {r.kanoCategory ? (
               <Badge color={CATEGORY_COLOR[r.kanoCategory]} variant="light">
@@ -473,39 +297,8 @@ function KanoCards({
               </Text>
             )}
           </Group>
-          <Text size="sm">{r.description}</Text>
-          <Text size="xs" c="dimmed">
-            {r.requesterName}
-            {r.requesterRole ? `, ${r.requesterRole}` : ""}
-          </Text>
-          <SimpleGrid cols={2} spacing="xs" mt="sm">
-            <div>
-              <Text size="xs" c="dimmed">
-                WSJF
-              </Text>
-              <Text size="sm">{fmtScore(r.wsjfScore)}</Text>
-            </div>
-            <div>
-              <Text size="xs" c="dimmed">
-                RICE
-              </Text>
-              <Text size="sm">{fmtScore(r.riceScore)}</Text>
-            </div>
-            <div>
-              <Text size="xs" c="dimmed">
-                Decision
-              </Text>
-              <Text size="sm" c={r.decision ? undefined : "dimmed"}>
-                {r.decision ? KANO_DECISION_LABELS[r.decision] : "Undecided"}
-              </Text>
-            </div>
-            <div>
-              <Text size="xs" c="dimmed">
-                Story
-              </Text>
-              <Text size="sm">{r.promotedStoryCode ?? "–"}</Text>
-            </div>
-          </SimpleGrid>
+          <Text size="sm">{r.revisionRequest}</Text>
+          <KanoSpecChecklist request={r} editable={canEdit} />
           {canEdit ? (
             <Group mt="sm" justify="flex-end">
               <Button
@@ -529,16 +322,17 @@ function KanoCards({
 export function KanoPage() {
   const isPm = useIsPm();
   const [params, setParams] = useSearchParams();
-  const { project } = useCurrentProject();
-  const subprojects = useSubprojects(project?.id);
+  // PMs see every project by default; others see one project at a time.
+  const scope = params.get("project") ?? (isPm ? "all" : null);
+  const isAll = scope === "all";
+  const { project } = useCurrentProject(isAll ? null : scope);
+  const allProjects = useProjects();
   const filters = {
     kanoCategory: (params.get("category") as KanoCategory | null) ?? undefined,
-    decision: (params.get("decision") as KanoDecision | null) ?? undefined,
-    subprojectId: params.get("subprojectId") ?? undefined,
     unevaluated: params.get("unevaluated") === "true",
-    sort: (params.get("sort") as "wsjf" | "rice" | "code" | null) ?? "wsjf",
+    sort: (params.get("sort") as "newest" | "code" | null) ?? "newest",
   };
-  const query = useKano(project?.id, filters);
+  const query = useKano(isAll ? "all" : project?.id, filters);
   const [viewMode, setViewMode] = useViewMode("table");
   const [submitOpen, submit] = useDisclosure(false);
   const [editing, setEditing] = useState<KanoDto | null>(null);
@@ -555,7 +349,7 @@ export function KanoPage() {
     <>
       <PageHeader
         title="Kano Request Tracker"
-        subtitle="Requests from the people you build for. Categorize them, score them, decide, then promote the keepers into the story map."
+        subtitle="Requests from the people you build for. Categorize them and track each one's revision specs to completion."
         actions={
           <Button onClick={submit.open} disabled={readOnly}>
             Submit request
@@ -573,33 +367,25 @@ export function KanoPage() {
           w={190}
         />
         <Select
-          label="Decision"
-          clearable
+          label="Project"
+          clearable={isPm}
           placeholder="All"
-          data={DECISION_OPTIONS}
-          value={filters.decision ?? null}
-          onChange={(v) => setParam("decision", v)}
-          w={200}
-        />
-        <Select
-          label="Subproject"
-          clearable
-          placeholder="All"
-          data={(subprojects.data ?? []).map((s) => ({ value: s.id, label: s.name }))}
-          value={filters.subprojectId ?? null}
-          onChange={(v) => setParam("subprojectId", v)}
-          w={150}
+          data={(allProjects.data ?? [])
+            .filter((p) => !p.archivedAt)
+            .map((p) => ({ value: p.id, label: p.name }))}
+          value={isAll ? null : (project?.id ?? null)}
+          onChange={(v) => setParam("project", v ?? "all")}
+          w={170}
         />
         <Select
           label="Sort by"
           allowDeselect={false}
           data={[
-            { value: "wsjf", label: "WSJF score" },
-            { value: "rice", label: "RICE score" },
+            { value: "newest", label: "Newest first" },
             { value: "code", label: "Request ID" },
           ]}
           value={filters.sort}
-          onChange={(v) => setParam("sort", v === "wsjf" ? null : v)}
+          onChange={(v) => setParam("sort", v === "newest" ? null : v)}
           w={150}
         />
         <Checkbox
@@ -624,10 +410,6 @@ export function KanoPage() {
                     <Table.Th>ID</Table.Th>
                     <Table.Th>Request</Table.Th>
                     <Table.Th>Category</Table.Th>
-                    <Table.Th ta="right">WSJF</Table.Th>
-                    <Table.Th ta="right">RICE</Table.Th>
-                    <Table.Th>Decision</Table.Th>
-                    <Table.Th>Story</Table.Th>
                     <Table.Th />
                   </Table.Tr>
                 </Table.Thead>
@@ -643,15 +425,12 @@ export function KanoPage() {
                           {r.code}
                         </Text>
                         <Text size="xs" c="dimmed">
-                          {r.subprojectCode ?? "No subproject"}
+                          {r.projectName}
                         </Text>
                       </Table.Td>
                       <Table.Td maw={380}>
-                        <Text size="sm">{r.description}</Text>
-                        <Text size="xs" c="dimmed">
-                          {r.requesterName}
-                          {r.requesterRole ? `, ${r.requesterRole}` : ""}
-                        </Text>
+                        <Text size="sm">{r.revisionRequest}</Text>
+                        <KanoSpecChecklist request={r} editable={isPm && !readOnly} />
                       </Table.Td>
                       <Table.Td>
                         {r.kanoCategory ? (
@@ -664,18 +443,6 @@ export function KanoPage() {
                           </Text>
                         )}
                       </Table.Td>
-                      <Table.Td ta="right">{fmtScore(r.wsjfScore)}</Table.Td>
-                      <Table.Td ta="right">{fmtScore(r.riceScore)}</Table.Td>
-                      <Table.Td>
-                        {r.decision ? (
-                          KANO_DECISION_LABELS[r.decision]
-                        ) : (
-                          <Text size="sm" c="dimmed">
-                            Undecided
-                          </Text>
-                        )}
-                      </Table.Td>
-                      <Table.Td>{r.promotedStoryCode ?? "–"}</Table.Td>
                       <Table.Td>
                         {isPm && !readOnly ? (
                           <Button
@@ -702,12 +469,7 @@ export function KanoPage() {
         <SubmitModal opened={submitOpen} onClose={submit.close} projectId={project.id} />
       ) : null}
       {project && editing ? (
-        <EditModal
-          key={editing.id}
-          request={editing}
-          projectId={project.id}
-          onClose={() => setEditing(null)}
-        />
+        <EditModal key={editing.id} request={editing} onClose={() => setEditing(null)} />
       ) : null}
     </>
   );

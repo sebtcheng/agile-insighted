@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { WorkType } from "./enums";
+import type { InsightsWorkSummary } from "./workItems";
 
 const id = z.string().uuid();
 
@@ -56,4 +57,6 @@ export type InsightsDto = {
   aging: AgingItem[];
   flowDistribution: FlowShare[];
   forecast: ForecastDto;
+  /** Completion and schedule counts over all five modules; same definitions as Home and Workload. */
+  work: InsightsWorkSummary;
 };

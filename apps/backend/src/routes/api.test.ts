@@ -94,6 +94,10 @@ describe("permission map per write endpoint", () => {
       call: (a) => a.patch(`/api/users/${f.m2.id}`).send({ fullName: "Renamed" }),
     },
     {
+      name: "DELETE /users/:id",
+      call: (a) => a.delete(`/api/users/${f.pm.id}`),
+    },
+    {
       name: "POST /projects",
       call: (a) => a.post("/api/projects").send({ name: "P" }),
     },
@@ -144,6 +148,23 @@ describe("permission map per write endpoint", () => {
     expect(
       (await pm.patch(`/api/subprojects/${f.subA.id}`).send({ health: "at_risk" })).status,
     ).toBe(200);
+  });
+
+  it("renames a user, rejects a blank name, and refuses self-deletion", async () => {
+    const made = await pm.post("/api/users").send({
+      email: `rename-${f.tag}@test.local`,
+      fullName: "Before",
+      password: "long-enough-pw",
+    });
+    expect(made.status).toBe(201);
+    const id = json<{ id: string }>(made).id;
+    const renamed = await pm.patch(`/api/users/${id}`).send({ fullName: "  After  " });
+    expect(renamed.status).toBe(200);
+    expect(json<{ fullName: string }>(renamed).fullName).toBe("After");
+    expect((await pm.patch(`/api/users/${id}`).send({ fullName: "   " })).status).toBe(400);
+    expect((await pm.delete(`/api/users/${f.pm.id}`)).status).toBe(403);
+    expect((await pm.delete(`/api/users/${id}`)).status).toBe(204);
+    expect((await pm.delete(`/api/users/${id}`)).status).toBe(404);
   });
 
   it("lets team members comment on any activity", async () => {

@@ -15,6 +15,7 @@ import { ENUM_LABELS, type InsightsDto, type ThroughputWeek, type WorkType } fro
 import { useCurrentProject, useInsights, useSubprojects } from "../api/hooks";
 import { useOpenActivity } from "../components/ActivityRow";
 import { PageHeader, QueryState, fmtDate } from "../components/ui";
+import { BreakdownTable, SummaryStrip } from "../components/WorkItems";
 
 const WORK_COLOR: Record<WorkType, string> = {
   feature: "var(--mantine-color-blue-6)",
@@ -312,6 +313,31 @@ export function InsightsPage() {
               />
               <Stat label="Open items" value={String(d.forecast.remaining)} hint="Not done yet" />
             </SimpleGrid>
+
+            <Card withBorder p="md">
+              <Group justify="space-between" mb="xs">
+                <Text fw={700}>All work across modules</Text>
+                <Text size="xs" c="dimmed">
+                  {d.work.summary.total} items · {d.work.summary.completed} completed (
+                  {d.work.summary.completionRate}%) · {d.work.summary.incomplete} incomplete
+                </Text>
+              </Group>
+              <SummaryStrip summary={d.work.summary} />
+              <Text size="xs" c="dimmed" mt="xs">
+                {d.work.summary.unscheduled} open without a due date.
+              </Text>
+              <Stack gap="md" mt="md">
+                <Table.ScrollContainer minWidth={640}>
+                  <BreakdownTable title="Module" rows={d.work.byModule} />
+                </Table.ScrollContainer>
+                <Table.ScrollContainer minWidth={640}>
+                  <BreakdownTable title="Project" rows={d.work.byProject} />
+                </Table.ScrollContainer>
+                <Table.ScrollContainer minWidth={640}>
+                  <BreakdownTable title="Team member" rows={d.work.byMember} />
+                </Table.ScrollContainer>
+              </Stack>
+            </Card>
 
             <Card withBorder p="md">
               <Group justify="space-between" mb="xs">

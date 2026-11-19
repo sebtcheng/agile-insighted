@@ -4,11 +4,9 @@ import { db } from "../db/client";
 import {
   checklistChecks,
   checklistTemplates,
-  journeySteps,
   kanoRequests,
   ostOpportunities,
   ostOutcomes,
-  personas,
   raidItems,
   releases,
   userStories,
@@ -29,7 +27,6 @@ beforeAll(async () => {
   k = { projectId: f.project.id, createdById: f.pm.id };
   const story = await m.createStory({
     ...k,
-    subprojectId: f.subA.id,
     story: "As a teacher, I want x so that y",
   });
   storyId = story.id;
@@ -87,44 +84,8 @@ describe("OST constraints", () => {
 describe("cross-project references are rejected on every module table", () => {
   const p = () => ({ projectId: f.project.id, createdById: f.pm.id });
 
-  it("ost_outcomes, personas, journey_steps, raid_items: subproject", async () => {
-    expect(
-      await rejectedBy(
-        db.insert(ostOutcomes).values({ ...p(), title: "t", subprojectId: f.otherSub.id }),
-      ),
-    ).toBe("ost_outcomes_project_subproject_fk");
-    expect(
-      await rejectedBy(
-        db.insert(personas).values({ ...p(), name: "x", subprojectId: f.otherSub.id }),
-      ),
-    ).toBe("personas_project_subproject_fk");
-    expect(
-      await rejectedBy(
-        db.insert(journeySteps).values({ ...p(), name: "x", subprojectId: f.otherSub.id }),
-      ),
-    ).toBe("journey_steps_project_subproject_fk");
-    expect(
-      await rejectedBy(
-        db.insert(raidItems).values({
-          ...p(),
-          raisedById: f.pm.id,
-          seq: nextRaw(),
-          itemType: "risk",
-          description: "d",
-          impact: 2,
-          subprojectId: f.otherSub.id,
-        }),
-      ),
-    ).toBe("raid_items_project_subproject_fk");
-  });
-
-  it("user_stories: subproject, sprint and release", async () => {
-    const story = { ...p(), story: "s", subprojectId: f.subA.id };
-    expect(
-      await rejectedBy(
-        db.insert(userStories).values({ ...story, seq: nextRaw(), subprojectId: f.otherSub.id }),
-      ),
-    ).toBe("user_stories_project_subproject_fk");
+  it("user_stories: sprint and release", async () => {
+    const story = { ...p(), story: "s" };
     expect(
       await rejectedBy(
         db.insert(userStories).values({ ...story, seq: nextRaw(), sprintId: f.otherSprint.id }),
@@ -136,27 +97,6 @@ describe("cross-project references are rejected on every module table", () => {
       ),
     ).toBe("user_stories_project_release_fk");
   });
-
-  it("kano_requests: subproject, target sprint and target release", async () => {
-    const req = { ...p(), description: "d", requesterName: "r" };
-    expect(
-      await rejectedBy(
-        db.insert(kanoRequests).values({ ...req, seq: nextRaw(), subprojectId: f.otherSub.id }),
-      ),
-    ).toBe("kano_requests_project_subproject_fk");
-    expect(
-      await rejectedBy(
-        db
-          .insert(kanoRequests)
-          .values({ ...req, seq: nextRaw(), targetSprintId: f.otherSprint.id }),
-      ),
-    ).toBe("kano_requests_project_target_sprint_fk");
-    expect(
-      await rejectedBy(
-        db.insert(kanoRequests).values({ ...req, seq: nextRaw(), targetReleaseId: foreignRelease }),
-      ),
-    ).toBe("kano_requests_project_target_release_fk");
-  });
 });
 
 describe("value-set and range constraints", () => {
@@ -164,14 +104,6 @@ describe("value-set and range constraints", () => {
     projectId: f.project.id,
     createdById: f.pm.id,
     story: "s",
-    subprojectId: f.subA.id,
-    seq: nextRaw(),
-  });
-  const req = () => ({
-    projectId: f.project.id,
-    createdById: f.pm.id,
-    description: "d",
-    requesterName: "r",
     seq: nextRaw(),
   });
   const raid = () => ({
@@ -192,30 +124,6 @@ describe("value-set and range constraints", () => {
       "user_stories_points_allowed",
     );
     await db.insert(userStories).values({ ...story(), storyPoints: 21 });
-  });
-
-  it("restricts WSJF inputs, including a zero job size", async () => {
-    expect(
-      await rejectedBy(db.insert(kanoRequests).values({ ...req(), wsjfBusinessValue: 4 })),
-    ).toBe("kano_requests_wsjf_inputs");
-    expect(await rejectedBy(db.insert(kanoRequests).values({ ...req(), wsjfJobSize: 0 }))).toBe(
-      "kano_requests_wsjf_inputs",
-    );
-  });
-
-  it("restricts RICE inputs", async () => {
-    expect(
-      await rejectedBy(db.insert(kanoRequests).values({ ...req(), riceConfidence: 101 })),
-    ).toBe("kano_requests_rice_confidence");
-    expect(await rejectedBy(db.insert(kanoRequests).values({ ...req(), riceImpact: "4" }))).toBe(
-      "kano_requests_rice_impact",
-    );
-    expect(await rejectedBy(db.insert(kanoRequests).values({ ...req(), riceEffort: "0" }))).toBe(
-      "kano_requests_rice_effort",
-    );
-    expect(await rejectedBy(db.insert(kanoRequests).values({ ...req(), riceReach: -1 }))).toBe(
-      "kano_requests_rice_reach",
-    );
   });
 
   it("restricts RAID impact and likelihood to 1 through 3", async () => {
@@ -265,7 +173,6 @@ describe("generated columns", () => {
       .values({
         projectId: f.project.id,
         createdById: f.pm.id,
-        subprojectId: f.subA.id,
         story: "s",
         seq: 100,
       })
@@ -277,73 +184,13 @@ describe("generated columns", () => {
         // Second project, so this hand-picked seq cannot collide with the fixture project's counter.
         projectId: f.otherProject.id,
         createdById: f.pm.id,
-        description: "d",
-        requesterName: "r",
+        revisionRequest: "d",
         seq: 7,
       })
       .returning();
     expect(mid?.code).toBe("REQ-007");
     const raid = await m.createRaidItem({ ...k, itemType: "issue", description: "d", impact: 2 });
     expect(raid.code).toBe(`RAID-${String(raid.seq).padStart(2, "0")}`);
-  });
-
-  it("computes WSJF, including null cases", async () => {
-    const full = await m.createKanoRequest({
-      ...k,
-      description: "a",
-      requesterName: "r",
-      wsjf: { businessValue: 8, timeCriticality: 5, riskReduction: 3, jobSize: 5 },
-    });
-    expect(full.wsjfScore).toBe("3.20"); // (8 + 5 + 3) / 5
-    const rounded = await m.createKanoRequest({
-      ...k,
-      description: "b",
-      requesterName: "r",
-      wsjf: { businessValue: 1, timeCriticality: 1, riskReduction: 2, jobSize: 3 },
-    });
-    expect(rounded.wsjfScore).toBe("1.33");
-    const missing = await m.createKanoRequest({ ...k, description: "c", requesterName: "r" });
-    expect(missing.wsjfScore).toBeNull();
-    const [partial] = await db
-      .insert(kanoRequests)
-      .values({
-        projectId: f.project.id,
-        createdById: f.pm.id,
-        description: "d",
-        requesterName: "r",
-        seq: nextRaw(),
-        wsjfBusinessValue: 5,
-        wsjfJobSize: 2,
-      })
-      .returning();
-    expect(partial?.wsjfScore).toBeNull(); // any missing input gives null, not a wrong number
-  });
-
-  it("computes RICE, including null cases", async () => {
-    const r = await m.createKanoRequest({
-      ...k,
-      description: "rice",
-      requesterName: "r",
-      rice: { reach: 1000, impact: "2", confidence: 80, effort: "4" },
-    });
-    expect(r.riceScore).toBe("400.00");
-    const [zeroConf] = await db
-      .insert(kanoRequests)
-      .values({
-        projectId: f.project.id,
-        createdById: f.pm.id,
-        description: "z",
-        requesterName: "r",
-        seq: nextRaw(),
-        riceReach: 10,
-        riceImpact: "1",
-        riceConfidence: 0,
-        riceEffort: "1",
-      })
-      .returning();
-    expect(zeroConf?.riceScore).toBe("0.00");
-    const none = await m.createKanoRequest({ ...k, description: "none", requesterName: "r" });
-    expect(none.riceScore).toBeNull();
   });
 
   it("computes severity as impact times likelihood, null when likelihood is unknown", async () => {
@@ -379,14 +226,10 @@ describe("sequence assignment under concurrency", () => {
     );
   });
   it("user stories", async () => {
-    assertUnique(
-      await par((i) => m.createStory({ ...k, subprojectId: f.subA.id, story: `story ${i}` })),
-    );
+    assertUnique(await par((i) => m.createStory({ ...k, story: `story ${i}` })));
   });
   it("Kano requests", async () => {
-    assertUnique(
-      await par((i) => m.createKanoRequest({ ...k, description: `req ${i}`, requesterName: "r" })),
-    );
+    assertUnique(await par((i) => m.createKanoRequest({ ...k, revisionRequest: `req ${i}` })));
   });
   it("RAID items", async () => {
     assertUnique(
@@ -396,19 +239,19 @@ describe("sequence assignment under concurrency", () => {
     );
   });
   it("tolerates gaps: a rolled-back insert burns a number but never reuses it", async () => {
-    const before = await m.createKanoRequest({ ...k, description: "before", requesterName: "r" });
+    const before = await m.createKanoRequest({ ...k, revisionRequest: "before" });
     await db
       .transaction(async (tx) => {
-        await m.createKanoRequest({ ...k, description: "rolled back", requesterName: "r" }, tx);
+        await m.createKanoRequest({ ...k, revisionRequest: "rolled back" }, tx);
         throw new Error("abort");
       })
       .catch(() => undefined);
-    const after = await m.createKanoRequest({ ...k, description: "after", requesterName: "r" });
+    const after = await m.createKanoRequest({ ...k, revisionRequest: "after" });
     expect(after.seq).toBeGreaterThan(before.seq);
     const rows = await db
-      .select({ d: kanoRequests.description })
+      .select({ d: kanoRequests.revisionRequest })
       .from(kanoRequests)
-      .where(eq(kanoRequests.description, "rolled back"));
+      .where(eq(kanoRequests.revisionRequest, "rolled back"));
     expect(rows).toHaveLength(0);
   });
 });
@@ -426,9 +269,9 @@ describe("misc", () => {
     expect(await rejectedBy(m.createPersona({ ...k, name: "TEACHER" }))).toBe(
       "personas_project_name_lower_uq",
     );
-    await m.createJourneyStep({ ...k, subprojectId: f.subA.id, name: "Discover" });
-    expect(
-      await rejectedBy(m.createJourneyStep({ ...k, subprojectId: f.subA.id, name: "Discover" })),
-    ).toBe("journey_steps_scope_name_uq");
+    await m.createJourneyStep({ ...k, name: "Discover" });
+    expect(await rejectedBy(m.createJourneyStep({ ...k, name: "Discover" }))).toBe(
+      "journey_steps_scope_name_uq",
+    );
   });
 });

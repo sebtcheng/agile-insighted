@@ -67,6 +67,31 @@
   background: var(--nav-active-overlay);
   box-shadow: inset 3px 0 0 var(--nav-active-marker);
 }
+.shell-nav-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+.shell-nav-section[data-first="true"] {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.shell-nav-heading {
+  display: none;
+  padding: 0 10px 4px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.6);
+}
+.shell-nav-section[data-expanded="true"] .shell-nav-heading {
+  display: block;
+}
+.shell-nav-section[data-expanded="true"][data-first="true"] .shell-nav-heading {
+  padding-top: 0;
+}
 .shell-navbar .mantine-NavLink-root:focus-visible {
   outline: 2px solid var(--nav-active-marker);
   outline-offset: -2px;

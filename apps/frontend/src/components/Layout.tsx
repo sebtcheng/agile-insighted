@@ -17,6 +17,7 @@ import { useLogout } from "../api/hooks";
 import { useAuth, useIsPm } from "../auth";
 import { ActivityDrawer } from "./ActivityDrawer";
 import { GlobalSearch } from "./GlobalSearch";
+import { visibleSections } from "./navSections";
 import { useRailExpansion } from "./useRailExpansion";
 
 function Icon({ children, size = 20 }: { children: ReactNode; size?: number }) {
@@ -55,20 +56,6 @@ const ICONS = {
   ),
 } as const;
 
-type NavItem = { to: string; label: string; icon: keyof typeof ICONS; end?: boolean };
-
-const NAV: NavItem[] = [
-  { to: "/", label: "Home", icon: "home", end: true },
-  { to: "/portfolio", label: "Portfolio", icon: "portfolio" },
-  { to: "/workload", label: "Workload", icon: "workload" },
-  { to: "/insights", label: "Insights", icon: "insights" },
-  { to: "/projects", label: "Projects", icon: "projects" },
-  { to: "/ost", label: "Opportunity Solution Tree", icon: "ost" },
-  { to: "/usm", label: "User Story Mapping", icon: "usm" },
-  { to: "/kano", label: "Kano Request Tracker", icon: "kano" },
-  { to: "/raid", label: "RAID Log", icon: "raid" },
-];
-
 export function Layout() {
   const [opened, { toggle, close }] = useDisclosure();
   const rail = useRailExpansion();
@@ -81,9 +68,7 @@ export function Layout() {
   const [params, setParams] = useSearchParams();
   const activityId = params.get("activity");
 
-  const items: NavItem[] = isPm
-    ? [...NAV, { to: "/settings", label: "Settings", icon: "settings" }]
-    : NAV;
+  const sections = visibleSections(isPm);
 
   return (
     <AppShell
@@ -179,24 +164,38 @@ export function Layout() {
       >
         <AppShell.Section grow component={ScrollArea}>
           <nav aria-label="Main">
-            {items.map((item) => (
-              <NavLink
-                key={item.to}
-                component={RouterNavLink}
-                to={item.to}
-                end={item.end}
-                label={item.label}
-                leftSection={<Icon>{ICONS[item.icon]}</Icon>}
-                title={item.label}
-                h={40}
-                styles={{
-                  root: { padding: "0 10px", overflow: "hidden" },
-                  body: { overflow: "hidden" },
-                  label: { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-                  section: { marginInlineEnd: 12 },
-                }}
-                onClick={close}
-              />
+            {sections.map((section, idx) => (
+              <div
+                key={section.id}
+                role="group"
+                aria-label={section.title}
+                className="shell-nav-section"
+                data-first={idx === 0 ? "true" : undefined}
+                data-expanded={expanded ? "true" : "false"}
+              >
+                <div className="shell-nav-heading" aria-hidden="true">
+                  {section.title}
+                </div>
+                {section.items.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    component={RouterNavLink}
+                    to={item.to}
+                    end={item.end}
+                    label={item.label}
+                    leftSection={<Icon>{ICONS[item.icon]}</Icon>}
+                    title={item.label}
+                    h={40}
+                    styles={{
+                      root: { padding: "0 10px", overflow: "hidden" },
+                      body: { overflow: "hidden" },
+                      label: { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+                      section: { marginInlineEnd: 12 },
+                    }}
+                    onClick={close}
+                  />
+                ))}
+              </div>
             ))}
           </nav>
         </AppShell.Section>

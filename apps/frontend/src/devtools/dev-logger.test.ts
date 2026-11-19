@@ -320,6 +320,32 @@ describe("failed request bodies", () => {
     expect(printed).toContain("req-422");
   });
 
+  it("logs successful writes at info level with status, redacted, and GETs only at debug", async () => {
+    window.fetch = jsonResponse(201, { id: "x" });
+    initDevDiagnostics();
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
+    await window.fetch("/api/projects/p1/ost/outcomes?token=secret", {
+      method: "POST",
+      body: JSON.stringify({ title: "Reduce learning curve", password: "hunter2" }),
+    });
+    await window.fetch("/api/projects/p1/ost");
+    const history = devLogger.getHistory();
+    const sent = history.find((h) => h.kind === "http-submit")!;
+    const ok = history.find((h) => h.kind === "http-ok" && h.context === "API")!;
+    expect(sent.message).toContain("POST /api/projects/p1/ost/outcomes");
+    expect(ok.message).toContain("-> 201");
+    expect(JSON.stringify(history)).not.toContain("hunter2");
+    expect(JSON.stringify(history)).not.toContain("secret");
+    expect(info).toHaveBeenCalled();
+    expect(history.find((h) => h.context === "Fetch")?.level).toBe("debug");
+    expect(debug).toHaveBeenCalled();
+    devLogger.setLevel("info");
+    debug.mockClear();
+    await window.fetch("/api/projects/p1/ost");
+    expect(debug).not.toHaveBeenCalled();
+  });
+
   it("records no body for a successful response", async () => {
     window.fetch = jsonResponse(200, { ok: true });
     initDevDiagnostics();

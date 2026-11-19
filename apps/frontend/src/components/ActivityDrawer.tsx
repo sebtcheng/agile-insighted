@@ -388,7 +388,7 @@ function PmDetails({ activity }: { activity: ActivityDto }) {
   const subs = useSubprojects(activity.projectId);
   const sprints = useSprints(activity.projectId);
   const releases = useReleases(activity.projectId);
-  const storyMap = useStoryMap(activity.subprojectId ?? undefined);
+  const storyMap = useStoryMap(activity.projectId);
   const [form, setForm] = useState({
     title: activity.title,
     description: activity.description ?? "",

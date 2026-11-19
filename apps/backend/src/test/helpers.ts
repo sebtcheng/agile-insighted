@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../db/client";
-import { activities, gateOverrides, projects, sprints, subprojects, users } from "../db/schema";
+import {
+  activities,
+  gateOverrides,
+  projectMembers,
+  projects,
+  sprints,
+  subprojects,
+  users,
+} from "../db/schema";
 import type { Actor } from "../permissions";
 import { hashPassword } from "../services/authService";
 
@@ -45,6 +53,11 @@ export async function createFixture() {
     ])
     .returning();
   if (!project || !otherProject) throw new Error("fixture projects missing");
+  // Both team members are on `project` only; `otherProject` is the project they must not see.
+  await db.insert(projectMembers).values([
+    { projectId: project.id, userId: m1.id },
+    { projectId: project.id, userId: m2.id },
+  ]);
 
   const [subA, subB, otherSub] = await db
     .insert(subprojects)

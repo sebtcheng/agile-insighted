@@ -4,6 +4,7 @@ import { db } from "../db/client";
 import { env } from "../env";
 import type { Actor } from "../permissions";
 import { localDate } from "./dateBuckets";
+import { scopeSql, type ProjectScope } from "./visibilityService";
 
 type Row = {
   id: string;
@@ -43,26 +44,27 @@ export const WAITING_CTE_BODY = sql`waiting AS MATERIALIZED (
   )`;
 
 /**
- * Open high-severity RAID items per subproject: risks, assumptions, issues or dependencies that are
- * still open or in progress and have High (3) impact.
+ * Open high-severity RAID items per project: risks, assumptions, issues or dependencies that are
+ * still open or in progress and have High (3) impact. RAID items no longer belong to a subproject,
+ * so every subproject row shows its project's count.
  */
 export function openHighRaidSql(): SQL {
-  return sql`SELECT ri.subproject_id, count(*)::int AS n
+  return sql`SELECT ri.project_id, count(*)::int AS n
     FROM raid_items ri
-    WHERE ri.status IN ('open', 'in_progress') AND ri.impact = 3 AND ri.subproject_id IS NOT NULL
-    GROUP BY ri.subproject_id`;
+    WHERE ri.status IN ('open', 'in_progress') AND ri.impact = 3
+    GROUP BY ri.project_id`;
 }
 
-export async function countOpenHighRaidBySubproject(): Promise<Map<string, number>> {
-  const res = await db.execute<{ subproject_id: string; n: number }>(openHighRaidSql());
-  return new Map(res.rows.map((r) => [r.subproject_id, r.n]));
+export async function countOpenHighRaidByProject(): Promise<Map<string, number>> {
+  const res = await db.execute<{ project_id: string; n: number }>(openHighRaidSql());
+  return new Map(res.rows.map((r) => [r.project_id, r.n]));
 }
 
 /**
  * One query, no N+1: one row per open subproject with every count computed in lateral aggregates.
  * "Waiting on dependency" is derived from unfinished blocking activities, never stored.
  */
-export function portfolioSql(today: string, actorId: string): SQL {
+export function portfolioSql(today: string, actorId: string, scope: ProjectScope = null): SQL {
   return sql`
     WITH ${WAITING_CTE_BODY}
     SELECT s.id, s.code, s.name, s.lead_id, u.full_name AS lead_name, s.health, s.health_note,
@@ -100,8 +102,8 @@ export function portfolioSql(today: string, actorId: string): SQL {
       ORDER BY r.target_date
       LIMIT 1
     ) rel ON true
-    LEFT JOIN (${openHighRaidSql()}) raid ON raid.subproject_id = s.id
-    WHERE s.archived_at IS NULL
+    LEFT JOIN (${openHighRaidSql()}) raid ON raid.project_id = s.project_id
+    WHERE s.archived_at IS NULL AND ${scopeSql(sql`s.project_id`, scope)}
     ORDER BY s.code`;
 }
 
@@ -111,9 +113,10 @@ export async function getPortfolio(
   actor: Pick<Actor, "id">,
   query: PortfolioQuery,
   now: Date = new Date(),
+  scope: ProjectScope = null,
 ): Promise<PortfolioResponse> {
   const today = localDate(now, env.APP_TIMEZONE);
-  const res = await db.execute<Row>(portfolioSql(today, actor.id));
+  const res = await db.execute<Row>(portfolioSql(today, actor.id, scope));
 
   let items: PortfolioRow[] = res.rows
     .filter((r) => (query.health ? r.health === query.health : true))

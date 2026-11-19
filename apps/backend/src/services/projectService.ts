@@ -8,31 +8,99 @@ import type {
   UpdateSubprojectInput,
 } from "@myapp/shared";
 import { db } from "../db/client";
-import {
-  activities,
-  journeySteps,
-  kanoRequests,
-  ostOutcomes,
-  personas,
-  projects,
-  raidItems,
-  sprints,
-  subprojects,
-  userStories,
-  users,
-} from "../db/schema";
+import { activities, projectMembers, projects, sprints, subprojects, users } from "../db/schema";
 import { conflict, notFound, unprocessable } from "../errors";
 import { nextSeq } from "./seq";
+import { scopeCondition, type ProjectScope } from "./visibilityService";
 
 // ---- projects
-export async function listProjects() {
-  return db.select().from(projects).orderBy(asc(projects.name));
+type ProjectRow = typeof projects.$inferSelect;
+export type ProjectWithTeam = ProjectRow & {
+  ownerName: string | null;
+  members: Array<{ id: string; fullName: string }>;
+  memberIds: string[];
+};
+
+/** Attaches the owner's name and the member list to project rows in two queries total. */
+async function withTeam(rows: ProjectRow[]): Promise<ProjectWithTeam[]> {
+  if (rows.length === 0) return [];
+  const ids = rows.map((p) => p.id);
+  const [owners, memberRows] = await Promise.all([
+    db
+      .select({ id: users.id, fullName: users.fullName })
+      .from(users)
+      .where(
+        inArray(
+          users.id,
+          rows.map((p) => p.ownerId),
+        ),
+      ),
+    db
+      .select({ projectId: projectMembers.projectId, id: users.id, fullName: users.fullName })
+      .from(projectMembers)
+      .innerJoin(users, eq(users.id, projectMembers.userId))
+      .where(inArray(projectMembers.projectId, ids))
+      .orderBy(asc(users.fullName)),
+  ]);
+  const ownerName = new Map(owners.map((o) => [o.id, o.fullName]));
+  const byProject = new Map<string, Array<{ id: string; fullName: string }>>();
+  for (const m of memberRows) {
+    const list = byProject.get(m.projectId) ?? [];
+    list.push({ id: m.id, fullName: m.fullName });
+    byProject.set(m.projectId, list);
+  }
+  return rows.map((p) => {
+    const members = byProject.get(p.id) ?? [];
+    return {
+      ...p,
+      ownerName: ownerName.get(p.ownerId) ?? null,
+      members,
+      memberIds: members.map((m) => m.id),
+    };
+  });
 }
 
-export async function getProject(id: string) {
+/** Lists the projects the actor may see (all of them for a PM). */
+export async function listProjects(scope: ProjectScope = null): Promise<ProjectWithTeam[]> {
+  const rows = await db
+    .select()
+    .from(projects)
+    .where(scopeCondition(projects.id, scope))
+    .orderBy(asc(projects.name));
+  return withTeam(rows);
+}
+
+export async function getProject(id: string): Promise<ProjectWithTeam> {
   const [row] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
   if (!row) throw notFound("Project");
-  return row;
+  const [full] = await withTeam([row]);
+  if (!full) throw notFound("Project");
+  return full;
+}
+
+/** Owner and every member must be existing, active users. */
+async function assertPeople(ids: string[]) {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return;
+  const found = await db
+    .select({ id: users.id, isActive: users.isActive })
+    .from(users)
+    .where(inArray(users.id, unique));
+  if (found.length !== unique.length) throw notFound("Team member");
+  if (found.some((u) => !u.isActive)) throw unprocessable("That team member is inactive");
+}
+
+/** Replaces the member rows for a project inside the caller's transaction. */
+async function syncMembers(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  projectId: string,
+  memberIds: string[],
+) {
+  await tx.delete(projectMembers).where(eq(projectMembers.projectId, projectId));
+  const unique = [...new Set(memberIds)];
+  if (unique.length > 0) {
+    await tx.insert(projectMembers).values(unique.map((userId) => ({ projectId, userId })));
+  }
 }
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -45,36 +113,51 @@ async function nextProjectCode(): Promise<string> {
   return `PROJ-${pad2(n)}`;
 }
 
-export async function createProject(ownerId: string, input: CreateProjectInput) {
-  const [row] = await db
-    .insert(projects)
-    .values({
-      name: input.name,
-      code: await nextProjectCode(),
-      ownerId,
-      wipLimitPerPerson: input.wipLimitPerPerson,
-    })
-    .returning();
-  if (!row) throw new Error("insert returned no row");
-  return row;
+/** `creatorId` is the default owner when the input names none. */
+export async function createProject(creatorId: string, input: CreateProjectInput) {
+  const ownerId = input.ownerId ?? creatorId;
+  await assertPeople([ownerId, ...input.memberIds]);
+  const code = await nextProjectCode();
+  const id = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(projects)
+      .values({ name: input.name, code, ownerId, wipLimitPerPerson: input.wipLimitPerPerson })
+      .returning({ id: projects.id });
+    if (!row) throw new Error("insert returned no row");
+    await syncMembers(tx, row.id, input.memberIds);
+    return row.id;
+  });
+  return getProject(id);
 }
 
 export async function updateProject(id: string, patch: UpdateProjectInput) {
+  await assertPeople([...(patch.ownerId ? [patch.ownerId] : []), ...(patch.memberIds ?? [])]);
   const set: Partial<typeof projects.$inferInsert> = {};
   if (patch.name !== undefined) set.name = patch.name;
   if (patch.wipLimitPerPerson !== undefined) set.wipLimitPerPerson = patch.wipLimitPerPerson;
   if (patch.archived !== undefined) set.archivedAt = patch.archived ? new Date() : null;
-  const [row] =
-    Object.keys(set).length > 0
-      ? await db.update(projects).set(set).where(eq(projects.id, id)).returning()
-      : await db.select().from(projects).where(eq(projects.id, id)).limit(1);
-  if (!row) throw notFound("Project");
-  return row;
+  if (patch.ownerId !== undefined) set.ownerId = patch.ownerId;
+  await db.transaction(async (tx) => {
+    const [row] =
+      Object.keys(set).length > 0
+        ? await tx
+            .update(projects)
+            .set(set)
+            .where(eq(projects.id, id))
+            .returning({ id: projects.id })
+        : await tx.select({ id: projects.id }).from(projects).where(eq(projects.id, id)).limit(1);
+    if (!row) throw notFound("Project");
+    if (patch.memberIds !== undefined) await syncMembers(tx, id, patch.memberIds);
+  });
+  return getProject(id);
 }
 
 /** Projects with their subprojects in two queries total (no per-project lookups). */
-export async function listProjectsWithSubprojects(includeArchived = false) {
-  const projectRows = await listProjects();
+export async function listProjectsWithSubprojects(
+  includeArchived = false,
+  scope: ProjectScope = null,
+) {
+  const projectRows = await listProjects(scope);
   if (projectRows.length === 0) return [];
   const subs = await db
     .select({ ...getTableColumns(subprojects), leadName: users.fullName })
@@ -124,16 +207,7 @@ export async function deleteSubproject(id: string) {
   const [row] = await db.select().from(subprojects).where(eq(subprojects.id, id)).limit(1);
   if (!row) throw notFound("Subproject");
   const refs = await Promise.all(
-    [
-      activities,
-      sprints,
-      ostOutcomes,
-      personas,
-      journeySteps,
-      userStories,
-      kanoRequests,
-      raidItems,
-    ].map(async (t) => {
+    [activities, sprints].map(async (t) => {
       const [r] = await db
         .select({ n: sql<number>`count(*)::int` })
         .from(t)

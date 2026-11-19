@@ -1,6 +1,6 @@
-import { Alert, Badge, Button, Card, Group, Select, Stack, Text, TextInput } from "@mantine/core";
+import { Alert, Badge, Button, Card, Group, Stack, Text, TextInput } from "@mantine/core";
 import { useState } from "react";
-import { VALIDATION_LABELS, type SolutionDto, type SubprojectDto } from "@myapp/shared";
+import { VALIDATION_LABELS, type SolutionDto } from "@myapp/shared";
 import { ApiClientError } from "../api/client";
 import { useConvertSolution } from "../api/hooks";
 import { toast } from "./ui";
@@ -15,28 +15,22 @@ export const VALIDATION_COLOR = {
 
 export function SolutionModal({
   solution,
-  subprojects,
-  defaultSubprojectId,
   isPm,
   readOnly,
   onClose,
 }: {
   solution: SolutionDto;
-  subprojects: SubprojectDto[];
-  defaultSubprojectId: string | null;
   isPm: boolean;
   readOnly: boolean;
   onClose: () => void;
 }) {
   const convert = useConvertSolution();
-  const [subprojectId, setSubprojectId] = useState<string | null>(defaultSubprojectId);
   const [needsOverride, setNeedsOverride] = useState(false);
   const [reason, setReason] = useState("");
 
   const run = (overrideReason?: string) => {
-    if (!subprojectId) return;
     convert.mutate(
-      { id: solution.id, input: { subprojectId, overrideReason } },
+      { id: solution.id, input: { overrideReason } },
       {
         onSuccess: (r) => {
           toast.ok(`Created ${r.storyCode} in the story map`);
@@ -71,19 +65,11 @@ export function SolutionModal({
             <Text fw={600} size="sm" mb={6}>
               Convert to a user story
             </Text>
+            <Text size="sm" c="dimmed" mb="xs">
+              The story is created in this solution&apos;s project, with its owner and target date.
+            </Text>
             <Group align="flex-end" wrap="wrap">
-              <Select
-                label="Subproject"
-                w={260}
-                data={subprojects.map((s) => ({ value: s.id, label: s.name }))}
-                value={subprojectId}
-                onChange={setSubprojectId}
-              />
-              <Button
-                disabled={!subprojectId}
-                loading={convert.isPending && !needsOverride}
-                onClick={() => run()}
-              >
+              <Button loading={convert.isPending && !needsOverride} onClick={() => run()}>
                 Convert
               </Button>
             </Group>

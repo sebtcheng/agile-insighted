@@ -1,0 +1,1 @@
+ALTER TABLE "raid_mitigating_actions" ADD COLUMN "target_date" date;

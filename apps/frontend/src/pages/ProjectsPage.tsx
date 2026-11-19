@@ -2,6 +2,7 @@ import {
   Anchor,
   Button,
   Group,
+  MultiSelect,
   NumberInput,
   Select,
   Stack,
@@ -12,7 +13,7 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useDisclosure } from "@mantine/hooks";
-import { zodResolver } from "mantine-form-zod-resolver";
+import { zod4Resolver } from "mantine-form-zod-resolver";
 import { useState, type KeyboardEvent } from "react";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { createProjectSchema, createSubprojectSchema } from "@myapp/shared";
@@ -28,7 +29,7 @@ import {
   useUpdateSubproject,
   useUsers,
 } from "../api/hooks";
-import { useIsPm } from "../auth";
+import { useAuth, useIsPm } from "../auth";
 import { PageHeader, QueryState, fmtDate, toast } from "../components/ui";
 import { SideModal } from "../components/SideModal";
 
@@ -52,7 +53,7 @@ function SubprojectModal(props: {
       description: subproject?.description ?? "",
       leadId: subproject?.leadId ?? null,
     },
-    validate: zodResolver(createSubprojectSchema.pick({ name: true })),
+    validate: zod4Resolver(createSubprojectSchema.pick({ name: true })),
   });
   const done = {
     onSuccess: () => {
@@ -99,6 +100,36 @@ function SubprojectModal(props: {
   );
 }
 
+type InputProps = ReturnType<ReturnType<typeof useForm>["getInputProps"]>;
+
+/** Owner and Team members pickers shared by the New and Edit project modals. */
+function TeamFields(props: { owner: InputProps; members: InputProps }) {
+  const users = useUsers();
+  const options = (users.data ?? [])
+    .filter((u) => u.isActive)
+    .map((u) => ({ value: u.id, label: u.fullName }));
+  return (
+    <>
+      <Select
+        label="Owner"
+        placeholder="Select an owner"
+        data={options}
+        searchable
+        allowDeselect={false}
+        {...props.owner}
+      />
+      <MultiSelect
+        label="Team members"
+        placeholder="Select team members"
+        data={options}
+        searchable
+        clearable
+        {...props.members}
+      />
+    </>
+  );
+}
+
 function EditProjectModal(props: { project: ProjectRow; onClose: () => void }) {
   const { project, onClose } = props;
   const update = useUpdateProject();
@@ -106,8 +137,10 @@ function EditProjectModal(props: { project: ProjectRow; onClose: () => void }) {
     initialValues: {
       name: project.name,
       wipLimitPerPerson: project.wipLimitPerPerson,
+      ownerId: project.ownerId,
+      memberIds: project.memberIds ?? [],
     },
-    validate: zodResolver(createProjectSchema),
+    validate: zod4Resolver(createProjectSchema),
   });
   return (
     <form
@@ -132,6 +165,10 @@ function EditProjectModal(props: { project: ProjectRow; onClose: () => void }) {
           max={50}
           {...form.getInputProps("wipLimitPerPerson")}
         />
+        <TeamFields
+          owner={form.getInputProps("ownerId")}
+          members={form.getInputProps("memberIds")}
+        />
         <Group justify="flex-end" className="side-modal-footer">
           <Button variant="default" onClick={onClose}>
             Cancel
@@ -147,6 +184,7 @@ function EditProjectModal(props: { project: ProjectRow; onClose: () => void }) {
 
 export function ProjectsPage() {
   const isPm = useIsPm();
+  const me = useAuth();
   const [params] = useSearchParams();
   const projects = useProjects();
   const tree = useProjectsWithSubprojects();
@@ -160,8 +198,13 @@ export function ProjectsPage() {
   const delProject = useDeleteProject();
   const delSub = useDeleteSubproject();
   const form = useForm({
-    initialValues: { name: "", wipLimitPerPerson: 3 },
-    validate: zodResolver(createProjectSchema),
+    initialValues: {
+      name: "",
+      wipLimitPerPerson: 3,
+      ownerId: me.id,
+      memberIds: [] as string[],
+    },
+    validate: zod4Resolver(createProjectSchema),
   });
 
   // Search results and shared links point at /projects?subprojectId=…; send them to the current project's activity list.
@@ -357,6 +400,10 @@ export function ProjectsPage() {
               min={1}
               max={50}
               {...form.getInputProps("wipLimitPerPerson")}
+            />
+            <TeamFields
+              owner={form.getInputProps("ownerId")}
+              members={form.getInputProps("memberIds")}
             />
             <Group justify="flex-end" className="side-modal-footer">
               <Button variant="default" onClick={close}>

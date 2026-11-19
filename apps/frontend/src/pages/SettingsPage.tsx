@@ -18,11 +18,12 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useDisclosure } from "@mantine/hooks";
-import { zodResolver } from "mantine-form-zod-resolver";
+import { zod4Resolver } from "mantine-form-zod-resolver";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   ENUM_LABELS,
+  MIN_PASSWORD_LENGTH,
   USER_ROLES,
   createUserSchema,
   type ChecklistKind,
@@ -32,6 +33,7 @@ import {
   useCreateTemplate,
   useCreateUser,
   useCurrentProject,
+  useDeleteUser,
   useOverrides,
   useTemplates,
   useUpdateProject,
@@ -96,6 +98,10 @@ function UsersPanel() {
   const [opened, { open, close }] = useDisclosure();
   const [resetFor, setResetFor] = useState<{ id: string; name: string } | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const remove = useDeleteUser();
+  const [editFor, setEditFor] = useState<{ id: string; name: string } | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
   const form = useForm({
     initialValues: {
       email: "",
@@ -103,7 +109,7 @@ function UsersPanel() {
       password: "",
       role: "team_member" as (typeof USER_ROLES)[number],
     },
-    validate: zodResolver(createUserSchema),
+    validate: zod4Resolver(createUserSchema),
   });
   return (
     <Stack>
@@ -160,6 +166,17 @@ function UsersPanel() {
                         <Button
                           size="compact-xs"
                           variant="default"
+                          onClick={() => {
+                            setEditFor({ id: u.id, name: u.fullName });
+                            setEditName(u.fullName);
+                            setEditError(null);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          size="compact-xs"
+                          variant="default"
                           onClick={() => setResetFor({ id: u.id, name: u.fullName })}
                         >
                           Reset password
@@ -177,6 +194,25 @@ function UsersPanel() {
                             }
                           >
                             {u.isActive ? "Deactivate" : "Reactivate"}
+                          </Button>
+                        ) : null}
+                        {u.id !== me.id ? (
+                          <Button
+                            size="compact-xs"
+                            variant="subtle"
+                            color="red"
+                            loading={remove.isPending && remove.variables === u.id}
+                            onClick={() =>
+                              window.confirm(
+                                `Delete ${u.fullName}? This cannot be undone. Deactivate instead if they have recorded work.`,
+                              ) &&
+                              remove.mutate(u.id, {
+                                onSuccess: () => toast.ok("User deleted"),
+                                onError: (e) => toast.error(e.message),
+                              })
+                            }
+                          >
+                            Delete
                           </Button>
                         ) : null}
                       </Group>
@@ -207,7 +243,7 @@ function UsersPanel() {
             <TextInput label="Email" {...form.getInputProps("email")} />
             <PasswordInput
               label="Temporary password"
-              description="At least 10 characters"
+              description="At least 6 characters"
               {...form.getInputProps("password")}
             />
             <Select
@@ -228,6 +264,52 @@ function UsersPanel() {
         </form>
       </SideModal>
 
+      <SideModal opened={!!editFor} onClose={() => setEditFor(null)} title="Edit member">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const name = editName.trim();
+            if (!editFor) return;
+            if (!name) {
+              setEditError("Name is required");
+              return;
+            }
+            update.mutate(
+              { id: editFor.id, patch: { fullName: name } },
+              {
+                onSuccess: () => {
+                  toast.ok("Member updated");
+                  setEditFor(null);
+                },
+                onError: (err) => setEditError(err.message),
+              },
+            );
+          }}
+        >
+          <Stack>
+            <TextInput
+              label="Name"
+              data-autofocus
+              value={editName}
+              error={editError}
+              maxLength={120}
+              onChange={(e) => {
+                setEditName(e.currentTarget.value);
+                setEditError(null);
+              }}
+            />
+            <Group justify="flex-end" className="side-modal-footer">
+              <Button variant="default" onClick={() => setEditFor(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={update.isPending}>
+                Save
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </SideModal>
+
       <SideModal
         opened={!!resetFor}
         onClose={() => {
@@ -242,13 +324,13 @@ function UsersPanel() {
           </Text>
           <PasswordInput
             label="New password"
-            description="At least 10 characters"
+            description="At least 6 characters"
             value={newPassword}
             onChange={(e) => setNewPassword(e.currentTarget.value)}
           />
           <Group justify="flex-end" className="side-modal-footer">
             <Button
-              disabled={newPassword.length < 10}
+              disabled={newPassword.length < MIN_PASSWORD_LENGTH}
               loading={update.isPending}
               onClick={() =>
                 resetFor &&

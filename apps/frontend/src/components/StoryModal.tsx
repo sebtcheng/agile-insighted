@@ -1,56 +1,53 @@
-import {
-  Alert,
-  Badge,
-  Button,
-  Group,
-  Select,
-  Stack,
-  Text,
-  Textarea,
-  TextInput,
-} from "@mantine/core";
+import { Badge, Button, Group, Select, Stack, Textarea, TextInput } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { useState } from "react";
 import {
   ENUM_LABELS,
   STORY_POINT_VALUES,
   STORY_STATUS_LABELS,
+  USER_ROLES,
   WORK_TYPES,
+  type CreateStoryInput,
   type JourneyStepDto,
-  type PersonaDto,
-  type ReleaseDto,
-  type SprintDto,
   type StoryDto,
+  type StoryMapDto,
   type StoryStatus,
   type UpdateStoryInput,
+  type UserDto,
   type WorkType,
 } from "@myapp/shared";
 import { ApiClientError } from "../api/client";
-import { useCreateStory, useDeleteStory, useStoryMap, useUpdateStory } from "../api/hooks";
-import { toast } from "./ui";
+import {
+  useCreateStory,
+  useDeleteStory,
+  useProjects,
+  useReleases,
+  useSprints,
+  useUpdateStory,
+  useUsers,
+} from "../api/hooks";
+import { StoryActionStepsField, type StoryActionStepDraft } from "./StoryActionSteps";
 import { SideModal } from "./SideModal";
-import { StoryReadyChecklist } from "./StoryReadyChecklist";
+import { StoryQuickCreate } from "./StoryQuickCreate";
+import { toast } from "./ui";
 
-type Lookups = {
-  steps: JourneyStepDto[];
-  personas: PersonaDto[];
-  releases: ReleaseDto[];
-  sprints: SprintDto[];
-};
-
-type Props = Lookups & {
+type Props = {
   opened: boolean;
   onClose: () => void;
-  subprojectId: string;
   story?: StoryDto;
+  /** Steps and personas for every project in view; the modal shows the selected project's. */
+  map: StoryMapDto | undefined;
+  defaultProjectId: string | null;
   defaultStepId?: string | null;
   defaultReleaseId?: string | null;
   isPm: boolean;
 };
 
 type Values = {
+  projectId: string;
   story: string;
   acceptanceCriteria: string;
+  responsibleId: string;
+  targetDate: string;
   personaId: string;
   journeyStepId: string;
   workType: WorkType;
@@ -58,6 +55,7 @@ type Values = {
   sprintId: string;
   storyPoints: string;
   status: StoryStatus;
+  actionSteps: StoryActionStepDraft[];
 };
 
 const stepLabel = (s: JourneyStepDto, all: JourneyStepDto[]) => {
@@ -65,25 +63,30 @@ const stepLabel = (s: JourneyStepDto, all: JourneyStepDto[]) => {
   return parent ? `${parent.name} › ${s.name}` : s.name;
 };
 
-function ReadyChecklist({ story, subprojectId }: { story: StoryDto; subprojectId: string }) {
-  // The prop is a snapshot taken when the drawer opened; read the live row so ticks and edits show at once.
-  const live = useStoryMap(subprojectId).data?.stories.find((s) => s.id === story.id) ?? story;
-  return <StoryReadyChecklist story={live} subprojectId={subprojectId} canTick />;
+/** Team Members and Project Managers who are active, plus anyone already assigned (so old rows still display). */
+export function staffOptions(users: UserDto[] | undefined, keep: string[]) {
+  return (users ?? [])
+    .filter((u) => (USER_ROLES as readonly string[]).includes(u.role))
+    .filter((u) => u.isActive || keep.includes(u.id))
+    .map((u) => ({ value: u.id, label: u.fullName }));
 }
 
+/** Wide add / edit side modal, laid out like the OST requirement and RAID edit modals. */
 export function StoryModal(props: Props) {
-  const { opened, onClose, subprojectId, story, isPm } = props;
-  const create = useCreateStory(subprojectId);
+  const { opened, onClose, story, isPm, map } = props;
+  const projects = useProjects();
+  const users = useUsers();
+  const create = useCreateStory();
   const update = useUpdateStory();
   const remove = useDeleteStory();
-  const [missing, setMissing] = useState<string[] | null>(null);
-  const [pendingPatch, setPendingPatch] = useState<UpdateStoryInput | null>(null);
-  const [overrideReason, setOverrideReason] = useState("");
 
   const form = useForm<Values>({
     initialValues: {
+      projectId: story?.projectId ?? props.defaultProjectId ?? "",
       story: story?.story ?? "",
       acceptanceCriteria: story?.acceptanceCriteria ?? "",
+      responsibleId: story?.responsibleId ?? "",
+      targetDate: story?.targetDate ?? "",
       personaId: story?.personaId ?? "",
       journeyStepId: story?.journeyStepId ?? props.defaultStepId ?? "",
       workType: story?.workType ?? "feature",
@@ -91,54 +94,92 @@ export function StoryModal(props: Props) {
       sprintId: story?.sprintId ?? "",
       storyPoints: story?.storyPoints ? String(story.storyPoints) : "",
       status: story?.status ?? "backlog",
+      actionSteps: (story?.actionSteps ?? []).map((s) => ({
+        id: s.id,
+        label: s.label,
+        isCompleted: s.isCompleted,
+        responsibleId: s.responsibleId ?? "",
+        targetDate: s.targetDate ?? "",
+      })),
     },
-    validate: { story: (v) => (v.trim() ? null : "Write the story") },
+    validate: {
+      projectId: (v) => (v ? null : "Choose a project"),
+      story: (v) => (v.trim() ? null : "Write the story"),
+      // A new story is mapped: it needs a journey step and a release from its project.
+      journeyStepId: (v) => (story || v ? null : "Choose a journey step"),
+      releaseId: (v) => (story || v ? null : "Choose a release"),
+      actionSteps: (list) =>
+        list.some((s) => s.label.trim() !== "" && (!s.targetDate || !s.responsibleId))
+          ? "Every action step needs a staff member responsible and a target date"
+          : null,
+    },
   });
+  const projectId = form.values.projectId;
+  const releases = useReleases(projectId || undefined);
+  const sprints = useSprints(projectId || undefined);
   const canEdit = isPm || !story;
+  const steps = (map?.steps ?? []).filter((s) => s.projectId === projectId);
+  const leafSteps = steps.filter(
+    (s) => !!s.parentStepId || !steps.some((c) => c.parentStepId === s.id),
+  );
+  const personas = (map?.personas ?? []).filter((p) => p.projectId === projectId);
+  const keepIds = [
+    form.values.responsibleId,
+    ...form.values.actionSteps.map((s) => s.responsibleId),
+  ].filter(Boolean);
+  const staff = staffOptions(users.data, keepIds);
+  const noSteps = !!projectId && leafSteps.length === 0;
+  const noReleases = !!projectId && releases.isSuccess && (releases.data ?? []).length === 0;
 
-  const save = (patch: UpdateStoryInput) => {
-    if (!story) return;
-    update.mutate(
-      { id: story.id, patch },
-      {
-        onSuccess: () => {
-          setMissing(null);
-          setPendingPatch(null);
-          setOverrideReason("");
-          onClose();
-        },
-        onError: (e) => {
-          if (e instanceof ApiClientError && e.code === "dor_incomplete") {
-            setMissing((e.details as { missing?: string[] } | undefined)?.missing ?? []);
-            setPendingPatch(patch);
-          } else toast.error(e.message);
-        },
-      },
-    );
+  const onError = (e: Error) => {
+    if (e instanceof ApiClientError && e.code === "story_steps_incomplete") {
+      const missing = (e.details as { missing?: string[] } | undefined)?.missing ?? [];
+      form.setFieldError(
+        "actionSteps",
+        `Tick every step before completing the story. Still open: ${missing.join(", ")}`,
+      );
+    } else toast.error(e.message);
   };
 
   const submit = form.onSubmit((v) => {
     const base = {
       story: v.story.trim(),
       acceptanceCriteria: v.acceptanceCriteria.trim() || null,
+      responsibleId: v.responsibleId || null,
+      targetDate: v.targetDate || null,
       personaId: v.personaId || null,
       journeyStepId: v.journeyStepId || null,
       workType: v.workType,
       releaseId: v.releaseId || null,
       storyPoints: v.storyPoints ? Number(v.storyPoints) : null,
+      actionSteps: v.actionSteps
+        .map((s) => ({ ...s, label: s.label.trim() }))
+        .filter((s) => s.label !== ""),
     };
     if (!story) {
-      create.mutate(base, { onSuccess: onClose, onError: (e) => toast.error(e.message) });
+      const input: CreateStoryInput = {
+        ...base,
+        projectId: v.projectId,
+        journeyStepId: v.journeyStepId,
+        releaseId: v.releaseId,
+      };
+      create.mutate(input, { onSuccess: onClose, onError });
       return;
     }
-    save({ ...base, sprintId: v.sprintId || null, status: v.status });
+    const patch: UpdateStoryInput = { ...base, sprintId: v.sprintId || null, status: v.status };
+    update.mutate({ id: story.id, patch }, { onSuccess: onClose, onError });
   });
+
+  // A new story's map links belong to its project, so changing project clears them.
+  const changeProject = (id: string | null) => {
+    form.setValues({ projectId: id ?? "", journeyStepId: "", releaseId: "", personaId: "" });
+  };
 
   return (
     <SideModal
       opened={opened}
       onClose={onClose}
-      size="lg"
+      size={860}
       title={story ? `${story.code}` : "Add user story"}
     >
       <form onSubmit={submit}>
@@ -156,13 +197,102 @@ export function StoryModal(props: Props) {
             </Group>
           ) : null}
           <Textarea
-            label="Story"
+            label="Story title"
             description="As a …, I want …, so that …"
             autosize
             minRows={2}
             data-autofocus
             disabled={!canEdit}
             {...form.getInputProps("story")}
+          />
+          <Group className="side-modal-pair" align="flex-start">
+            <Select
+              label="Project"
+              allowDeselect={false}
+              searchable
+              placeholder="Choose a project"
+              disabled={!canEdit || !!story}
+              description={story ? "A story stays in the project it was created in." : undefined}
+              data={(projects.data ?? [])
+                .filter((p) => !p.archivedAt || p.id === projectId)
+                .map((p) => ({ value: p.id, label: p.name }))}
+              value={projectId || null}
+              onChange={changeProject}
+              error={form.errors.projectId}
+            />
+            <Select
+              label="Person responsible"
+              clearable
+              searchable
+              placeholder="Unassigned"
+              disabled={!canEdit}
+              data={staff}
+              {...form.getInputProps("responsibleId")}
+            />
+            <TextInput
+              label="Target date"
+              type="date"
+              disabled={!canEdit}
+              {...form.getInputProps("targetDate")}
+            />
+          </Group>
+          <Group className="side-modal-pair" align="flex-start">
+            <Select
+              label="Release"
+              clearable={!!story}
+              placeholder={projectId ? "Choose a release" : "Choose a project first"}
+              disabled={!canEdit || !projectId}
+              data={(releases.data ?? []).map((r) => ({
+                value: r.id,
+                label: r.isMvp ? `${r.name} (MVP)` : r.name,
+              }))}
+              {...form.getInputProps("releaseId")}
+            />
+            <Select
+              label="Journey step"
+              clearable={!!story}
+              searchable
+              placeholder={projectId ? "Choose a journey step" : "Choose a project first"}
+              disabled={!canEdit || !projectId}
+              data={leafSteps.map((s) => ({ value: s.id, label: stepLabel(s, steps) }))}
+              {...form.getInputProps("journeyStepId")}
+            />
+            <Select
+              label="Persona"
+              clearable
+              disabled={!canEdit || !projectId}
+              data={personas.map((p) => ({ value: p.id, label: p.name }))}
+              {...form.getInputProps("personaId")}
+            />
+          </Group>
+          {canEdit && (noSteps || noReleases) ? (
+            <Stack gap="xs" className="usm-prereqs">
+              {noReleases ? (
+                <StoryQuickCreate
+                  kind="release"
+                  projectId={projectId}
+                  canCreate={isPm}
+                  onCreated={(id) => form.setFieldValue("releaseId", id)}
+                />
+              ) : null}
+              {noSteps ? (
+                <StoryQuickCreate
+                  kind="step"
+                  projectId={projectId}
+                  canCreate={isPm}
+                  onCreated={(id) => form.setFieldValue("journeyStepId", id)}
+                />
+              ) : null}
+            </Stack>
+          ) : null}
+          <StoryActionStepsField
+            value={form.values.actionSteps}
+            onChange={(next) => {
+              form.setFieldValue("actionSteps", next);
+              form.clearFieldError("actionSteps");
+            }}
+            staffOptions={staff}
+            error={typeof form.errors.actionSteps === "string" ? form.errors.actionSteps : null}
           />
           <Textarea
             label="Acceptance criteria"
@@ -172,35 +302,7 @@ export function StoryModal(props: Props) {
             disabled={!canEdit}
             {...form.getInputProps("acceptanceCriteria")}
           />
-          <Group className="side-modal-pair" grow align="flex-start">
-            <Select
-              label="Persona"
-              clearable
-              disabled={!canEdit}
-              data={props.personas.map((p) => ({ value: p.id, label: p.name }))}
-              {...form.getInputProps("personaId")}
-            />
-            <Select
-              label="Journey step"
-              clearable
-              searchable
-              disabled={!canEdit}
-              data={props.steps.map((s) => ({ value: s.id, label: stepLabel(s, props.steps) }))}
-              {...form.getInputProps("journeyStepId")}
-            />
-          </Group>
-          <Group className="side-modal-pair" grow align="flex-start">
-            <Select
-              label="Release"
-              clearable
-              placeholder="Unplanned"
-              disabled={!canEdit}
-              data={props.releases.map((r) => ({
-                value: r.id,
-                label: r.isMvp ? `${r.name} (MVP)` : r.name,
-              }))}
-              {...form.getInputProps("releaseId")}
-            />
+          <Group className="side-modal-pair" align="flex-start">
             <Select
               label="Story points"
               clearable
@@ -216,16 +318,16 @@ export function StoryModal(props: Props) {
               data={WORK_TYPES.map((t) => ({ value: t, label: ENUM_LABELS.workType[t] }))}
               {...form.getInputProps("workType")}
             />
-          </Group>
-          {story && isPm ? (
-            <Group className="side-modal-pair" grow align="flex-start">
+            {story && isPm ? (
               <Select
                 label="Sprint target"
                 clearable
                 placeholder="None"
-                data={props.sprints.map((s) => ({ value: s.id, label: s.name }))}
+                data={(sprints.data ?? []).map((s) => ({ value: s.id, label: s.name }))}
                 {...form.getInputProps("sprintId")}
               />
+            ) : null}
+            {story && isPm ? (
               <Select
                 label="Status"
                 allowDeselect={false}
@@ -235,41 +337,9 @@ export function StoryModal(props: Props) {
                 }))}
                 {...form.getInputProps("status")}
               />
-            </Group>
-          ) : null}
-          {story ? <ReadyChecklist story={story} subprojectId={subprojectId} /> : null}
-          {missing ? (
-            <Alert color="yellow" title="Not ready yet">
-              <Stack gap={6}>
-                <Text size="sm">
-                  Still to check: {missing.join(", ")}. Tick them above, or a PM can override.
-                </Text>
-                {isPm ? (
-                  <>
-                    <TextInput
-                      label="Override reason"
-                      value={overrideReason}
-                      onChange={(e) => setOverrideReason(e.currentTarget.value)}
-                    />
-                    <Button
-                      size="xs"
-                      variant="light"
-                      color="yellow"
-                      disabled={!overrideReason.trim() || !pendingPatch}
-                      loading={update.isPending}
-                      onClick={() =>
-                        pendingPatch &&
-                        save({ ...pendingPatch, overrideReason: overrideReason.trim() })
-                      }
-                    >
-                      Override and save
-                    </Button>
-                  </>
-                ) : null}
-              </Stack>
-            </Alert>
-          ) : null}
-          <Group justify="space-between">
+            ) : null}
+          </Group>
+          <Group justify="space-between" className="side-modal-footer">
             {story && isPm ? (
               <Button
                 variant="subtle"

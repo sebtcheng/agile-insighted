@@ -1,6 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { ActivityStatus, SearchResponse } from "@myapp/shared";
 import { db } from "../db/client";
+import { scopeSql, type ProjectScope } from "./visibilityService";
 
 /** Escape LIKE wildcards so user input is matched literally. */
 export const escapeLike = (s: string): string => s.replace(/[\\%_]/g, (c) => `\\${c}`);
@@ -8,7 +9,7 @@ export const escapeLike = (s: string): string => s.replace(/[\\%_]/g, (c) => `\\
 /** Trigram indexes need three characters; shorter queries only look at subproject codes and people prefixes. */
 export const MIN_ACTIVITY_QUERY = 3;
 
-export function activitySearchSql(q: string, limit: number): SQL {
+export function activitySearchSql(q: string, limit: number, scope: ProjectScope = null): SQL {
   const contains = `%${escapeLike(q)}%`;
   const prefix = `${escapeLike(q)}%`;
   // ILIKE and the % similarity operator both use the GIN trigram index; ordering is prefix, then contains, then similarity.
@@ -17,19 +18,19 @@ export function activitySearchSql(q: string, limit: number): SQL {
     FROM activities a
     JOIN projects p ON p.id = a.project_id AND p.archived_at IS NULL
     LEFT JOIN subprojects s ON s.id = a.subproject_id
-    WHERE a.title ILIKE ${contains} OR a.title % ${q}
+    WHERE (a.title ILIKE ${contains} OR a.title % ${q}) AND ${scopeSql(sql`a.project_id`, scope)}
     ORDER BY (a.title ILIKE ${prefix}) DESC, (a.title ILIKE ${contains}) DESC, similarity(a.title, ${q}) DESC, a.title, a.id
     LIMIT ${limit}`;
 }
 
-export function subprojectSearchSql(q: string, limit: number): SQL {
+export function subprojectSearchSql(q: string, limit: number, scope: ProjectScope = null): SQL {
   const contains = `%${escapeLike(q)}%`;
   const prefix = `${escapeLike(q)}%`;
   return sql`
     SELECT s.id, s.code, s.name
     FROM subprojects s
     JOIN projects p ON p.id = s.project_id AND p.archived_at IS NULL
-    WHERE s.archived_at IS NULL AND (s.code ILIKE ${prefix} OR s.name ILIKE ${contains} OR s.name % ${q})
+    WHERE s.archived_at IS NULL AND ${scopeSql(sql`s.project_id`, scope)} AND (s.code ILIKE ${prefix} OR s.name ILIKE ${contains} OR s.name % ${q})
     ORDER BY (s.code ILIKE ${prefix}) DESC, (s.name ILIKE ${prefix}) DESC, similarity(s.name, ${q}) DESC, s.code
     LIMIT ${limit}`;
 }
@@ -49,7 +50,11 @@ export function peopleSearchSql(q: string, limit: number): SQL {
  * Typeahead across activity titles, subproject codes and names, and people. Every signed-in user can see all
  * of these, so permission filtering means hiding archived projects and subprojects and inactive people.
  */
-export async function search(rawQuery: string, limit = 8): Promise<SearchResponse> {
+export async function search(
+  rawQuery: string,
+  limit = 8,
+  scope: ProjectScope = null,
+): Promise<SearchResponse> {
   const q = rawQuery.trim();
   const empty: SearchResponse = { query: q, activities: [], subprojects: [], people: [] };
   if (q.length === 0) return empty;
@@ -61,9 +66,9 @@ export async function search(rawQuery: string, limit = 8): Promise<SearchRespons
           title: string;
           status: ActivityStatus;
           subproject_code: string | null;
-        }>(activitySearchSql(q, limit))
+        }>(activitySearchSql(q, limit, scope))
       : null,
-    db.execute<{ id: string; code: string; name: string }>(subprojectSearchSql(q, limit)),
+    db.execute<{ id: string; code: string; name: string }>(subprojectSearchSql(q, limit, scope)),
     q.length >= 2 ? db.execute<{ id: string; full_name: string }>(peopleSearchSql(q, limit)) : null,
   ]);
 

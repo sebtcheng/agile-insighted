@@ -2,7 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import type { CreateUserInput, UpdateUserInput, UserDto } from "@myapp/shared";
 import { db } from "../db/client";
 import { sessions, users } from "../db/schema";
-import { notFound } from "../errors";
+import { conflict, forbidden, notFound, pgErrorOf } from "../errors";
 import { hashPassword } from "./authService";
 
 const columns = {
@@ -29,6 +29,28 @@ export async function createUser(input: CreateUserInput): Promise<UserDto> {
     .returning(columns);
   if (!row) throw new Error("insert returned no row");
   return row;
+}
+
+/**
+ * Deletes a member. Many tables reference users with ON DELETE RESTRICT (created-by, reporter and
+ * similar), so a member with recorded work cannot be removed; they should be deactivated instead.
+ */
+export async function deleteUser(id: string, actorId: string): Promise<void> {
+  if (id === actorId) throw forbidden("You cannot delete your own account");
+  try {
+    await db.transaction(async (tx) => {
+      await tx.delete(sessions).where(eq(sessions.userId, id));
+      const deleted = await tx.delete(users).where(eq(users.id, id)).returning({ id: users.id });
+      if (deleted.length === 0) throw notFound("User");
+    });
+  } catch (err) {
+    if (pgErrorOf(err)?.code === "23503") {
+      throw conflict(
+        "This member has recorded work and cannot be deleted. Deactivate them instead.",
+      );
+    }
+    throw err;
+  }
 }
 
 export async function updateUser(id: string, patch: UpdateUserInput): Promise<UserDto> {

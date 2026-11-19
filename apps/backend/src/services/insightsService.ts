@@ -4,6 +4,7 @@ import type {
   FlowShare,
   InsightsDto,
   InsightsQuery,
+  InsightsWorkSummary,
   ThroughputWeek,
 } from "@myapp/shared";
 import { db } from "../db/client";
@@ -11,6 +12,9 @@ import { activities, subprojects } from "../db/schema";
 import { env } from "../env";
 import { localDate, weekStart } from "./dateBuckets";
 import { forecast, percentile } from "./forecast";
+import { scopeCondition, type ProjectScope } from "./visibilityService";
+import { loadWorkItems } from "./workItemService";
+import { rollupByMember, rollupByModule, rollupByProject, summarize } from "./workItemRollups";
 
 /**
  * Insights: flow metrics computed from activity history (started_at, completed_at, status). All of it
@@ -29,6 +33,7 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
 export async function getInsights(
   query: InsightsQuery,
   now: Date = new Date(),
+  projectScope: ProjectScope = null,
 ): Promise<InsightsDto> {
   const tz = env.APP_TIMEZONE;
   const today = localDate(now, tz);
@@ -38,6 +43,8 @@ export async function getInsights(
   const windowStartAt = sql`(${windowStart}::date)::timestamp AT TIME ZONE ${tz}`;
 
   const scope: SQL[] = [];
+  const inScope = scopeCondition(activities.projectId, projectScope);
+  if (inScope) scope.push(inScope);
   if (query.projectId) scope.push(eq(activities.projectId, query.projectId));
   if (query.subprojectId) scope.push(eq(activities.subprojectId, query.subprojectId));
 
@@ -151,7 +158,20 @@ export async function getInsights(
   const runs = 5000;
   const result = forecast(complete, remaining, { runs });
 
+  const loaded = await loadWorkItems(
+    { projectId: query.projectId, subprojectId: query.subprojectId },
+    projectScope,
+    now,
+  );
+  const work: InsightsWorkSummary = {
+    summary: summarize(loaded.items),
+    byModule: rollupByModule(loaded.items),
+    byProject: rollupByProject(loaded.items, loaded.projectNames),
+    byMember: rollupByMember(loaded.items),
+  };
+
   return {
+    work,
     generatedAt: now.toISOString(),
     timezone: tz,
     windowWeeks: query.weeks,

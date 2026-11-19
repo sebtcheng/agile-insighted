@@ -6,7 +6,6 @@ import {
   date,
   index,
   integer,
-  numeric,
   pgEnum,
   pgSequence,
   pgTable,
@@ -20,7 +19,6 @@ import {
 } from "drizzle-orm/pg-core";
 import {
   KANO_CATEGORIES,
-  KANO_DECISIONS,
   RAID_STATUSES,
   RAID_TYPES,
   STORY_STATUSES,
@@ -68,7 +66,6 @@ export const gate = pgEnum("gate", GATES);
 export const validationStatus = pgEnum("validation_status", VALIDATION_STATUSES);
 export const storyStatus = pgEnum("story_status", STORY_STATUSES);
 export const kanoCategory = pgEnum("kano_category", KANO_CATEGORIES);
-export const kanoDecision = pgEnum("kano_decision", KANO_DECISIONS);
 export const raidType = pgEnum("raid_type", RAID_TYPES);
 export const raidStatus = pgEnum("raid_status", RAID_STATUSES);
 
@@ -121,6 +118,24 @@ export const projects = pgTable(
     uniqueIndex("projects_code_lower_uq").on(sql`lower(${t.code})`),
     index("projects_owner_id_idx").on(t.ownerId),
     check("projects_wip_limit_positive", sql`${t.wipLimitPerPerson} > 0`),
+  ],
+);
+
+/** Team members assigned to a project. The owner lives on projects.owner_id and sees the project too. */
+export const projectMembers = pgTable(
+  "project_members",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.userId] }),
+    index("project_members_user_id_idx").on(t.userId),
   ],
 );
 
@@ -532,17 +547,12 @@ export const ostOutcomes = pgTable(
   "ost_outcomes",
   {
     ...moduleBase(),
-    subprojectId: uuid("subproject_id"),
     title: text("title").notNull(),
     description: text("description"),
-    metricName: text("metric_name"),
-    baselineValue: numeric("baseline_value"),
-    targetValue: numeric("target_value"),
     targetDate: date("target_date", { mode: "string" }),
   },
   (t) => [
     index("ost_outcomes_project_id_idx").on(t.projectId),
-    index("ost_outcomes_subproject_id_idx").on(t.subprojectId),
     index("ost_outcomes_created_by_idx").on(t.createdById),
     check("ost_outcomes_title_not_empty", sql`char_length(btrim(${t.title})) > 0`),
   ],
@@ -556,8 +566,6 @@ export const ostOpportunities = pgTable(
       .notNull()
       .references(() => ostOutcomes.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
-    description: text("description"),
-    evidence: text("evidence"),
     isTargeted: boolean("is_targeted").notNull().default(false),
   },
   (t) => [
@@ -588,6 +596,7 @@ export const ostSolutions = pgTable(
     // The solution is the action: planned until the PM marks it validated.
     validationStatus: validationStatus("validation_status").notNull().default("planned"),
     ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
+    targetDate: date("target_date", { mode: "string" }),
     convertedStoryId: uuid("converted_story_id").references((): AnyPgColumn => userStories.id, {
       onDelete: "set null",
     }),
@@ -609,13 +618,11 @@ export const personas = pgTable(
   "personas",
   {
     ...moduleBase(),
-    subprojectId: uuid("subproject_id"),
     name: text("name").notNull(),
     description: text("description"),
   },
   (t) => [
     uniqueIndex("personas_project_name_lower_uq").on(t.projectId, sql`lower(${t.name})`),
-    index("personas_subproject_id_idx").on(t.subprojectId),
     index("personas_created_by_idx").on(t.createdById),
     check("personas_name_not_empty", sql`char_length(btrim(${t.name})) > 0`),
   ],
@@ -625,7 +632,6 @@ export const journeySteps = pgTable(
   "journey_steps",
   {
     ...moduleBase(),
-    subprojectId: uuid("subproject_id").notNull(),
     // null = backbone activity; set = a step under that backbone activity.
     parentStepId: uuid("parent_step_id").references((): AnyPgColumn => journeySteps.id, {
       onDelete: "cascade",
@@ -635,10 +641,9 @@ export const journeySteps = pgTable(
   },
   (t) => [
     unique("journey_steps_scope_name_uq")
-      .on(t.subprojectId, t.parentStepId, t.name)
+      .on(t.projectId, t.parentStepId, t.name)
       .nullsNotDistinct(),
-    index("journey_steps_project_id_idx").on(t.projectId),
-    index("journey_steps_subproject_position_idx").on(t.subprojectId, t.position),
+    index("journey_steps_project_position_idx").on(t.projectId, t.position),
     index("journey_steps_parent_idx").on(t.parentStepId),
     index("journey_steps_created_by_idx").on(t.createdById),
     check("journey_steps_name_not_empty", sql`char_length(btrim(${t.name})) > 0`),
@@ -649,7 +654,6 @@ export const userStories = pgTable(
   "user_stories",
   {
     ...moduleBase(),
-    subprojectId: uuid("subproject_id").notNull(),
     seq: integer("seq").notNull(),
     code: text("code")
       .notNull()
@@ -669,11 +673,14 @@ export const userStories = pgTable(
     storyPoints: smallint("story_points"),
     status: storyStatus("status").notNull().default("backlog"),
     position: integer("position").notNull().default(0),
+    // Person responsible; same shape as kano_requests.responsible_id.
+    responsibleId: uuid("responsible_id").references(() => users.id, { onDelete: "set null" }),
+    targetDate: date("target_date", { mode: "string" }),
   },
   (t) => [
     unique("user_stories_project_seq_uq").on(t.projectId, t.seq),
-    index("user_stories_project_id_idx").on(t.projectId),
-    index("user_stories_subproject_status_idx").on(t.subprojectId, t.status),
+    index("user_stories_responsible_idx").on(t.responsibleId),
+    index("user_stories_project_status_idx").on(t.projectId, t.status),
     index("user_stories_persona_idx").on(t.personaId),
     index("user_stories_journey_step_idx").on(t.journeyStepId),
     index("user_stories_sprint_idx").on(t.sprintId),
@@ -688,10 +695,10 @@ export const userStories = pgTable(
   ],
 );
 
-// Per-story Definition of Ready criteria. Replaces the project-wide ready templates + checklist_checks for
-// stories (those stay in place, deprecated, until a later contract migration). New stories are seeded from the
-// project's active ready templates, or the five defaults when it has none.
-export const storyDorItems = pgTable(
+// Per-story action steps (what will be done, by whom, by when), mirroring raid_mitigating_actions and
+// kano_request_specs. The table keeps its original name (it began as Definition of Ready criteria) so the upgrade
+// is additive; a story with steps can only be marked completed when every step is done.
+export const storyActionSteps = pgTable(
   "story_dor_items",
   {
     id: pk(),
@@ -700,91 +707,163 @@ export const storyDorItems = pgTable(
       .references(() => userStories.id, { onDelete: "cascade" }),
     label: text("label").notNull(),
     isCompleted: boolean("is_completed").notNull().default(false),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    // Nullable in the DB so rows created before these columns existed stay valid; the API requires them on write.
+    targetDate: date("target_date", { mode: "string" }),
+    responsibleId: uuid("responsible_id").references(() => users.id, { onDelete: "set null" }),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     index("story_dor_items_story_idx").on(t.storyId, t.sortOrder),
+    index("story_dor_items_responsible_idx").on(t.responsibleId),
     check("story_dor_items_label_not_empty", sql`char_length(btrim(${t.label})) > 0`),
+    check(
+      "story_dor_items_completed_at_matches",
+      sql`${t.isCompleted} = (${t.completedAt} IS NOT NULL)`,
+    ),
   ],
 );
 
-export const userStoriesRelations = relations(userStories, ({ many }) => ({
-  dorItems: many(storyDorItems),
+export const userStoriesRelations = relations(userStories, ({ one, many }) => ({
+  actionSteps: many(storyActionSteps),
+  project: one(projects, { fields: [userStories.projectId], references: [projects.id] }),
+  responsible: one(users, { fields: [userStories.responsibleId], references: [users.id] }),
 }));
-export const storyDorItemsRelations = relations(storyDorItems, ({ one }) => ({
-  story: one(userStories, { fields: [storyDorItems.storyId], references: [userStories.id] }),
+export const storyActionStepsRelations = relations(storyActionSteps, ({ one }) => ({
+  story: one(userStories, { fields: [storyActionSteps.storyId], references: [userStories.id] }),
+  responsible: one(users, { fields: [storyActionSteps.responsibleId], references: [users.id] }),
 }));
+
+// ---- User Story Mapping v2: Project -> persona -> ordered steps -> feature checklist.
+// The legacy personas / journey_steps / user_stories / releases tables stay in place, unused by this flow.
+export const usmPersonas = pgTable(
+  "usm_personas",
+  {
+    ...moduleBase(),
+    name: text("name").notNull(),
+    description: text("description"),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [
+    index("usm_personas_project_sort_idx").on(t.projectId, t.sortOrder),
+    uniqueIndex("usm_personas_project_name_lower_uq").on(t.projectId, sql`lower(${t.name})`),
+    unique("usm_personas_id_project_uq").on(t.id, t.projectId),
+    check("usm_personas_name_not_empty", sql`char_length(btrim(${t.name})) > 0`),
+  ],
+);
+
+export const usmSteps = pgTable(
+  "usm_steps",
+  {
+    ...moduleBase(),
+    personaId: uuid("persona_id")
+      .notNull()
+      .references(() => usmPersonas.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [
+    index("usm_steps_project_idx").on(t.projectId),
+    index("usm_steps_persona_idx").on(t.personaId),
+    index("usm_steps_project_persona_sort_idx").on(t.projectId, t.personaId, t.sortOrder),
+    unique("usm_steps_id_project_uq").on(t.id, t.projectId),
+    check("usm_steps_title_not_empty", sql`char_length(btrim(${t.title})) > 0`),
+  ],
+);
+
+export const usmStepFeatures = pgTable(
+  "usm_step_features",
+  {
+    id: pk(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    stepId: uuid("step_id")
+      .notNull()
+      .references(() => usmSteps.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    isCompleted: boolean("is_completed").notNull().default(false),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    // Same shapes as kano_request_specs.responsible_id / target_date.
+    responsibleId: uuid("responsible_id").references(() => users.id, { onDelete: "set null" }),
+    targetDate: date("target_date", { mode: "string" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("usm_step_features_project_idx").on(t.projectId),
+    index("usm_step_features_step_sort_idx").on(t.stepId, t.sortOrder),
+    index("usm_step_features_responsible_idx").on(t.responsibleId),
+    // The feature's project must equal its step's project (enforced by a composite FK in the migration).
+    check("usm_step_features_title_not_empty", sql`char_length(btrim(${t.title})) > 0`),
+    check(
+      "usm_step_features_completed_at_matches",
+      sql`${t.isCompleted} = (${t.completedAt} IS NOT NULL)`,
+    ),
+  ],
+);
 
 // ---- Kano Request Tracker
 export const kanoRequests = pgTable(
   "kano_requests",
   {
     ...moduleBase(),
-    subprojectId: uuid("subproject_id"),
     seq: integer("seq").notNull(),
     code: text("code")
       .notNull()
       .generatedAlwaysAs(
         sql`'REQ-' || repeat('0', greatest(3 - length(seq::text), 0)) || seq::text`,
       ),
-    description: text("description").notNull(),
-    requesterName: text("requester_name").notNull(),
-    requesterRole: text("requester_role"),
+    revisionRequest: text("revision_request").notNull(),
     kanoCategory: kanoCategory("kano_category"),
-    decision: kanoDecision("decision"),
-    targetSprintId: uuid("target_sprint_id"),
-    targetReleaseId: uuid("target_release_id"),
-    promotedStoryId: uuid("promoted_story_id").references(() => userStories.id, {
-      onDelete: "set null",
-    }),
-    // Scores are computed by the database from these inputs; they are never typed in.
-    wsjfBusinessValue: smallint("wsjf_business_value"),
-    wsjfTimeCriticality: smallint("wsjf_time_criticality"),
-    wsjfRiskReduction: smallint("wsjf_risk_reduction"),
-    wsjfJobSize: smallint("wsjf_job_size"),
-    wsjfScore: numeric("wsjf_score", { precision: 6, scale: 2 }).generatedAlwaysAs(
-      sql`round((wsjf_business_value + wsjf_time_criticality + wsjf_risk_reduction)::numeric / wsjf_job_size, 2)`,
-    ),
-    riceReach: integer("rice_reach"),
-    riceImpact: numeric("rice_impact", { precision: 4, scale: 2 }),
-    riceConfidence: smallint("rice_confidence"),
-    riceEffort: numeric("rice_effort", { precision: 8, scale: 2 }),
-    riceScore: numeric("rice_score", { precision: 14, scale: 2 }).generatedAlwaysAs(
-      sql`round(rice_reach * rice_impact * (rice_confidence / 100.0) / rice_effort, 2)`,
-    ),
+    targetDate: date("target_date", { mode: "string" }),
+    // Person responsible; same shape as raid_items.owner_id.
+    responsibleId: uuid("responsible_id").references(() => users.id, { onDelete: "set null" }),
   },
   (t) => [
     unique("kano_requests_project_seq_uq").on(t.projectId, t.seq),
     index("kano_requests_project_id_idx").on(t.projectId),
-    index("kano_requests_subproject_idx").on(t.subprojectId),
     index("kano_requests_category_idx").on(t.kanoCategory),
-    index("kano_requests_decision_idx").on(t.decision),
-    index("kano_requests_wsjf_idx").on(t.projectId, sql`${t.wsjfScore} DESC NULLS LAST`),
-    index("kano_requests_target_sprint_idx").on(t.targetSprintId),
-    index("kano_requests_target_release_idx").on(t.targetReleaseId),
-    index("kano_requests_promoted_story_idx").on(t.promotedStoryId),
+    index("kano_requests_responsible_idx").on(t.responsibleId),
     index("kano_requests_created_by_idx").on(t.createdById),
     check("kano_requests_seq_positive", sql`${t.seq} > 0`),
-    check("kano_requests_description_not_empty", sql`char_length(btrim(${t.description})) > 0`),
     check(
-      "kano_requests_wsjf_inputs",
-      sql`(${t.wsjfBusinessValue} IS NULL OR ${t.wsjfBusinessValue} IN (1, 2, 3, 5, 8, 13, 20))
-        AND (${t.wsjfTimeCriticality} IS NULL OR ${t.wsjfTimeCriticality} IN (1, 2, 3, 5, 8, 13, 20))
-        AND (${t.wsjfRiskReduction} IS NULL OR ${t.wsjfRiskReduction} IN (1, 2, 3, 5, 8, 13, 20))
-        AND (${t.wsjfJobSize} IS NULL OR ${t.wsjfJobSize} IN (1, 2, 3, 5, 8, 13, 20))`,
+      "kano_requests_revision_request_not_empty",
+      sql`char_length(btrim(${t.revisionRequest})) > 0`,
     ),
-    check("kano_requests_rice_reach", sql`${t.riceReach} IS NULL OR ${t.riceReach} >= 0`),
+  ],
+);
+
+// One-to-many checklist of revision specs. A request is complete only when every spec is done.
+export const kanoRequestSpecs = pgTable(
+  "kano_request_specs",
+  {
+    id: pk(),
+    kanoRequestId: uuid("kano_request_id")
+      .notNull()
+      .references(() => kanoRequests.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    isCompleted: boolean("is_completed").notNull().default(false),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    // Per-spec tagging. Same shapes as kano_requests.target_date / responsible_id (the request-level date is deprecated).
+    targetDate: date("target_date", { mode: "string" }),
+    responsibleId: uuid("responsible_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("kano_request_specs_request_idx").on(t.kanoRequestId, t.sortOrder),
+    index("kano_request_specs_responsible_idx").on(t.responsibleId),
+    check("kano_request_specs_label_not_empty", sql`char_length(btrim(${t.label})) > 0`),
     check(
-      "kano_requests_rice_impact",
-      sql`${t.riceImpact} IS NULL OR ${t.riceImpact} IN (0.25, 0.5, 1, 2, 3)`,
+      "kano_request_specs_completed_at_matches",
+      sql`${t.isCompleted} = (${t.completedAt} IS NOT NULL)`,
     ),
-    check(
-      "kano_requests_rice_confidence",
-      sql`${t.riceConfidence} IS NULL OR ${t.riceConfidence} BETWEEN 0 AND 100`,
-    ),
-    check("kano_requests_rice_effort", sql`${t.riceEffort} IS NULL OR ${t.riceEffort} > 0`),
   ],
 );
 
@@ -793,7 +872,6 @@ export const raidItems = pgTable(
   "raid_items",
   {
     ...moduleBase(),
-    subprojectId: uuid("subproject_id"),
     seq: integer("seq").notNull(),
     code: text("code")
       .notNull()
@@ -818,7 +896,6 @@ export const raidItems = pgTable(
   (t) => [
     unique("raid_items_project_seq_uq").on(t.projectId, t.seq),
     index("raid_items_project_id_idx").on(t.projectId),
-    index("raid_items_subproject_idx").on(t.subprojectId),
     index("raid_items_owner_idx").on(t.ownerId),
     index("raid_items_raised_by_idx").on(t.raisedById),
     index("raid_items_created_by_idx").on(t.createdById),
@@ -848,12 +925,17 @@ export const raidMitigatingActions = pgTable(
     description: text("description").notNull(),
     isCompleted: boolean("is_completed").notNull().default(false),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    // Nullable in the DB so rows created before this column existed stay valid; the API requires it on write.
+    targetDate: date("target_date", { mode: "string" }),
+    // Staff responsible. Nullable like raid_items.owner_id (set null on user delete); the API requires it on write.
+    responsibleId: uuid("responsible_id").references(() => users.id, { onDelete: "set null" }),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     index("raid_mitigating_actions_raid_item_idx").on(t.raidItemId, t.sortOrder),
+    index("raid_mitigating_actions_responsible_idx").on(t.responsibleId),
     check(
       "raid_mitigating_actions_description_not_empty",
       sql`char_length(btrim(${t.description})) > 0`,

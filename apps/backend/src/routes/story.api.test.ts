@@ -1,12 +1,13 @@
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { StoryDto, StoryMapDto } from "@myapp/shared";
+import type { StoryDto, StoryMapDto, ToggleStoryActionStepResult } from "@myapp/shared";
 import { createApp } from "../app";
 import { createFixture, type Fixture } from "../test/helpers";
 
 type Agent = ReturnType<typeof request.agent>;
-type ErrorBody = { error: { code: string; details?: { missing?: string[] } } };
+type ErrorBody = { error: { code: string; message: string; details?: { missing?: string[] } } };
 const json = <T>(res: { body: unknown }): T => res.body as T;
+const DUE = "2026-12-15";
 
 const app = createApp();
 let f: Fixture;
@@ -16,6 +17,7 @@ let anon: Agent;
 let backboneId: string;
 let stepId: string;
 let personaId: string;
+let releaseId: string;
 
 async function loginAs(email: string) {
   const agent = request.agent(app);
@@ -30,38 +32,73 @@ beforeAll(async () => {
   pm = await loginAs(f.pm.email);
   member = await loginAs(f.m1.email);
   anon = request.agent(app);
-  await pm
-    .post(`/api/projects/${f.project.id}/checklist-templates`)
-    .send({ kind: "ready", label: "Acceptance criteria written" });
   backboneId = json<{ id: string }>(
-    await pm.post(`/api/subprojects/${f.subA.id}/journey-steps`).send({ name: "Onboard" }),
+    await pm.post(`/api/projects/${f.project.id}/journey-steps`).send({ name: "Onboard" }),
   ).id;
   stepId = json<{ id: string }>(
     await pm
-      .post(`/api/subprojects/${f.subA.id}/journey-steps`)
+      .post(`/api/projects/${f.project.id}/journey-steps`)
       .send({ name: "Create account", parentStepId: backboneId }),
   ).id;
   personaId = json<{ id: string }>(
     await pm.post(`/api/projects/${f.project.id}/personas`).send({ name: "Teacher" }),
+  ).id;
+  releaseId = json<{ id: string }>(
+    await pm.post(`/api/projects/${f.project.id}/releases`).send({ name: "R1" }),
   ).id;
 });
 afterAll(async () => {
   await f.cleanup();
 });
 
+const step = (label: string, extra: Record<string, unknown> = {}) => ({
+  label,
+  responsibleId: f.m1.id,
+  targetDate: DUE,
+  ...extra,
+});
+
 const newStory = async (extra: Record<string, unknown> = {}) =>
   json<StoryDto>(
-    await member.post(`/api/subprojects/${f.subA.id}/stories`).send({
+    await member.post(`/api/stories`).send({
+      projectId: f.project.id,
       story: "As a teacher, I want a class view",
       journeyStepId: stepId,
+      releaseId,
       personaId,
       ...extra,
     }),
   );
 
+const mapped = () => ({ projectId: f.project.id, story: "x", journeyStepId: stepId, releaseId });
+
+/** A journey step and a release that belong to the other project. */
+async function otherProjectLinks() {
+  const o = f.otherProject.id;
+  return {
+    stepId: json<{ id: string }>(
+      await pm.post(`/api/projects/${o}/journey-steps`).send({ name: `Other ${Date.now()}` }),
+    ).id,
+    releaseId: json<{ id: string }>(
+      await pm.post(`/api/projects/${o}/releases`).send({ name: `OR ${Date.now()}` }),
+    ).id,
+  };
+}
+
+async function asStoryLinks() {
+  const l = await otherProjectLinks();
+  return { journeyStepId: l.stepId, releaseId: l.releaseId };
+}
+
+const mapOf = async (projectId = f.project.id) =>
+  json<StoryMapDto>(await pm.get(`/api/story-map?projectId=${projectId}`));
+
+const toggle = (storyId: string, actionStepId: string | undefined, isCompleted: boolean) =>
+  member.patch(`/api/stories/${storyId}/action-steps/${actionStepId ?? ""}`).send({ isCompleted });
+
 describe("Story map API", () => {
   it("requires sign in", async () => {
-    expect((await anon.get(`/api/story-map?subprojectId=${f.subA.id}`)).status).toBe(401);
+    expect((await anon.get(`/api/story-map?projectId=${f.project.id}`)).status).toBe(401);
   });
 
   it("lets a team member propose a story but not shape the map", async () => {
@@ -69,9 +106,11 @@ describe("Story map API", () => {
     expect(story.code).toMatch(/^USM-\d{2,}$/);
     expect(story.status).toBe("backlog");
     expect(story.personaName).toBe("Teacher");
-    expect(story.readyTotal).toBe(1);
+    expect(story.projectName).toBe(f.project.name);
+    expect(story.actionSteps).toEqual([]);
+    expect(story.totalCount).toBe(0);
     expect(
-      (await member.post(`/api/subprojects/${f.subA.id}/journey-steps`).send({ name: "X" })).status,
+      (await member.post(`/api/projects/${f.project.id}/journey-steps`).send({ name: "X" })).status,
     ).toBe(403);
     expect((await member.patch(`/api/stories/${story.id}`).send({ storyPoints: 8 })).status).toBe(
       403,
@@ -81,10 +120,11 @@ describe("Story map API", () => {
     ).toBe(403);
   });
 
-  it("returns the map with backbone, steps, personas and stories", async () => {
+  it("returns the project map with backbone, steps, personas and stories", async () => {
     const story = await newStory();
-    const map = json<StoryMapDto>(await pm.get(`/api/story-map?subprojectId=${f.subA.id}`));
+    const map = await mapOf();
     expect(map.steps.map((s) => s.id)).toEqual(expect.arrayContaining([backboneId, stepId]));
+    expect(map.steps.every((s) => s.projectId === f.project.id)).toBe(true);
     expect(map.personas.some((p) => p.id === personaId)).toBe(true);
     expect(map.stories.some((s) => s.id === story.id)).toBe(true);
   });
@@ -96,136 +136,175 @@ describe("Story map API", () => {
   });
 
   it("rejects bad input and cross-project references", async () => {
-    expect((await newStory({ storyPoints: 4 })) as unknown).toBeTruthy();
-    const bad = await member
-      .post(`/api/subprojects/${f.subA.id}/stories`)
-      .send({ story: "x", storyPoints: 4 });
+    const bad = await member.post(`/api/stories`).send({ ...mapped(), story: "x", storyPoints: 4 });
     expect(bad.status).toBe(400);
-    const cross = await member
-      .post(`/api/subprojects/${f.subA.id}/stories`)
-      .send({ story: "x", releaseId: f.otherSub.id });
-    expect(cross.status).toBeGreaterThanOrEqual(400);
-    expect(cross.status).toBeLessThan(500);
+    expect((await member.post(`/api/stories`).send({ story: "no project" })).status).toBe(400);
+    // A mapped story needs a journey step and a release.
+    const noStep = await member
+      .post(`/api/stories`)
+      .send({ projectId: f.project.id, story: "x", releaseId });
+    expect(noStep.status).toBe(400);
+    const noRelease = await member
+      .post(`/api/stories`)
+      .send({ projectId: f.project.id, story: "x", journeyStepId: stepId });
+    expect(noRelease.status).toBe(400);
+    // Links from another project are refused with a clear message.
+    const other = await otherProjectLinks();
+    const crossRelease = await member
+      .post(`/api/stories`)
+      .send({ ...mapped(), releaseId: other.releaseId });
+    expect(crossRelease.status).toBe(422);
+    expect(json<ErrorBody>(crossRelease).error.message).toMatch(/different project/);
+    const crossStep = await member
+      .post(`/api/stories`)
+      .send({ ...mapped(), journeyStepId: other.stepId });
+    expect(crossStep.status).toBe(422);
     const nested = await pm
-      .post(`/api/subprojects/${f.subA.id}/journey-steps`)
+      .post(`/api/projects/${f.project.id}/journey-steps`)
       .send({ name: "Too deep", parentStepId: stepId });
     expect(nested.status).toBe(422);
   });
 
-  it("blocks moving a story into a sprint until it is ready, then allows it", async () => {
-    const story = await newStory();
-    const blocked = await pm.patch(`/api/stories/${story.id}`).send({ sprintId: f.sprint.id });
-    expect(blocked.status).toBe(422);
-    expect(json<ErrorBody>(blocked).error.code).toBe("dor_incomplete");
-    expect(json<ErrorBody>(blocked).error.details?.missing).toEqual([
-      "Acceptance criteria written",
-    ]);
+  it("deleting a step keeps its stories as unmapped", async () => {
+    const temp = json<{ id: string }>(
+      await pm
+        .post(`/api/projects/${f.project.id}/journey-steps`)
+        .send({ name: "Temp", parentStepId: backboneId }),
+    );
+    const story = await newStory({ journeyStepId: temp.id });
+    expect((await pm.delete(`/api/journey-steps/${temp.id}`)).status).toBe(204);
+    const map = await mapOf();
+    expect(map.stories.find((s) => s.id === story.id)?.journeyStepId).toBeNull();
+  });
+});
 
-    const tick = await member
-      .put(`/api/stories/${story.id}/checklist/${story.dorItems[0]?.id}`)
-      .send({ checked: true });
-    expect(tick.status).toBe(200);
-    const ok = await pm.patch(`/api/stories/${story.id}`).send({ sprintId: f.sprint.id });
-    expect(ok.status).toBe(200);
-    expect(json<StoryDto>(ok).sprintId).toBe(f.sprint.id);
-    expect(json<StoryDto>(ok).readyChecked).toBe(1);
-    expect(json<StoryDto>(ok).dorItems.map((i) => i.isCompleted)).toEqual([true]);
+describe("Story ownership and action steps", () => {
+  it("creates a story with a person responsible, target date and action steps in one call", async () => {
+    const story = await newStory({
+      responsibleId: f.m2.id,
+      targetDate: DUE,
+      actionSteps: [step("Write the API"), step("Demo it", { responsibleId: f.pm.id })],
+    });
+    expect(story.responsibleId).toBe(f.m2.id);
+    expect(story.responsibleName).toBe("Test Member Two");
+    expect(story.targetDate).toBe(DUE);
+    expect(story.actionSteps.map((s) => [s.label, s.responsibleName, s.targetDate])).toEqual([
+      ["Write the API", "Test Member One", DUE],
+      ["Demo it", "Test PM", DUE],
+    ]);
+    expect(story).toMatchObject({ completedCount: 0, totalCount: 2, completionPercentage: 0 });
+    const onMap = (await mapOf()).stories.find((s) => s.id === story.id);
+    expect(onMap?.actionSteps.map((s) => s.label)).toEqual(["Write the API", "Demo it"]);
   });
 
-  it("returns each story's Definition of Ready items on the map payload, seeded from the project", async () => {
-    const story = await newStory();
-    const itemId = story.dorItems[0]?.id ?? "";
-    await member.put(`/api/stories/${story.id}/checklist/${itemId}`).send({ checked: true });
-    const map = json<StoryMapDto>(await pm.get(`/api/story-map?subprojectId=${f.subA.id}`));
-    const row = map.stories.find((s) => s.id === story.id);
-    expect(row?.dorItems.map((i) => [i.label, i.isCompleted])).toEqual([
-      ["Acceptance criteria written", true],
-    ]);
-    expect(row?.readyChecked).toBe(1);
-    expect(row?.readyTotal).toBe(1);
-    await member.put(`/api/stories/${story.id}/checklist/${itemId}`).send({ checked: false });
-    const after = json<StoryMapDto>(await pm.get(`/api/story-map?subprojectId=${f.subA.id}`));
-    expect(after.stories.find((s) => s.id === story.id)?.readyChecked).toBe(0);
+  it("validates assignees and dates on the story and its steps", async () => {
+    const unknownUser = "00000000-0000-4000-8000-000000000000";
+    const r1 = await member.post(`/api/stories`).send({ ...mapped(), responsibleId: unknownUser });
+    expect(r1.status).toBe(422);
+    const r2 = await member.post(`/api/stories`).send({
+      ...mapped(),
+      actionSteps: [step("No owner", { responsibleId: unknownUser })],
+    });
+    expect(r2.status).toBe(422);
+    const r3 = await member.post(`/api/stories`).send({
+      ...mapped(),
+      actionSteps: [{ label: "Missing date", responsibleId: f.m1.id }],
+    });
+    expect(r3.status).toBe(400);
+    const r4 = await member.post(`/api/stories`).send({ ...mapped(), targetDate: "15/12/2026" });
+    expect(r4.status).toBe(400);
   });
 
-  it("adds, toggles and removes criteria and recalculates the readiness summary", async () => {
-    const story = await newStory();
-    const added = await member
-      .post(`/api/stories/${story.id}/dor-items`)
-      .send({ label: "Security reviewed" });
-    expect(added.status).toBe(201);
-    type Body = {
-      item: { id: string; label: string; sortOrder: number };
-      summary: { readyChecked: number; readyTotal: number; percent: number };
-    };
-    const body = json<Body>(added);
-    expect(body.item.label).toBe("Security reviewed");
-    expect(body.summary).toEqual({ readyChecked: 0, readyTotal: 2, percent: 0 });
-    const ticked = await member
-      .patch(`/api/stories/${story.id}/dor-items/${body.item.id}`)
-      .send({ isCompleted: true });
-    expect(json<Body>(ticked).summary).toEqual({ readyChecked: 1, readyTotal: 2, percent: 50 });
-    const map = json<StoryMapDto>(await pm.get(`/api/story-map?subprojectId=${f.subA.id}`));
-    expect(map.stories.find((s) => s.id === story.id)?.dorItems.map((i) => i.label)).toEqual([
-      "Acceptance criteria written",
-      "Security reviewed",
-    ]);
-    const removed = await member.delete(`/api/stories/${story.id}/dor-items/${body.item.id}`);
-    expect(json<Body>(removed).summary).toEqual({ readyChecked: 0, readyTotal: 1, percent: 0 });
-    expect(
-      (await member.post(`/api/stories/${story.id}/dor-items`).send({ label: "  " })).status,
-    ).toBe(400);
+  it("toggles one step and recalculates completion", async () => {
+    const story = await newStory({ actionSteps: [step("A"), step("B")] });
+    const first = story.actionSteps[0]?.id;
+    const res = await toggle(story.id, first, true);
+    expect(res.status).toBe(200);
+    const body = json<ToggleStoryActionStepResult>(res);
+    expect(body.step.isCompleted).toBe(true);
+    expect(body.step.completedAt).not.toBeNull();
+    expect(body.summary).toEqual({ completedCount: 1, totalCount: 2, completionPercentage: 50 });
+    const other = await newStory();
+    expect((await toggle(other.id, first, true)).status).toBe(404);
   });
 
-  it("honours custom criteria on create and syncs the list on update", async () => {
-    const custom = await newStory({ dorItems: [{ label: "Only this" }] });
-    expect(custom.dorItems.map((i) => i.label)).toEqual(["Only this"]);
+  it("syncs steps atomically on update: edit, add, drop and reorder", async () => {
+    const story = await newStory({ actionSteps: [step("Keep"), step("Drop")] });
+    const keep = story.actionSteps[0];
     const synced = json<StoryDto>(
-      await pm.patch(`/api/stories/${custom.id}`).send({
-        dorItems: [
-          { id: custom.dorItems[0]?.id, label: "Renamed", isCompleted: true },
-          { label: "Brand new" },
+      await pm.patch(`/api/stories/${story.id}`).send({
+        actionSteps: [
+          step("New first"),
+          step("Kept, renamed", { id: keep?.id, isCompleted: true }),
         ],
       }),
     );
-    expect(synced.dorItems.map((i) => [i.label, i.isCompleted])).toEqual([
-      ["Renamed", true],
-      ["Brand new", false],
+    expect(synced.actionSteps.map((s) => [s.label, s.isCompleted])).toEqual([
+      ["New first", false],
+      ["Kept, renamed", true],
     ]);
-    expect(synced.readyTotal).toBe(2);
+    expect(synced.actionSteps[1]?.id).toBe(keep?.id);
+    const foreign = await newStory({ actionSteps: [step("Elsewhere")] });
+    const hijack = await pm.patch(`/api/stories/${story.id}`).send({
+      storyPoints: 8,
+      actionSteps: [step("Stolen", { id: foreign.actionSteps[0]?.id })],
+    });
+    expect(hijack.status).toBe(422);
+    // The failed save rolled back as a whole.
+    const after = (await mapOf()).stories.find((s) => s.id === story.id);
+    expect(after?.actionSteps).toHaveLength(2);
+    expect(after?.storyPoints).toBeNull();
   });
 
-  it("lets a PM override the gate with a reason that is logged", async () => {
-    const story = await newStory();
-    const res = await pm
-      .patch(`/api/stories/${story.id}`)
-      .send({ status: "in_progress", overrideReason: "Customer escalation" });
-    expect(res.status).toBe(200);
-    const log = json<{ items: Array<{ gate: string; reason: string; entityId: string }> }>(
-      await pm.get(`/api/gate-overrides?entityType=story&entityId=${story.id}`),
+  it("only completes a story when 100% of its action steps are done", async () => {
+    const story = await newStory({ actionSteps: [step("A"), step("B")] });
+    const blocked = await pm.patch(`/api/stories/${story.id}`).send({ status: "completed" });
+    expect(blocked.status).toBe(422);
+    expect(json<ErrorBody>(blocked).error.code).toBe("story_steps_incomplete");
+    expect(json<ErrorBody>(blocked).error.details?.missing).toEqual(["A", "B"]);
+
+    for (const s of story.actionSteps) await toggle(story.id, s.id, true);
+    const ok = await pm.patch(`/api/stories/${story.id}`).send({ status: "completed" });
+    expect(ok.status).toBe(200);
+    expect(json<StoryDto>(ok)).toMatchObject({ status: "completed", completionPercentage: 100 });
+
+    // Unticking a step on a completed story reopens it.
+    const undo = json<ToggleStoryActionStepResult>(
+      await toggle(story.id, story.actionSteps[0]?.id, false),
     );
-    expect(log.items).toHaveLength(1);
-    expect(log.items[0]?.gate).toBe("dor");
-    expect(log.items[0]?.reason).toBe("Customer escalation");
+    expect(undo.status).toBe("in_progress");
   });
 
-  it("does not gate changes that stay in the backlog", async () => {
+  it("lets a story without steps be completed and leaves sprint moves ungated", async () => {
     const story = await newStory();
-    const res = await pm
-      .patch(`/api/stories/${story.id}`)
-      .send({ storyPoints: 3, status: "planning" });
-    expect(res.status).toBe(200);
+    const intoSprint = await pm.patch(`/api/stories/${story.id}`).send({ sprintId: f.sprint.id });
+    expect(intoSprint.status).toBe(200);
+    const done = await pm.patch(`/api/stories/${story.id}`).send({ status: "completed" });
+    expect(done.status).toBe(200);
   });
+});
 
-  it("deleting a step keeps its stories as unmapped", async () => {
-    const step = json<{ id: string }>(
-      await pm
-        .post(`/api/subprojects/${f.subA.id}/journey-steps`)
-        .send({ name: "Temp", parentStepId: backboneId }),
+describe("Story map project visibility", () => {
+  it("hides other projects from a team member and refuses writes there", async () => {
+    const foreign = json<StoryDto>(
+      await pm.post(`/api/stories`).send({
+        projectId: f.otherProject.id,
+        story: "Hidden story",
+        ...(await asStoryLinks()),
+      }),
     );
-    const story = await newStory({ journeyStepId: step.id });
-    expect((await pm.delete(`/api/journey-steps/${step.id}`)).status).toBe(204);
-    const map = json<StoryMapDto>(await pm.get(`/api/story-map?subprojectId=${f.subA.id}`));
-    expect(map.stories.find((s) => s.id === story.id)?.journeyStepId).toBeNull();
+    expect(foreign.projectId).toBe(f.otherProject.id);
+    expect((await member.get(`/api/story-map?projectId=${f.otherProject.id}`)).status).toBe(404);
+    const all = json<StoryMapDto>(await member.get(`/api/story-map`));
+    expect(all.stories.some((s) => s.id === foreign.id)).toBe(false);
+    expect(all.stories.every((s) => s.projectId === f.project.id)).toBe(true);
+    const write = await member
+      .post(`/api/stories`)
+      .send({ ...mapped(), projectId: f.otherProject.id });
+    expect(write.status).toBe(404);
+    expect((await toggle(foreign.id, foreign.id, true)).status).toBe(404);
+    // A PM sees every project when no filter is given.
+    const pmAll = json<StoryMapDto>(await pm.get(`/api/story-map`));
+    expect(pmAll.stories.some((s) => s.id === foreign.id)).toBe(true);
   });
 });

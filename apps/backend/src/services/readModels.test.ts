@@ -77,7 +77,6 @@ beforeAll(async () => {
   const k = { projectId: p, createdById: f.pm.id };
   await createRaidItem({
     ...k,
-    subprojectId: f.subA.id,
     itemType: "risk",
     description: "high open",
     impact: 3,
@@ -85,7 +84,6 @@ beforeAll(async () => {
   });
   await createRaidItem({
     ...k,
-    subprojectId: f.subA.id,
     itemType: "risk",
     description: "high in progress",
     impact: 3,
@@ -93,7 +91,6 @@ beforeAll(async () => {
   });
   await createRaidItem({
     ...k,
-    subprojectId: f.subA.id,
     itemType: "risk",
     description: "high closed",
     impact: 3,
@@ -101,7 +98,6 @@ beforeAll(async () => {
   });
   await createRaidItem({
     ...k,
-    subprojectId: f.subA.id,
     itemType: "risk",
     description: "medium open",
     impact: 2,

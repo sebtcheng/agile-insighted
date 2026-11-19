@@ -23,6 +23,8 @@ import * as activityService from "../services/activityService";
 import * as queries from "../services/activityQueries";
 import * as authService from "../services/authService";
 import { getHome } from "../services/homeService";
+import { scopeGuard } from "../scopeGuard";
+import { getVisibleProjectIds } from "../services/visibilityService";
 import { governance } from "./governance";
 import { modules } from "./modules";
 import { readModels } from "./readModels";
@@ -72,6 +74,8 @@ api.get("/auth/me", requireAuth, (_req, res) => {
 
 // Everything below needs a signed-in user.
 api.use(requireAuth);
+// Team members only reach records of projects they own or belong to (PMs are unrestricted).
+api.use(scopeGuard);
 
 // ---- users
 api.get(
@@ -94,6 +98,14 @@ api.patch(
     res.json(await userService.updateUser(idParam(req), parse(updateUserSchema, req.body)));
   }),
 );
+api.delete(
+  "/users/:id",
+  requireAction("user.manage"),
+  asyncHandler(async (req, res) => {
+    await userService.deleteUser(idParam(req), actorOf(res).id);
+    res.status(204).end();
+  }),
+);
 
 // ---- projects, subprojects, sprints
 api.get(
@@ -106,11 +118,12 @@ api.get(
       }),
       req.query,
     );
+    const scope = await getVisibleProjectIds(actorOf(res));
     res.json({
       items:
         q.withSubprojects === "true"
-          ? await projects.listProjectsWithSubprojects(q.includeArchived === "true")
-          : await projects.listProjects(),
+          ? await projects.listProjectsWithSubprojects(q.includeArchived === "true", scope)
+          : await projects.listProjects(scope),
     });
   }),
 );
@@ -215,7 +228,12 @@ api.patch(
 api.get(
   "/activities",
   asyncHandler(async (req, res) => {
-    res.json(await queries.listActivities(parse(activityListQuerySchema, req.query)));
+    res.json(
+      await queries.listActivities(
+        parse(activityListQuerySchema, req.query),
+        await getVisibleProjectIds(actorOf(res)),
+      ),
+    );
   }),
 );
 api.post(
@@ -319,6 +337,6 @@ api.get(
       }),
       req.query,
     );
-    res.json(await getHome(actorOf(res), q));
+    res.json(await getHome(actorOf(res), q, await getVisibleProjectIds(actorOf(res))));
   }),
 );

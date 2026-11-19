@@ -952,10 +952,35 @@ class DevLogger {
           if (this.recentGets.size > 200)
             this.recentGets.delete(this.recentGets.keys().next().value as string);
         }
+        // Writes are worth a console line when they are sent and when they come back; key names only, never values.
+        if (method !== "GET" && method !== "HEAD") {
+          this.log("info", "http-submit", "Mutation", `${method} ${path} sent`, undefined, {
+            method,
+            path,
+            requestBodyKeys: requestBodyKeys(init?.body),
+          });
+        }
         try {
           const res = await originalFetch.call(window, input, init);
           const ms = performance.now() - started;
           this.addBreadcrumb("fetch", `${method} ${path} -> ${res.status}`);
+          if (res.ok) {
+            const isWrite = method !== "GET" && method !== "HEAD";
+            this.log(
+              isWrite ? "info" : "debug",
+              "http-ok",
+              isWrite ? "API" : "Fetch",
+              `${method} ${path} -> ${res.status}`,
+              undefined,
+              {
+                method,
+                path,
+                status: res.status,
+                requestId: res.headers.get("x-request-id") ?? undefined,
+              },
+              ms,
+            );
+          }
           const size = Number(res.headers.get("content-length") ?? 0);
           const requestId = res.headers.get("x-request-id") ?? undefined;
           const facts = {

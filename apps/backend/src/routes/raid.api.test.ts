@@ -1,7 +1,10 @@
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { RaidItemDto } from "@myapp/shared";
+import { eq } from "drizzle-orm";
 import { createApp } from "../app";
+import { db } from "../db/client";
+import { projects } from "../db/schema";
 import { createFixture, type Fixture } from "../test/helpers";
 
 type Agent = ReturnType<typeof request.agent>;
@@ -46,14 +49,39 @@ describe("RAID API", () => {
   });
 
   it("lets a team member submit an item and computes code and severity", async () => {
-    const res = await member.post(base()).send({ ...body, subprojectId: f.subA.id });
+    const res = await member.post(base()).send({ ...body, projectId: f.project.id });
     expect(res.status).toBe(201);
     const item = json<RaidItemDto>(res);
     expect(item.code).toMatch(/^RAID-\d{2,}$/);
     expect(item.severityScore).toBe(6);
     expect(item.status).toBe("open");
     expect(item.raisedById).toBe(f.m1.id);
-    expect(item.subprojectCode).toBe("SUB-A");
+    expect(item.projectId).toBe(f.project.id);
+    expect(item.projectCode).toBe(f.project.code);
+  });
+
+  it("moves an item to another project and issues the next code there", async () => {
+    const made = await pm.post("/api/projects").send({ name: `Move target ${f.tag}` });
+    expect(made.status).toBe(201);
+    const target = json<{ id: string }>(made).id;
+    try {
+      const item = json<RaidItemDto>(await pm.post(base()).send(body));
+      const moved = await pm.patch(`/api/raid/${item.id}`).send({ projectId: target });
+      expect(moved.status).toBe(200);
+      expect(json<RaidItemDto>(moved).projectId).toBe(target);
+      expect(json<RaidItemDto>(moved).code).toBe("RAID-01");
+      await pm.delete(`/api/raid/${item.id}`);
+    } finally {
+      await db.delete(projects).where(eq(projects.id, target));
+    }
+  });
+
+  it("lists items across all projects at GET /raid", async () => {
+    const res = await pm.get("/api/raid");
+    expect(res.status).toBe(200);
+    const items = json<{ items: RaidItemDto[] }>(res).items;
+    expect(items.some((i) => i.projectId === f.project.id)).toBe(true);
+    expect((await anon.get("/api/raid")).status).toBe(401);
   });
 
   it("gives each item a unique, increasing code", async () => {
@@ -68,8 +96,10 @@ describe("RAID API", () => {
     expect((await member.post(base()).send({ ...body, itemType: "nope" })).status).toBe(400);
   });
 
-  it("rejects a subproject from another project", async () => {
-    const res = await member.post(base()).send({ ...body, subprojectId: f.otherSub.id });
+  it("rejects an unknown project", async () => {
+    const res = await member
+      .post(base())
+      .send({ ...body, projectId: "00000000-0000-4000-8000-000000000000" });
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.status).toBeLessThan(500);
   });
@@ -116,14 +146,15 @@ describe("RAID API", () => {
     expect(open.items.some((i) => i.id === issue.id)).toBe(false);
   });
 
+  const D = "2026-12-31";
   describe("mitigating actions", () => {
     const create = async (actions: unknown[]) =>
       json<RaidItemDto>(await member.post(base()).send({ ...body, mitigatingActions: actions }));
 
     it("creates an item with an ordered checklist", async () => {
       const item = await create([
-        { description: "Escalate to vendor" },
-        { description: "Build a stub", isCompleted: true },
+        { description: "Escalate to vendor", targetDate: D, responsibleId: f.m1.id },
+        { description: "Build a stub", targetDate: D, responsibleId: f.m1.id, isCompleted: true },
       ]);
       expect(item.mitigatingActions.map((a) => a.description)).toEqual([
         "Escalate to vendor",
@@ -135,13 +166,29 @@ describe("RAID API", () => {
     });
 
     it("syncs additions, edits, removals and reordering on update", async () => {
-      const item = await create([{ description: "A" }, { description: "B" }, { description: "C" }]);
+      const item = await create([
+        { description: "A", targetDate: D, responsibleId: f.m1.id },
+        { description: "B", targetDate: D, responsibleId: f.m1.id },
+        { description: "C", targetDate: D, responsibleId: f.m1.id },
+      ]);
       const [a, , c] = item.mitigatingActions;
       const res = await pm.patch(`/api/raid/${item.id}`).send({
         mitigatingActions: [
-          { id: c?.id, description: "C edited", isCompleted: true },
-          { id: a?.id, description: "A", isCompleted: false },
-          { description: "D new" },
+          {
+            id: c?.id,
+            description: "C edited",
+            isCompleted: true,
+            targetDate: D,
+            responsibleId: f.m1.id,
+          },
+          {
+            id: a?.id,
+            description: "A",
+            isCompleted: false,
+            targetDate: D,
+            responsibleId: f.m1.id,
+          },
+          { description: "D new", targetDate: D, responsibleId: f.m1.id },
         ],
       });
       expect(res.status).toBe(200);
@@ -154,9 +201,13 @@ describe("RAID API", () => {
     });
 
     it("leaves the checklist alone when the patch omits it, and clears it with an empty array", async () => {
-      const item = await create([{ description: "Keep me" }]);
+      const item = await create([
+        { description: "Keep me", targetDate: D, responsibleId: f.m1.id },
+      ]);
       const kept = json<RaidItemDto>(
-        await pm.patch(`/api/raid/${item.id}`).send({ description: "New text" }),
+        await pm
+          .patch(`/api/raid/${item.id}`)
+          .send({ description: "New text", targetDate: D, responsibleId: f.m1.id }),
       );
       expect(kept.mitigatingActions).toHaveLength(1);
       const cleared = json<RaidItemDto>(
@@ -166,27 +217,73 @@ describe("RAID API", () => {
     });
 
     it("rejects an action id that belongs to another item", async () => {
-      const one = await create([{ description: "Mine" }]);
-      const two = await create([{ description: "Theirs" }]);
+      const one = await create([{ description: "Mine", targetDate: D, responsibleId: f.m1.id }]);
+      const two = await create([{ description: "Theirs", targetDate: D, responsibleId: f.m1.id }]);
       const res = await pm.patch(`/api/raid/${two.id}`).send({
-        mitigatingActions: [{ id: one.mitigatingActions[0]?.id, description: "Hijack" }],
+        mitigatingActions: [
+          {
+            id: one.mitigatingActions[0]?.id,
+            description: "Hijack",
+            targetDate: D,
+            responsibleId: f.m1.id,
+          },
+        ],
       });
       expect(res.status).toBe(422);
     });
 
     it("rejects blank text and more than 20 actions", async () => {
       expect(
-        (await member.post(base()).send({ ...body, mitigatingActions: [{ description: " " }] }))
-          .status,
+        (
+          await member.post(base()).send({
+            ...body,
+            mitigatingActions: [{ description: " ", targetDate: D, responsibleId: f.m1.id }],
+          })
+        ).status,
       ).toBe(400);
-      const many = Array.from({ length: 21 }, (_, i) => ({ description: `a${i}` }));
+      const many = Array.from({ length: 21 }, (_, i) => ({
+        description: `a${i}`,
+        targetDate: D,
+        responsibleId: f.m1.id,
+      }));
       expect((await member.post(base()).send({ ...body, mitigatingActions: many })).status).toBe(
         400,
       );
     });
 
+    it("requires a valid target date on every action and returns it", async () => {
+      const send = (a: unknown) => member.post(base()).send({ ...body, mitigatingActions: [a] });
+      expect((await send({ description: "No date" })).status).toBe(400);
+      expect((await send({ description: "Bad", targetDate: "31/12/2026" })).status).toBe(400);
+      expect((await send({ description: "Null", targetDate: null })).status).toBe(400);
+      const item = await create([
+        { description: "Dated", targetDate: "2026-12-31", responsibleId: f.m1.id },
+      ]);
+      expect(item.mitigatingActions[0]?.targetDate).toBe("2026-12-31");
+    });
+
+    it("requires an existing staff member responsible on every action and returns the name", async () => {
+      const send = (a: unknown) => member.post(base()).send({ ...body, mitigatingActions: [a] });
+      const ok = { description: "Owned", targetDate: D };
+      expect((await send(ok)).status).toBe(400);
+      expect((await send({ ...ok, responsibleId: null })).status).toBe(400);
+      expect((await send({ ...ok, responsibleId: "nope" })).status).toBe(400);
+      expect(
+        (await send({ ...ok, responsibleId: "00000000-0000-4000-8000-000000000000" })).status,
+      ).toBe(422);
+      const item = await create([{ ...ok, responsibleId: f.m1.id }]);
+      expect(item.mitigatingActions[0]).toMatchObject({
+        responsibleId: f.m1.id,
+        responsibleName: f.m1.fullName,
+      });
+      const listed = json<{ items: RaidItemDto[] }>(await pm.get(base())).items;
+      expect(listed.find((i) => i.id === item.id)?.mitigatingActions[0]?.responsibleName).toBe(
+        f.m1.fullName,
+      );
+    });
+
     it("toggles one action through the dedicated endpoint, PM only", async () => {
-      const item = await create([{ description: "Do it" }]);
+      const item = await create([{ description: "Do it", targetDate: D, responsibleId: f.m1.id }]);
       const action = item.mitigatingActions[0];
       const url = `/api/raid/${item.id}/mitigating-actions/${action?.id}`;
       expect((await member.patch(url).send({ isCompleted: true })).status).toBe(403);
@@ -203,7 +300,7 @@ describe("RAID API", () => {
     });
 
     it("returns 404 when the action is not on that item", async () => {
-      const one = await create([{ description: "Mine" }]);
+      const one = await create([{ description: "Mine", targetDate: D, responsibleId: f.m1.id }]);
       const two = await create([]);
       const res = await pm
         .patch(`/api/raid/${two.id}/mitigating-actions/${one.mitigatingActions[0]?.id}`)
@@ -212,7 +309,7 @@ describe("RAID API", () => {
     });
 
     it("lists actions with their items", async () => {
-      const item = await create([{ description: "Listed" }]);
+      const item = await create([{ description: "Listed", targetDate: D, responsibleId: f.m1.id }]);
       const list = json<{ items: RaidItemDto[] }>(await pm.get(base())).items;
       expect(list.find((i) => i.id === item.id)?.mitigatingActions[0]?.description).toBe("Listed");
     });

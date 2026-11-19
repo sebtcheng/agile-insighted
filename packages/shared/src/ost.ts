@@ -18,54 +18,63 @@ export const VALIDATION_LABELS = {
 /** A targeted opportunity should have at least this many contrasting solutions. */
 export const MIN_SOLUTIONS_PER_TARGET = 3;
 
-const metric = z.number().finite().min(-1e12).max(1e12);
-
 export const createOutcomeSchema = z.object({
-  subprojectId: id.nullable().optional(),
+  // Defaults to the project in the URL; an outcome cannot be moved to another project after creation.
+  projectId: id.optional(),
   title: text(200),
   description: optionalText(2000),
-  metricName: optionalText(120),
-  baselineValue: metric.nullable().optional(),
-  targetValue: metric.nullable().optional(),
   targetDate: isoDate.nullable().optional(),
 });
 export const updateOutcomeSchema = z
   .object({
-    subprojectId: id.nullable(),
     title: text(200),
     description: optionalText(2000),
-    metricName: optionalText(120),
-    baselineValue: metric.nullable(),
-    targetValue: metric.nullable(),
     targetDate: isoDate.nullable(),
   })
   .partial();
 
+export const MAX_REQUIREMENT_SOLUTIONS = 20;
+/**
+ * One solution / action step of a requirement. `id` present = existing row to update; absent = new row.
+ * `completed` maps to the validation status: true = validated, false = planned (other statuses are kept).
+ */
+export const requirementSolutionInputSchema = z.object({
+  id: id.optional(),
+  title: text(300),
+  completed: z.boolean().default(false),
+  ownerId: id.nullable().optional(),
+  targetDate: isoDate.nullable().optional(),
+});
+const solutionsInput = z.array(requirementSolutionInputSchema).max(MAX_REQUIREMENT_SOLUTIONS);
+
 export const createOpportunitySchema = z.object({
   title: text(300),
-  description: optionalText(2000),
-  evidence: optionalText(2000),
   isTargeted: z.boolean().optional(),
+  solutions: solutionsInput.optional(),
 });
 export const updateOpportunitySchema = z
   .object({
     title: text(300),
-    description: optionalText(2000),
-    evidence: optionalText(2000),
     isTargeted: z.boolean(),
+    solutions: solutionsInput,
   })
   .partial();
 
 export const createSolutionSchema = z.object({
   title: text(300),
   ownerId: id.nullable().optional(),
+  targetDate: isoDate.nullable().optional(),
 });
 export const updateSolutionSchema = z
-  .object({ title: text(300), ownerId: id.nullable(), validationStatus: validationStatusSchema })
+  .object({
+    title: text(300),
+    ownerId: id.nullable(),
+    targetDate: isoDate.nullable(),
+    validationStatus: validationStatusSchema,
+  })
   .partial();
 
 export const convertSolutionSchema = z.object({
-  subprojectId: id,
   story: text(1000).optional(),
   // PM only: converts a solution that is not validated yet, recorded in gate_overrides.
   overrideReason: text(500).optional(),
@@ -73,6 +82,7 @@ export const convertSolutionSchema = z.object({
 
 export type CreateOutcomeInput = z.infer<typeof createOutcomeSchema>;
 export type UpdateOutcomeInput = z.infer<typeof updateOutcomeSchema>;
+export type RequirementSolutionInput = z.input<typeof requirementSolutionInputSchema>;
 export type CreateOpportunityInput = z.infer<typeof createOpportunitySchema>;
 export type UpdateOpportunityInput = z.infer<typeof updateOpportunitySchema>;
 export type CreateSolutionInput = z.infer<typeof createSolutionSchema>;
@@ -83,22 +93,16 @@ type ValidationStatusValue = (typeof VALIDATION_STATUSES)[number];
 
 export type OutcomeDto = {
   id: string;
-  subprojectId: string | null;
-  subprojectCode: string | null;
-  subprojectName: string | null;
+  projectId: string;
+  projectName: string;
   title: string;
   description: string | null;
-  metricName: string | null;
-  baselineValue: number | null;
-  targetValue: number | null;
   targetDate: string | null;
 };
 export type OpportunityDto = {
   id: string;
   outcomeId: string;
   title: string;
-  description: string | null;
-  evidence: string | null;
   isTargeted: boolean;
 };
 export type SolutionDto = {
@@ -109,6 +113,7 @@ export type SolutionDto = {
   validationStatus: ValidationStatusValue;
   ownerId: string | null;
   ownerName: string | null;
+  targetDate: string | null;
   convertedStoryId: string | null;
   convertedStoryCode: string | null;
 };

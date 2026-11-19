@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS "project_members" (
+	"project_id" uuid NOT NULL,
+	"user_id" uuid NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "project_members_project_id_user_id_pk" PRIMARY KEY("project_id","user_id")
+);
+--> statement-breakpoint
+DO $$ BEGIN
+	ALTER TABLE "project_members" ADD CONSTRAINT "project_members_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+	ALTER TABLE "project_members" ADD CONSTRAINT "project_members_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "project_members_user_id_idx" ON "project_members" USING btree ("user_id");--> statement-breakpoint
+-- Backfill so nobody loses access when scoping starts: anyone already assigned work or leading a subproject becomes a member.
+INSERT INTO "project_members" ("project_id", "user_id")
+SELECT DISTINCT a."project_id", a."assignee_id" FROM "activities" a WHERE a."assignee_id" IS NOT NULL
+UNION
+SELECT DISTINCT s."project_id", s."lead_id" FROM "subprojects" s WHERE s."lead_id" IS NOT NULL
+ON CONFLICT DO NOTHING;

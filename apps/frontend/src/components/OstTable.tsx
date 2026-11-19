@@ -20,18 +20,9 @@ import { fmtDate, toast } from "./ui";
 
 const DASH = "—";
 
-function metricLine(o: OutcomeDto): string | null {
-  if (!o.metricName && o.targetValue === null) return null;
-  const from = o.baselineValue === null ? "?" : String(o.baselineValue);
-  const to = o.targetValue === null ? "?" : String(o.targetValue);
-  const by = o.targetDate ? ` by ${fmtDate(o.targetDate)}` : "";
-  return `${o.metricName ?? "Metric"}: ${from} → ${to}${by}`;
-}
-
 function OutcomeRow({ o, ctx }: { o: OutcomeDto; ctx: OstCtx }) {
   const remove = useDeleteOutcome();
   const canEdit = ctx.isPm && !ctx.readOnly;
-  const line = metricLine(o);
   return (
     <Table.Tr>
       <Table.Td>
@@ -42,9 +33,8 @@ function OutcomeRow({ o, ctx }: { o: OutcomeDto; ctx: OstCtx }) {
       <Table.Td>
         <Text fw={700}>{o.title}</Text>
       </Table.Td>
-      <Table.Td>{o.subprojectName ?? DASH}</Table.Td>
+      <Table.Td>{o.projectName}</Table.Td>
       <Table.Td>
-        {line ? <Text size="sm">{line}</Text> : null}
         {o.description ? (
           <Text size="xs" c="dimmed">
             {o.description}
@@ -64,7 +54,7 @@ function OutcomeRow({ o, ctx }: { o: OutcomeDto; ctx: OstCtx }) {
             scope="outcome"
             create={[
               {
-                label: "Add opportunity",
+                label: "Add requirements",
                 onClick: () => ctx.setDialog({ kind: "opportunity", outcomeId: o.id }),
               },
             ]}
@@ -91,22 +81,14 @@ function OpportunityRow({ o, ctx }: { o: OpportunityDto; ctx: OstCtx }) {
     <Table.Tr>
       <Table.Td>
         <Text size="xs" fw={700} tt="uppercase" c="dimmed">
-          Opportunity
+          Requirement
         </Text>
       </Table.Td>
       <Table.Td pl={`calc(var(--mantine-spacing-xs) + 16px)`}>
         <Text fw={600}>{o.title}</Text>
       </Table.Td>
       <Table.Td>{DASH}</Table.Td>
-      <Table.Td>
-        {o.evidence ? (
-          <Text size="xs" c="dimmed">
-            Evidence: {o.evidence}
-          </Text>
-        ) : (
-          DASH
-        )}
-      </Table.Td>
+      <Table.Td>{DASH}</Table.Td>
       <Table.Td>{DASH}</Table.Td>
       <Table.Td>
         <Text
@@ -123,7 +105,7 @@ function OpportunityRow({ o, ctx }: { o: OpportunityDto; ctx: OstCtx }) {
       <Table.Td>
         {canEdit ? (
           <OstActionBar
-            scope="opportunity"
+            scope="requirement"
             create={[
               {
                 label: "Add solution",
@@ -136,7 +118,7 @@ function OpportunityRow({ o, ctx }: { o: OpportunityDto; ctx: OstCtx }) {
                 : [
                     {
                       label: "Target this",
-                      hint: "Mark as the opportunity to solve now",
+                      hint: "Mark as the requirement to solve now",
                       onClick: () =>
                         update.mutate(
                           { id: o.id, patch: { isTargeted: true } },
@@ -268,7 +250,7 @@ export function OstTable({ ctx }: { ctx: OstCtx }) {
           <Table.Tr>
             <Table.Th>Level</Table.Th>
             <Table.Th miw={220}>Item</Table.Th>
-            <Table.Th>Subproject</Table.Th>
+            <Table.Th>Project</Table.Th>
             <Table.Th miw={240}>Details</Table.Th>
             <Table.Th>Owner</Table.Th>
             <Table.Th>Progress / Target</Table.Th>

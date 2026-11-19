@@ -33,10 +33,7 @@ beforeAll(async () => {
   outcomeId = json<Id>(
     await pm.post(`/api/projects/${f.project.id}/ost/outcomes`).send({
       title: "Reduce dropouts by 20%",
-      subprojectId: f.subA.id,
-      metricName: "Dropout rate",
-      baselineValue: 30,
-      targetValue: 24,
+      projectId: f.project.id,
     }),
   ).id;
   oppId = json<Id>(
@@ -53,6 +50,7 @@ const newSolution = async (title = "Onboarding checklist") =>
   json<{ id: string; code: string; validationStatus: string }>(
     await pm.post(`/api/ost/opportunities/${oppId}/solutions`).send({ title }),
   );
+const allTree = async () => json<OstTreeDto>(await pm.get("/api/ost"));
 const tree = async () => json<OstTreeDto>(await pm.get(`/api/projects/${f.project.id}/ost`));
 
 describe("OST API", () => {
@@ -66,16 +64,25 @@ describe("OST API", () => {
     ).toBe(403);
   });
 
-  it("returns the tree with numeric metrics and solution codes", async () => {
+  it("lists a newly created outcome straight away, per project and across all projects", async () => {
+    const made = await pm
+      .post(`/api/projects/${f.project.id}/ost/outcomes`)
+      .send({ title: "Fresh outcome", projectId: f.project.id });
+    expect(made.status).toBe(201);
+    const id = json<{ id: string }>(made).id;
+    expect((await tree()).outcomes.some((o) => o.id === id)).toBe(true);
+    expect((await allTree()).outcomes.some((o) => o.id === id)).toBe(true);
+    expect((await anon.get("/api/ost")).status).toBe(401);
+  });
+
+  it("returns the tree with the project and solution codes", async () => {
     const sol = await newSolution();
     expect(sol.code).toMatch(/^OST-\d{2,}$/);
     expect(sol.validationStatus).toBe("planned");
     const t = await tree();
     const o = t.outcomes.find((x) => x.id === outcomeId);
-    expect(o?.baselineValue).toBe(30);
-    expect(o?.targetValue).toBe(24);
-    expect(o?.subprojectCode).toBe("SUB-A");
-    expect(o?.subprojectName).toBeTruthy();
+    expect(o?.projectId).toBe(f.project.id);
+    expect(o?.projectName).toBeTruthy();
     expect(t.solutions.some((s) => s.id === sol.id)).toBe(true);
   });
 
@@ -115,6 +122,76 @@ describe("OST API", () => {
     expect(again?.outcomeId).toBe(out2.id);
   });
 
+  it("saves a requirement with a checklist of solutions, assignees and dates, and syncs edits", async () => {
+    const created = json<Id>(
+      await pm.post(`/api/ost/outcomes/${outcomeId}/opportunities`).send({
+        title: "Needs a checklist",
+        solutions: [
+          { title: "Draft the spec", completed: true, ownerId: f.m1.id, targetDate: "2026-12-01" },
+          { title: "Review it", completed: false },
+        ],
+      }),
+    );
+    const mine = async () => {
+      const t = await tree();
+      return t.solutions.filter((s) => s.opportunityId === created.id);
+    };
+    const first = await mine();
+    expect(first.map((s) => [s.title, s.validationStatus, s.ownerName, s.targetDate])).toEqual([
+      ["Draft the spec", "validated", f.m1.fullName, "2026-12-01"],
+      ["Review it", "planned", null, null],
+    ]);
+    const [a, b] = first;
+    // Edit one, untick another, add a third and drop nothing; then remove one by omission.
+    const res = await pm.patch(`/api/ost/opportunities/${created.id}`).send({
+      solutions: [
+        {
+          id: a?.id,
+          title: "Draft the spec v2",
+          completed: false,
+          ownerId: f.pm.id,
+          targetDate: "2026-12-05",
+        },
+        { title: "Ship it", completed: true, targetDate: "2026-12-20" },
+      ],
+    });
+    expect(res.status).toBe(200);
+    const next = await mine();
+    expect(next.map((s) => [s.title, s.validationStatus, s.ownerName, s.targetDate])).toEqual([
+      ["Draft the spec v2", "planned", f.pm.fullName, "2026-12-05"],
+      ["Ship it", "validated", null, "2026-12-20"],
+    ]);
+    expect(next.some((s) => s.id === b?.id)).toBe(false);
+    // Omitting `solutions` leaves the checklist alone.
+    await pm.patch(`/api/ost/opportunities/${created.id}`).send({ title: "Renamed" });
+    expect(await mine()).toHaveLength(2);
+  });
+
+  it("rejects bad checklist input and no longer carries evidence or notes", async () => {
+    const url = `/api/ost/outcomes/${outcomeId}/opportunities`;
+    expect((await pm.post(url).send({ title: "x", solutions: [{ title: " " }] })).status).toBe(400);
+    expect(
+      (await pm.post(url).send({ title: "x", solutions: [{ title: "a", targetDate: "1/2/2026" }] }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await pm.post(url).send({ title: "x", solutions: [{ title: "a", ownerId: "nope" }] }))
+        .status,
+    ).toBe(400);
+    expect(
+      (
+        await pm.post(url).send({
+          title: "x",
+          solutions: [{ title: "a", ownerId: "00000000-0000-4000-8000-000000000000" }],
+        })
+      ).status,
+    ).toBe(422);
+    const t = await tree();
+    const opp = t.opportunities.find((o) => o.id === oppId) as unknown as Record<string, unknown>;
+    expect(opp).not.toHaveProperty("evidence");
+    expect(opp).not.toHaveProperty("description");
+  });
+
   it("lets only a PM mark a solution validated, which drives the convert gate", async () => {
     const sol = await newSolution("Marked");
     expect(
@@ -132,15 +209,13 @@ describe("OST API", () => {
 
   it("blocks converting an unvalidated solution, allows a logged PM override", async () => {
     const sol = await newSolution("Gate");
-    const blocked = await pm
-      .post(`/api/ost/solutions/${sol.id}/convert`)
-      .send({ subprojectId: f.subA.id });
+    const blocked = await pm.post(`/api/ost/solutions/${sol.id}/convert`).send({});
     expect(blocked.status).toBe(422);
     expect(json<ErrorBody>(blocked).error.code).toBe("validation_incomplete");
 
     const ok = await pm
       .post(`/api/ost/solutions/${sol.id}/convert`)
-      .send({ subprojectId: f.subA.id, overrideReason: "Pilot already running" });
+      .send({ overrideReason: "Pilot already running" });
     expect(ok.status).toBe(201);
     const log = json<{ items: Array<{ gate: string; entityType: string }> }>(
       await pm.get(`/api/gate-overrides?entityType=solution&entityId=${sol.id}`),
@@ -148,38 +223,33 @@ describe("OST API", () => {
     expect(log.items).toHaveLength(1);
     expect(log.items[0]?.gate).toBe("validation");
 
-    expect(
-      (await pm.post(`/api/ost/solutions/${sol.id}/convert`).send({ subprojectId: f.subA.id }))
-        .status,
-    ).toBe(409);
+    expect((await pm.post(`/api/ost/solutions/${sol.id}/convert`).send({})).status).toBe(409);
   });
 
   it("converts a validated solution into a backlog story and links it", async () => {
     const sol = await newSolution("Validated one");
     await pm.patch(`/api/ost/solutions/${sol.id}`).send({ validationStatus: "validated" });
-    const res = await pm
-      .post(`/api/ost/solutions/${sol.id}/convert`)
-      .send({ subprojectId: f.subA.id });
+    const res = await pm.post(`/api/ost/solutions/${sol.id}/convert`).send({});
     expect(res.status).toBe(201);
     const { storyId, storyCode } = json<{ storyId: string; storyCode: string }>(res);
     expect(storyCode).toMatch(/^USM-/);
-    const map = json<StoryMapDto>(await pm.get(`/api/story-map?subprojectId=${f.subA.id}`));
+    const map = json<StoryMapDto>(await pm.get(`/api/story-map?projectId=${f.project.id}`));
     expect(map.stories.find((s) => s.id === storyId)?.story).toBe("Validated one");
     expect((await tree()).solutions.find((s) => s.id === sol.id)?.convertedStoryCode).toBe(
       storyCode,
     );
     // A member cannot override or convert.
-    expect(
-      (await member.post(`/api/ost/solutions/${sol.id}/convert`).send({ subprojectId: f.subA.id }))
-        .status,
-    ).toBe(403);
+    expect((await member.post(`/api/ost/solutions/${sol.id}/convert`).send({})).status).toBe(403);
   });
 
-  it("rejects a subproject from another project when converting", async () => {
-    const sol = await newSolution("Cross project");
+  it("creates the story in the solution's own project", async () => {
+    const sol = await newSolution("Same project");
     const res = await pm
       .post(`/api/ost/solutions/${sol.id}/convert`)
-      .send({ subprojectId: f.otherSub.id, overrideReason: "test" });
-    expect(res.status).toBe(404);
+      .send({ overrideReason: "test" });
+    expect(res.status).toBe(201);
+    const { storyId } = json<{ storyId: string }>(res);
+    const map = json<StoryMapDto>(await pm.get(`/api/story-map?projectId=${f.project.id}`));
+    expect(map.stories.find((s) => s.id === storyId)?.projectId).toBe(f.project.id);
   });
 });

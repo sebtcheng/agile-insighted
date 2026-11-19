@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { z } from "zod";
 import {
   convertSolutionSchema,
   createJourneyStepSchema,
@@ -11,39 +10,64 @@ import {
   updateSolutionSchema,
   createKanoSchema,
   kanoListQuerySchema,
-  promoteKanoSchema,
+  toggleKanoSpecSchema,
   updateKanoSchema,
   createPersonaSchema,
   createRaidSchema,
   createStorySchema,
   raidListQuerySchema,
   toggleMitigatingActionSchema,
-  setChecklistCheckSchema,
   storyMapQuerySchema,
-  createDorItemSchema,
-  updateDorItemSchema,
+  toggleStoryActionStepSchema,
   updateJourneyStepSchema,
   updatePersonaSchema,
   updateRaidSchema,
   updateStorySchema,
+  createUsmFeatureSchema,
+  createUsmPersonaSchema,
+  createUsmStepSchema,
+  reorderUsmStepsSchema,
+  updateUsmFeatureSchema,
+  updateUsmPersonaSchema,
+  updateUsmStepSchema,
+  usmProjectQuerySchema,
+  usmStepsQuerySchema,
 } from "@myapp/shared";
+import { forbidden } from "../errors";
+import { can } from "../permissions";
 import { actorOf, asyncHandler, idParam, parse, requireAction } from "../middleware";
+import * as usm from "../services/usmService";
 import * as kano from "../services/kanoService";
 import * as ost from "../services/ostService";
 import * as raid from "../services/raidService";
 import * as stories from "../services/storyService";
+import { getVisibleProjectIds } from "../services/visibilityService";
 
 /** Module routes (RAID, Story Map, Kano, OST). Mounted under /api after requireAuth. */
 export const modules = Router();
 
 // ---- RAID log
 modules.get(
+  "/raid",
+  asyncHandler(async (req, res) => {
+    const q = parse(raidListQuerySchema, req.query);
+    res.json({
+      items: await raid.listRaid(undefined, {
+        itemType: q.itemType,
+        status: q.status,
+        ownerId: q.ownerId,
+        openOnly: q.openOnly === "true",
+        scope: await getVisibleProjectIds(actorOf(res)),
+      }),
+    });
+  }),
+);
+modules.get(
   "/projects/:id/raid",
   asyncHandler(async (req, res) => {
     const q = parse(raidListQuerySchema, req.query);
     res.json({
       items: await raid.listRaid(idParam(req), {
-        subprojectId: q.subprojectId,
         itemType: q.itemType,
         status: q.status,
         ownerId: q.ownerId,
@@ -87,12 +111,14 @@ modules.delete(
   }),
 );
 
-// ---- User Story Mapping
+// ---- User Story Mapping (project scoped; scopeGuard covers :id routes and ?projectId)
 modules.get(
   "/story-map",
   asyncHandler(async (req, res) => {
-    const { subprojectId } = parse(storyMapQuerySchema, req.query);
-    res.json(await stories.getStoryMap(subprojectId));
+    const { projectId } = parse(storyMapQuerySchema, req.query);
+    res.json(
+      await stories.getStoryMap({ projectId, scope: await getVisibleProjectIds(actorOf(res)) }),
+    );
   }),
 );
 modules.post(
@@ -126,7 +152,7 @@ modules.delete(
   }),
 );
 modules.post(
-  "/subprojects/:id/journey-steps",
+  "/projects/:id/journey-steps",
   requireAction("story.manage"),
   asyncHandler(async (req, res) => {
     res
@@ -156,18 +182,13 @@ modules.delete(
   }),
 );
 modules.post(
-  "/subprojects/:id/stories",
+  "/stories",
   requireAction("story.create"),
   asyncHandler(async (req, res) => {
+    // The body's projectId is checked against the caller's visible projects in the service.
     res
       .status(201)
-      .json(
-        await stories.createStoryFor(
-          actorOf(res),
-          idParam(req),
-          parse(createStorySchema, req.body),
-        ),
-      );
+      .json(await stories.createStoryFor(actorOf(res), parse(createStorySchema, req.body)));
   }),
 );
 modules.patch(
@@ -187,66 +208,134 @@ modules.delete(
     res.status(204).end();
   }),
 );
-modules.get(
-  "/stories/:id/checklist",
-  asyncHandler(async (req, res) => {
-    res.json({ items: await stories.getStoryChecklist(idParam(req)) });
-  }),
-);
-modules.put(
-  "/stories/:id/checklist/:templateId",
+modules.patch(
+  "/stories/:id/action-steps/:stepId",
   requireAction("checklist_check.write"),
   asyncHandler(async (req, res) => {
-    const { checked } = parse(setChecklistCheckSchema, req.body);
-    res.json({
-      items: await stories.setStoryCheck(
-        actorOf(res),
-        idParam(req),
-        idParam(req, "templateId"),
-        checked,
-      ),
-    });
+    const { isCompleted } = parse(toggleStoryActionStepSchema, req.body);
+    res.json(await stories.toggleActionStep(idParam(req), idParam(req, "stepId"), isCompleted));
+  }),
+);
+
+// ---- User Story Mapping v2: users (personas) -> ordered step cards -> step feature checklist.
+// The legacy routes above stay registered but the UI no longer uses them.
+modules.get(
+  "/story-map/personas",
+  asyncHandler(async (req, res) => {
+    const { projectId } = parse(usmProjectQuerySchema, req.query);
+    res.json({ items: await usm.listPersonas(projectId) });
   }),
 );
 modules.post(
-  "/stories/:id/dor-items",
-  requireAction("checklist_check.write"),
+  "/story-map/personas",
+  requireAction("story.manage"),
   asyncHandler(async (req, res) => {
-    const { label } = parse(createDorItemSchema, req.body);
-    res.status(201).json(await stories.addStoryDorItem(idParam(req), label));
+    res
+      .status(201)
+      .json(await usm.createPersona(actorOf(res), parse(createUsmPersonaSchema, req.body)));
   }),
 );
 modules.patch(
-  "/stories/:id/dor-items/:itemId",
-  requireAction("checklist_check.write"),
+  "/story-map/personas/:id",
+  requireAction("story.manage"),
   asyncHandler(async (req, res) => {
-    res.json(
-      await stories.updateStoryDorItem(
-        idParam(req),
-        idParam(req, "itemId"),
-        parse(updateDorItemSchema, req.body),
-      ),
-    );
+    res.json(await usm.updatePersona(idParam(req), parse(updateUsmPersonaSchema, req.body)));
   }),
 );
 modules.delete(
-  "/stories/:id/dor-items/:itemId",
+  "/story-map/personas/:id",
+  requireAction("story.manage"),
+  asyncHandler(async (req, res) => {
+    await usm.deletePersona(idParam(req));
+    res.status(204).end();
+  }),
+);
+modules.get(
+  "/story-map/steps",
+  asyncHandler(async (req, res) => {
+    const q = parse(usmStepsQuerySchema, req.query);
+    res.json({ items: await usm.listSteps(q.projectId, q.personaId) });
+  }),
+);
+modules.post(
+  "/story-map/steps",
+  requireAction("story.manage"),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await usm.createStep(actorOf(res), parse(createUsmStepSchema, req.body)));
+  }),
+);
+modules.patch(
+  "/story-map/steps/reorder",
+  requireAction("story.manage"),
+  asyncHandler(async (req, res) => {
+    res.json({ items: await usm.reorderSteps(parse(reorderUsmStepsSchema, req.body)) });
+  }),
+);
+modules.patch(
+  "/story-map/steps/:id",
+  requireAction("story.manage"),
+  asyncHandler(async (req, res) => {
+    res.json(await usm.updateStep(idParam(req), parse(updateUsmStepSchema, req.body)));
+  }),
+);
+modules.delete(
+  "/story-map/steps/:id",
+  requireAction("story.manage"),
+  asyncHandler(async (req, res) => {
+    await usm.deleteStep(idParam(req));
+    res.status(204).end();
+  }),
+);
+modules.post(
+  "/story-map/features",
+  requireAction("story.manage"),
+  asyncHandler(async (req, res) => {
+    // projectId in the body must equal the step's project; the service rejects a mismatch with 422.
+    res.status(201).json(await usm.createFeature(parse(createUsmFeatureSchema, req.body)));
+  }),
+);
+modules.patch(
+  "/story-map/features/:id",
   requireAction("checklist_check.write"),
   asyncHandler(async (req, res) => {
-    res.json(await stories.removeStoryDorItem(idParam(req), idParam(req, "itemId")));
+    const patch = parse(updateUsmFeatureSchema, req.body);
+    // Team members may only tick or untick; editing text, person, date or order is the PM's.
+    const onlyTick = Object.keys(patch).every((k) => k === "isCompleted");
+    if (!onlyTick && !can(actorOf(res), "story.manage")) throw forbidden();
+    res.json(await usm.updateFeature(idParam(req), patch));
+  }),
+);
+modules.delete(
+  "/story-map/features/:id",
+  requireAction("story.manage"),
+  asyncHandler(async (req, res) => {
+    await usm.deleteFeature(idParam(req));
+    res.status(204).end();
   }),
 );
 
 // ---- Kano Request Tracker
+modules.get(
+  "/kano",
+  asyncHandler(async (req, res) => {
+    const q = parse(kanoListQuerySchema, req.query);
+    res.json({
+      items: await kano.listKano(undefined, {
+        kanoCategory: q.kanoCategory,
+        unevaluated: q.unevaluated === "true",
+        sort: q.sort,
+        scope: await getVisibleProjectIds(actorOf(res)),
+      }),
+    });
+  }),
+);
 modules.get(
   "/projects/:id/kano",
   asyncHandler(async (req, res) => {
     const q = parse(kanoListQuerySchema, req.query);
     res.json({
       items: await kano.listKano(idParam(req), {
-        subprojectId: q.subprojectId,
         kanoCategory: q.kanoCategory,
-        decision: q.decision,
         unevaluated: q.unevaluated === "true",
         sort: q.sort,
       }),
@@ -269,6 +358,14 @@ modules.patch(
     res.json(await kano.updateKano(idParam(req), parse(updateKanoSchema, req.body)));
   }),
 );
+modules.patch(
+  "/kano/:id/specs/:specId",
+  requireAction("kano.manage"),
+  asyncHandler(async (req, res) => {
+    const { isCompleted } = parse(toggleKanoSpecSchema, req.body);
+    res.json(await kano.setKanoSpecCompleted(idParam(req), idParam(req, "specId"), isCompleted));
+  }),
+);
 modules.delete(
   "/kano/:id",
   requireAction("kano.manage"),
@@ -277,22 +374,18 @@ modules.delete(
     res.status(204).end();
   }),
 );
-modules.post(
-  "/kano/:id/promote",
-  requireAction("kano.manage"),
-  asyncHandler(async (req, res) => {
-    res
-      .status(201)
-      .json(await kano.promoteKano(actorOf(res), idParam(req), parse(promoteKanoSchema, req.body)));
-  }),
-);
 
 // ---- Opportunity Solution Tree
 modules.get(
   "/projects/:id/ost",
   asyncHandler(async (req, res) => {
-    const q = parse(z.object({ subprojectId: z.string().uuid().optional() }), req.query);
-    res.json(await ost.getTree(idParam(req), q.subprojectId));
+    res.json(await ost.getTree(idParam(req)));
+  }),
+);
+modules.get(
+  "/ost",
+  asyncHandler(async (_req, res) => {
+    res.json(await ost.getTree(undefined, await getVisibleProjectIds(actorOf(res))));
   }),
 );
 modules.post(
@@ -340,7 +433,13 @@ modules.patch(
   "/ost/opportunities/:id",
   requireAction("ost.manage"),
   asyncHandler(async (req, res) => {
-    res.json(await ost.updateOpportunity(idParam(req), parse(updateOpportunitySchema, req.body)));
+    res.json(
+      await ost.updateOpportunity(
+        actorOf(res),
+        idParam(req),
+        parse(updateOpportunitySchema, req.body),
+      ),
+    );
   }),
 );
 modules.delete(

@@ -13,6 +13,7 @@ import {
 import { badRequest, notFound } from "../errors";
 import { rowToDto, toDto } from "./activityService";
 import { waitingOnDependency } from "./governanceService";
+import { scopeCondition, type ProjectScope } from "./visibilityService";
 
 /** Keyset cursor: newest first by (created_at, id). */
 const encodeCursor = (createdAt: Date, id: string): string =>
@@ -34,8 +35,11 @@ function decodeCursor(cursor: string): [Date, string] {
 
 export async function listActivities(
   query: ActivityListQuery,
+  scope: ProjectScope = null,
 ): Promise<{ items: ActivityDto[]; nextCursor: string | null }> {
   const where: SQL[] = [];
+  const inScope = scopeCondition(activities.projectId, scope);
+  if (inScope) where.push(inScope);
   if (query.projectId) where.push(eq(activities.projectId, query.projectId));
   if (query.subprojectId) where.push(eq(activities.subprojectId, query.subprojectId));
   if (query.sprintId) where.push(eq(activities.sprintId, query.sprintId));

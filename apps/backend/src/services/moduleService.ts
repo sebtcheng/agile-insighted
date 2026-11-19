@@ -11,7 +11,6 @@ import {
   raidItems,
   userStories,
 } from "../db/schema";
-import { seedDorItems } from "./dorService";
 import { nextSeq } from "./seq";
 
 /*
@@ -27,12 +26,8 @@ const inTx = <T>(tx: Tx | undefined, fn: Run<T>): Promise<T> => (tx ? fn(tx) : d
 // ---------------------------------------------------------------- OST
 export async function createOutcome(
   k: Kind & {
-    subprojectId?: string | null;
     title: string;
     description?: string;
-    metricName?: string;
-    baselineValue?: string;
-    targetValue?: string;
     targetDate?: string;
   },
   tx?: Tx,
@@ -43,12 +38,8 @@ export async function createOutcome(
       .values({
         projectId: k.projectId,
         createdById: k.createdById,
-        subprojectId: k.subprojectId ?? null,
         title: k.title,
         description: k.description ?? null,
-        metricName: k.metricName ?? null,
-        baselineValue: k.baselineValue ?? null,
-        targetValue: k.targetValue ?? null,
         targetDate: k.targetDate ?? null,
       })
       .returning();
@@ -61,8 +52,6 @@ export async function createOpportunity(
   k: Kind & {
     outcomeId: string;
     title: string;
-    description?: string;
-    evidence?: string;
     isTargeted?: boolean;
   },
   tx?: Tx,
@@ -82,8 +71,6 @@ export async function createOpportunity(
         createdById: k.createdById,
         outcomeId: k.outcomeId,
         title: k.title,
-        description: k.description ?? null,
-        evidence: k.evidence ?? null,
         isTargeted: k.isTargeted ?? false,
       })
       .returning();
@@ -93,7 +80,13 @@ export async function createOpportunity(
 }
 
 export async function createSolution(
-  k: Kind & { opportunityId: string; title: string; ownerId?: string | null },
+  k: Kind & {
+    opportunityId: string;
+    title: string;
+    ownerId?: string | null;
+    targetDate?: string | null;
+    validationStatus?: (typeof ostSolutions.$inferInsert)["validationStatus"];
+  },
   tx?: Tx,
 ) {
   return inTx(tx, async (t) => {
@@ -107,6 +100,8 @@ export async function createSolution(
         seq,
         title: k.title,
         ownerId: k.ownerId ?? null,
+        targetDate: k.targetDate ?? null,
+        ...(k.validationStatus ? { validationStatus: k.validationStatus } : {}),
       })
       .returning();
     if (!row) throw new Error("insert returned no row");
@@ -115,17 +110,13 @@ export async function createSolution(
 }
 
 // ---------------------------------------------------------------- User Story Mapping
-export async function createPersona(
-  k: Kind & { subprojectId?: string | null; name: string; description?: string },
-  tx?: Tx,
-) {
+export async function createPersona(k: Kind & { name: string; description?: string }, tx?: Tx) {
   return inTx(tx, async (t) => {
     const [row] = await t
       .insert(personas)
       .values({
         projectId: k.projectId,
         createdById: k.createdById,
-        subprojectId: k.subprojectId ?? null,
         name: k.name,
         description: k.description ?? null,
       })
@@ -136,7 +127,7 @@ export async function createPersona(
 }
 
 export async function createJourneyStep(
-  k: Kind & { subprojectId: string; parentStepId?: string | null; name: string; position?: number },
+  k: Kind & { parentStepId?: string | null; name: string; position?: number },
   tx?: Tx,
 ) {
   return inTx(tx, async (t) => {
@@ -145,7 +136,6 @@ export async function createJourneyStep(
       .values({
         projectId: k.projectId,
         createdById: k.createdById,
-        subprojectId: k.subprojectId,
         parentStepId: k.parentStepId ?? null,
         name: k.name,
         position: k.position ?? 0,
@@ -158,7 +148,6 @@ export async function createJourneyStep(
 
 export async function createStory(
   k: Kind & {
-    subprojectId: string;
     personaId?: string | null;
     journeyStepId?: string | null;
     story: string;
@@ -169,8 +158,8 @@ export async function createStory(
     storyPoints?: number | null;
     status?: "backlog" | "planning" | "in_progress" | "completed";
     position?: number;
-    /** Custom Definition of Ready labels; omitted seeds the project defaults. */
-    dorLabels?: string[];
+    responsibleId?: string | null;
+    targetDate?: string | null;
   },
   tx?: Tx,
 ) {
@@ -181,7 +170,6 @@ export async function createStory(
       .values({
         projectId: k.projectId,
         createdById: k.createdById,
-        subprojectId: k.subprojectId,
         seq,
         personaId: k.personaId ?? null,
         journeyStepId: k.journeyStepId ?? null,
@@ -193,26 +181,21 @@ export async function createStory(
         storyPoints: k.storyPoints ?? null,
         status: k.status ?? "backlog",
         position: k.position ?? 0,
+        responsibleId: k.responsibleId ?? null,
+        targetDate: k.targetDate ?? null,
       })
       .returning();
     if (!row) throw new Error("insert returned no row");
-    await seedDorItems(t, row.id, k.projectId, k.dorLabels);
     return row;
   });
 }
 
 // ---------------------------------------------------------------- Kano
 export type KanoInput = Kind & {
-  subprojectId?: string | null;
-  description: string;
-  requesterName: string;
-  requesterRole?: string;
+  revisionRequest: string;
   kanoCategory?: (typeof kanoRequests.$inferInsert)["kanoCategory"];
-  decision?: (typeof kanoRequests.$inferInsert)["decision"];
-  targetSprintId?: string | null;
-  targetReleaseId?: string | null;
-  wsjf?: { businessValue: number; timeCriticality: number; riskReduction: number; jobSize: number };
-  rice?: { reach: number; impact: string; confidence: number; effort: string };
+  targetDate?: string | null;
+  responsibleId?: string | null;
 };
 
 export async function createKanoRequest(k: KanoInput, tx?: Tx) {
@@ -223,23 +206,11 @@ export async function createKanoRequest(k: KanoInput, tx?: Tx) {
       .values({
         projectId: k.projectId,
         createdById: k.createdById,
-        subprojectId: k.subprojectId ?? null,
         seq,
-        description: k.description,
-        requesterName: k.requesterName,
-        requesterRole: k.requesterRole ?? null,
+        revisionRequest: k.revisionRequest,
         kanoCategory: k.kanoCategory ?? null,
-        decision: k.decision ?? null,
-        targetSprintId: k.targetSprintId ?? null,
-        targetReleaseId: k.targetReleaseId ?? null,
-        wsjfBusinessValue: k.wsjf?.businessValue ?? null,
-        wsjfTimeCriticality: k.wsjf?.timeCriticality ?? null,
-        wsjfRiskReduction: k.wsjf?.riskReduction ?? null,
-        wsjfJobSize: k.wsjf?.jobSize ?? null,
-        riceReach: k.rice?.reach ?? null,
-        riceImpact: k.rice?.impact ?? null,
-        riceConfidence: k.rice?.confidence ?? null,
-        riceEffort: k.rice?.effort ?? null,
+        targetDate: k.targetDate ?? null,
+        responsibleId: k.responsibleId ?? null,
       })
       .returning();
     if (!row) throw new Error("insert returned no row");
@@ -250,7 +221,6 @@ export async function createKanoRequest(k: KanoInput, tx?: Tx) {
 // ---------------------------------------------------------------- RAID
 export async function createRaidItem(
   k: Kind & {
-    subprojectId?: string | null;
     itemType: "risk" | "assumption" | "issue" | "dependency";
     description: string;
     impact: number;
@@ -270,7 +240,6 @@ export async function createRaidItem(
         projectId: k.projectId,
         createdById: k.createdById,
         raisedById: k.createdById,
-        subprojectId: k.subprojectId ?? null,
         seq,
         itemType: k.itemType,
         description: k.description,

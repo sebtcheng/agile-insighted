@@ -30,18 +30,10 @@ export const KANO_CATEGORIES = [
   "indifferent",
   "reverse",
 ] as const;
-export const KANO_DECISIONS = [
-  "approve_mvp",
-  "prioritize_sprint",
-  "schedule_release",
-  "research_spike",
-  "deprioritize",
-] as const;
 export const RAID_TYPES = ["risk", "assumption", "issue", "dependency"] as const;
 export const RAID_STATUSES = ["open", "in_progress", "mitigated", "closed"] as const;
 export const CODE_SCOPES = ["ost", "usm", "req", "raid", "sub"] as const;
 export const STORY_POINT_VALUES = [1, 2, 3, 5, 8, 13, 21] as const;
-export const WSJF_VALUES = [1, 2, 3, 5, 8, 13, 20] as const;
 
 export const KANO_LABELS = {
   must_be: "Must-Have",

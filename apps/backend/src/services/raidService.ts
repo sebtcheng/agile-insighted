@@ -8,10 +8,12 @@ import type {
   UpdateRaidInput,
 } from "@myapp/shared";
 import { db, type DbOrTx } from "../db/client";
-import { projects, raidItems, raidMitigatingActions, subprojects, users } from "../db/schema";
+import { projects, raidItems, raidMitigatingActions, users } from "../db/schema";
 import { conflict, notFound, unprocessable } from "../errors";
 import type { Actor } from "../permissions";
 import { createRaidItem } from "./moduleService";
+import { nextSeq } from "./seq";
+import { scopeCondition, type ProjectScope } from "./visibilityService";
 
 /** RAID log: Team Members submit, the PM edits, assigns owners and moves status. Codes come from nextSeq. */
 
@@ -20,7 +22,8 @@ const raiser = alias(users, "raid_raiser");
 
 type Row = {
   row: typeof raidItems.$inferSelect;
-  subprojectCode: string | null;
+  projectCode: string;
+  projectName: string;
   ownerName: string | null;
   raisedByName: string;
 };
@@ -29,12 +32,20 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function toActionDto(a: typeof raidMitigatingActions.$inferSelect): RaidMitigatingActionDto {
+const responsible = alias(users, "raid_action_responsible");
+
+function toActionDto(
+  a: typeof raidMitigatingActions.$inferSelect,
+  responsibleName: string | null,
+): RaidMitigatingActionDto {
   return {
     id: a.id,
     description: a.description,
     isCompleted: a.isCompleted,
     completedAt: a.completedAt ? a.completedAt.toISOString() : null,
+    targetDate: a.targetDate,
+    responsibleId: a.responsibleId,
+    responsibleName,
     sortOrder: a.sortOrder,
   };
 }
@@ -47,13 +58,14 @@ async function loadActions(
   const byItem = new Map<string, RaidMitigatingActionDto[]>();
   if (raidItemIds.length === 0) return byItem;
   const rows = await tx
-    .select()
+    .select({ action: raidMitigatingActions, responsibleName: responsible.fullName })
     .from(raidMitigatingActions)
+    .leftJoin(responsible, eq(responsible.id, raidMitigatingActions.responsibleId))
     .where(inArray(raidMitigatingActions.raidItemId, raidItemIds))
     .orderBy(asc(raidMitigatingActions.sortOrder), asc(raidMitigatingActions.createdAt));
-  for (const a of rows) {
+  for (const { action: a, responsibleName } of rows) {
     const list = byItem.get(a.raidItemId) ?? [];
-    list.push(toActionDto(a));
+    list.push(toActionDto(a, responsibleName));
     byItem.set(a.raidItemId, list);
   }
   return byItem;
@@ -77,6 +89,16 @@ async function syncActions(tx: DbOrTx, raidItemId: string, input: RaidMitigating
     if (keep.has(a.id)) throw unprocessable("Duplicate mitigating action id");
     keep.add(a.id);
   }
+  const responsibleIds = [...new Set(input.map((a) => a.responsibleId))];
+  if (responsibleIds.length > 0) {
+    const found = await tx
+      .select({ id: users.id })
+      .from(users)
+      .where(inArray(users.id, responsibleIds));
+    if (found.length !== responsibleIds.length) {
+      throw unprocessable("Unknown staff member responsible for a mitigating action");
+    }
+  }
   const removed = existing.filter((e) => !keep.has(e.id)).map((e) => e.id);
   if (removed.length > 0) {
     await tx.delete(raidMitigatingActions).where(inArray(raidMitigatingActions.id, removed));
@@ -94,6 +116,8 @@ async function syncActions(tx: DbOrTx, raidItemId: string, input: RaidMitigating
           description: a.description,
           isCompleted: done,
           completedAt: done ? (a.id && byId.get(a.id)?.completedAt) || now : null,
+          targetDate: a.targetDate,
+          responsibleId: a.responsibleId,
           sortOrder: i,
         };
       }),
@@ -104,6 +128,8 @@ async function syncActions(tx: DbOrTx, raidItemId: string, input: RaidMitigating
         description: sql`excluded.description`,
         isCompleted: sql`excluded.is_completed`,
         completedAt: sql`excluded.completed_at`,
+        targetDate: sql`excluded.target_date`,
+        responsibleId: sql`excluded.responsible_id`,
         sortOrder: sql`excluded.sort_order`,
       },
     });
@@ -114,8 +140,8 @@ function toDto(r: Row, actions: RaidMitigatingActionDto[]): RaidItemDto {
   return {
     id: x.id,
     projectId: x.projectId,
-    subprojectId: x.subprojectId,
-    subprojectCode: r.subprojectCode,
+    projectCode: r.projectCode,
+    projectName: r.projectName,
     code: x.code,
     itemType: x.itemType,
     description: x.description,
@@ -139,12 +165,13 @@ function baseQuery(tx: DbOrTx) {
   return tx
     .select({
       row: raidItems,
-      subprojectCode: subprojects.code,
+      projectCode: projects.code,
+      projectName: projects.name,
       ownerName: owner.fullName,
       raisedByName: raiser.fullName,
     })
     .from(raidItems)
-    .leftJoin(subprojects, eq(subprojects.id, raidItems.subprojectId))
+    .innerJoin(projects, eq(projects.id, raidItems.projectId))
     .leftJoin(owner, eq(owner.id, raidItems.ownerId))
     .innerJoin(raiser, eq(raiser.id, raidItems.raisedById));
 }
@@ -160,16 +187,22 @@ async function assertWritable(tx: DbOrTx, projectId: string) {
 }
 
 export type RaidFilters = {
-  subprojectId?: string;
   itemType?: RaidItemDto["itemType"];
   status?: RaidItemDto["status"];
   ownerId?: string;
   openOnly?: boolean;
+  /** Project visibility for the "all projects" listing; null (the default) is unrestricted. */
+  scope?: ProjectScope;
 };
 
-export async function listRaid(projectId: string, f: RaidFilters = {}): Promise<RaidItemDto[]> {
-  const where: SQL[] = [eq(raidItems.projectId, projectId)];
-  if (f.subprojectId) where.push(eq(raidItems.subprojectId, f.subprojectId));
+/** Lists one project's items, or every project's when `projectId` is omitted. */
+export async function listRaid(
+  projectId: string | undefined,
+  f: RaidFilters = {},
+): Promise<RaidItemDto[]> {
+  const where: SQL[] = projectId ? [eq(raidItems.projectId, projectId)] : [];
+  const inScope = scopeCondition(raidItems.projectId, f.scope ?? null);
+  if (inScope) where.push(inScope);
   if (f.itemType) where.push(eq(raidItems.itemType, f.itemType));
   if (f.status) where.push(eq(raidItems.status, f.status));
   if (f.ownerId) where.push(eq(raidItems.ownerId, f.ownerId));
@@ -179,6 +212,7 @@ export async function listRaid(projectId: string, f: RaidFilters = {}): Promise<
     .orderBy(
       sql`(${raidItems.status} = 'closed')`,
       desc(sql`coalesce(${raidItems.severityScore}, ${raidItems.impact})`),
+      asc(projects.code),
       asc(raidItems.seq),
     );
   const actions = await loadActions(
@@ -200,13 +234,14 @@ export async function createRaid(
   projectId: string,
   input: CreateRaidInput,
 ): Promise<RaidItemDto> {
+  // The Project dropdown picks the owning project; the URL project is the default.
+  const targetProjectId = input.projectId ?? projectId;
   const id = await db.transaction(async (tx) => {
-    await assertWritable(tx, projectId);
+    await assertWritable(tx, targetProjectId);
     const row = await createRaidItem(
       {
-        projectId,
+        projectId: targetProjectId,
         createdById: actor.id,
-        subprojectId: input.subprojectId ?? null,
         itemType: input.itemType,
         description: input.description,
         impact: input.impact,
@@ -233,7 +268,11 @@ export async function updateRaid(id: string, patch: UpdateRaidInput): Promise<Ra
     if (!current) throw notFound("RAID item");
     await assertWritable(tx, current.projectId);
     const set: Partial<typeof raidItems.$inferInsert> = {};
-    if (patch.subprojectId !== undefined) set.subprojectId = patch.subprojectId;
+    if (patch.projectId !== undefined && patch.projectId !== current.projectId) {
+      await assertWritable(tx, patch.projectId);
+      set.projectId = patch.projectId;
+      set.seq = await nextSeq(tx, patch.projectId, "raid");
+    }
     if (patch.itemType !== undefined) set.itemType = patch.itemType;
     if (patch.description !== undefined) set.description = patch.description;
     if (patch.impact !== undefined) set.impact = patch.impact;
@@ -285,7 +324,13 @@ export async function setMitigatingActionCompleted(
       )
       .returning();
     if (!row) throw notFound("Mitigating action");
-    return toActionDto(row);
+    const [who] = row.responsibleId
+      ? await tx
+          .select({ fullName: users.fullName })
+          .from(users)
+          .where(eq(users.id, row.responsibleId))
+      : [];
+    return toActionDto(row, who?.fullName ?? null);
   });
 }
 

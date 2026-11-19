@@ -1,6 +1,8 @@
 import { Badge, Collapse, Group, Stack, Table, Text, UnstyledButton } from "@mantine/core";
 import { Fragment } from "react";
 import { useSearchParams } from "react-router-dom";
+import type { WorkItem, WorkMemberRollup } from "@myapp/shared";
+import { WorkItemRow } from "../components/WorkItems";
 import { useCurrentProject, usePersonItems, useWorkload } from "../api/hooks";
 import { useOpenActivity } from "../components/ActivityRow";
 import { PageHeader, PriorityBadge, QueryState, StatusBadge, fmtDate } from "../components/ui";
@@ -46,6 +48,49 @@ function PersonItems({ userId }: { userId: string }) {
   );
 }
 
+function MemberCells({ m }: { m: WorkMemberRollup | undefined }) {
+  return (
+    <>
+      <Table.Td>{m?.total ?? 0}</Table.Td>
+      <Table.Td>{m?.ongoing ?? 0}</Table.Td>
+      <Table.Td>{m?.onTime ?? 0}</Table.Td>
+      <Table.Td>{m && m.delayed > 0 ? <Badge color="red">{m.delayed}</Badge> : 0}</Table.Td>
+      <Table.Td>{m?.completed ?? 0}</Table.Td>
+    </>
+  );
+}
+
+function WorkList({ items }: { items: WorkItem[] }) {
+  if (items.length === 0) {
+    return (
+      <Text c="dimmed" size="sm" p="sm">
+        No items.
+      </Text>
+    );
+  }
+  return (
+    <Stack gap={0} pb="xs">
+      {items.map((i) => (
+        <WorkItemRow key={i.id} item={i} />
+      ))}
+    </Stack>
+  );
+}
+
+/** Items from OST, Kano, User Story Map and RAID; project activities are listed by PersonItems. */
+function ModuleItems({ m }: { m: WorkMemberRollup | undefined }) {
+  const items = (m?.items ?? []).filter((i) => i.sourceModule !== "project");
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <Text size="xs" fw={700} tt="uppercase" c="dimmed" px="sm">
+        Other modules
+      </Text>
+      <WorkList items={items} />
+    </div>
+  );
+}
+
 export function WorkloadPage() {
   const [params, setParams] = useSearchParams();
   const expanded = params.get("person");
@@ -64,90 +109,128 @@ export function WorkloadPage() {
         subtitle="Load and capacity across all subprojects. This shows counts against limits, not performance."
       />
       <QueryState query={query} isEmpty={(d) => d.items.length === 0} empty="No active people.">
-        {(data) => (
-          <Table.ScrollContainer minWidth={820}>
-            <Table verticalSpacing="xs">
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Person</Table.Th>
-                  <Table.Th>In progress / limit</Table.Th>
-                  <Table.Th>Due this week</Table.Th>
-                  <Table.Th>Blocked</Table.Th>
-                  <Table.Th>Waiting on dependency</Table.Th>
-                  <Table.Th>
-                    {data.items[0]?.sprint
-                      ? `${data.items[0].sprint.name}: assigned / capacity`
-                      : "Active sprint"}
-                  </Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {data.items.map((r) => (
-                  <Fragment key={r.userId}>
-                    <Table.Tr>
-                      <Table.Td>
-                        <UnstyledButton
-                          onClick={() => toggle(r.userId)}
-                          aria-expanded={expanded === r.userId}
-                          fw={600}
-                        >
-                          {expanded === r.userId ? "▾ " : "▸ "}
-                          {r.fullName}
-                        </UnstyledButton>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text
-                          c={r.overWipLimit ? "red" : undefined}
-                          fw={r.overWipLimit ? 700 : 400}
-                        >
-                          {r.inProgress} / {r.wipLimit}
-                          {r.overWipLimit ? " (over limit)" : ""}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>{r.dueThisWeek}</Table.Td>
-                      <Table.Td>
-                        {r.blocked > 0 ? <Badge color="red">{r.blocked}</Badge> : 0}
-                      </Table.Td>
-                      <Table.Td>
-                        {r.waitingOnDependency > 0 ? (
-                          <Badge color="orange">{r.waitingOnDependency}</Badge>
-                        ) : (
-                          0
-                        )}
-                      </Table.Td>
-                      <Table.Td>
-                        {r.sprint ? (
-                          <Text
-                            c={r.overCapacity ? "red" : undefined}
-                            fw={r.overCapacity ? 700 : 400}
+        {(data) => {
+          const byUser = new Map(data.members.map((m) => [m.userId, m]));
+          const unassigned = byUser.get(null);
+          return (
+            <Table.ScrollContainer minWidth={1100}>
+              <Table verticalSpacing="xs">
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Person</Table.Th>
+                    <Table.Th>In progress / limit</Table.Th>
+                    <Table.Th>Due this week</Table.Th>
+                    <Table.Th>Blocked</Table.Th>
+                    <Table.Th>Waiting on dependency</Table.Th>
+                    <Table.Th>All tasks</Table.Th>
+                    <Table.Th>Ongoing</Table.Th>
+                    <Table.Th>On time</Table.Th>
+                    <Table.Th>Delayed</Table.Th>
+                    <Table.Th>Completed</Table.Th>
+                    <Table.Th>
+                      {data.items[0]?.sprint
+                        ? `${data.items[0].sprint.name}: assigned / capacity`
+                        : "Active sprint"}
+                    </Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {data.items.map((r) => (
+                    <Fragment key={r.userId}>
+                      <Table.Tr>
+                        <Table.Td>
+                          <UnstyledButton
+                            onClick={() => toggle(r.userId)}
+                            aria-expanded={expanded === r.userId}
+                            fw={600}
                           >
-                            {r.sprintAssigned} / {r.sprintCapacity ?? "not set"}
-                            {r.overCapacity ? " (over capacity)" : ""}
+                            {expanded === r.userId ? "▾ " : "▸ "}
+                            {r.fullName}
+                          </UnstyledButton>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text
+                            c={r.overWipLimit ? "red" : undefined}
+                            fw={r.overWipLimit ? 700 : 400}
+                          >
+                            {r.inProgress} / {r.wipLimit}
+                            {r.overWipLimit ? " (over limit)" : ""}
                           </Text>
-                        ) : (
-                          <Text c="dimmed" size="sm">
-                            No active sprint
-                          </Text>
-                        )}
-                      </Table.Td>
-                    </Table.Tr>
-                    <Table.Tr key={`${r.userId}-items`}>
-                      <Table.Td
-                        colSpan={6}
-                        p={0}
-                        style={{ borderBottom: expanded === r.userId ? undefined : "none" }}
-                      >
-                        <Collapse in={expanded === r.userId}>
-                          {expanded === r.userId ? <PersonItems userId={r.userId} /> : null}
-                        </Collapse>
-                      </Table.Td>
-                    </Table.Tr>
-                  </Fragment>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
-        )}
+                        </Table.Td>
+                        <Table.Td>{r.dueThisWeek}</Table.Td>
+                        <Table.Td>
+                          {r.blocked > 0 ? <Badge color="red">{r.blocked}</Badge> : 0}
+                        </Table.Td>
+                        <Table.Td>
+                          {r.waitingOnDependency > 0 ? (
+                            <Badge color="orange">{r.waitingOnDependency}</Badge>
+                          ) : (
+                            0
+                          )}
+                        </Table.Td>
+                        <Table.Td>
+                          {r.sprint ? (
+                            <Text
+                              c={r.overCapacity ? "red" : undefined}
+                              fw={r.overCapacity ? 700 : 400}
+                            >
+                              {r.sprintAssigned} / {r.sprintCapacity ?? "not set"}
+                              {r.overCapacity ? " (over capacity)" : ""}
+                            </Text>
+                          ) : (
+                            <Text c="dimmed" size="sm">
+                              No active sprint
+                            </Text>
+                          )}
+                        </Table.Td>
+                        <MemberCells m={byUser.get(r.userId)} />
+                      </Table.Tr>
+                      <Table.Tr key={`${r.userId}-items`}>
+                        <Table.Td
+                          colSpan={11}
+                          p={0}
+                          style={{ borderBottom: expanded === r.userId ? undefined : "none" }}
+                        >
+                          <Collapse in={expanded === r.userId}>
+                            {expanded === r.userId ? (
+                              <>
+                                <PersonItems userId={r.userId} />
+                                <ModuleItems m={byUser.get(r.userId)} />
+                              </>
+                            ) : null}
+                          </Collapse>
+                        </Table.Td>
+                      </Table.Tr>
+                    </Fragment>
+                  ))}
+                  {unassigned ? (
+                    <Fragment key="unassigned">
+                      <Table.Tr>
+                        <Table.Td colSpan={6}>
+                          <UnstyledButton
+                            onClick={() => toggle("unassigned")}
+                            aria-expanded={expanded === "unassigned"}
+                            fw={600}
+                          >
+                            {expanded === "unassigned" ? "▾ " : "▸ "}Unassigned
+                          </UnstyledButton>
+                        </Table.Td>
+                        <MemberCells m={unassigned} />
+                      </Table.Tr>
+                      <Table.Tr>
+                        <Table.Td colSpan={11} p={0} style={{ borderBottom: "none" }}>
+                          <Collapse in={expanded === "unassigned"}>
+                            <WorkList items={unassigned.items} />
+                          </Collapse>
+                        </Table.Td>
+                      </Table.Tr>
+                    </Fragment>
+                  ) : null}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          );
+        }}
       </QueryState>
     </>
   );

@@ -18,11 +18,22 @@ beforeAll(async () => {
   f = await createFixture();
   pm = request.agent(app);
   await pm.post("/api/auth/login").send({ email: f.pm.email, password: f.password });
+  const link = async (projectId: string) => ({
+    projectId,
+    journeyStepId: json<{ id: string }>(
+      await pm.post(`/api/projects/${projectId}/journey-steps`).send({ name: "Step" }),
+    ).id,
+    releaseId: json<{ id: string }>(
+      await pm.post(`/api/projects/${projectId}/releases`).send({ name: "Rel" }),
+    ).id,
+  });
   storyId = json<StoryDto>(
-    await pm.post(`/api/subprojects/${f.subA.id}/stories`).send({ story: "Linked story" }),
+    await pm.post(`/api/stories`).send({ ...(await link(f.project.id)), story: "Linked story" }),
   ).id;
   otherStoryId = json<StoryDto>(
-    await pm.post(`/api/subprojects/${f.otherSub.id}/stories`).send({ story: "Other project" }),
+    await pm
+      .post(`/api/stories`)
+      .send({ ...(await link(f.otherProject.id)), story: "Other project" }),
   ).id;
   activityId = json<ActivityUpdateResult>(
     await pm.post(`/api/projects/${f.project.id}/activities`).send({
@@ -38,7 +49,7 @@ afterAll(async () => {
 
 describe("activity links to stories", () => {
   it("stores the story link on create and shows it on the story map", async () => {
-    const map = json<StoryMapDto>(await pm.get(`/api/story-map?subprojectId=${f.subA.id}`));
+    const map = json<StoryMapDto>(await pm.get(`/api/story-map?projectId=${f.project.id}`));
     expect(map.stories.find((s) => s.id === storyId)?.linkedActivities).toBe(1);
   });
 

@@ -16,7 +16,10 @@ import type { HomeResponse, HomeRow } from "@myapp/shared";
 import { db } from "../db/client";
 import { activities, projects, releases, sprints, subprojects, users } from "../db/schema";
 import { waitingOnDependency } from "./governanceService";
+import { scopeCondition, type ProjectScope } from "./visibilityService";
 import { env } from "../env";
+import { loadWorkItems } from "./workItemService";
+import { summarize } from "./workItemRollups";
 import type { Actor } from "../permissions";
 import { rowToDto } from "./activityService";
 import { addDays, bucketFor, diffDays, homeRanges, localDate } from "./dateBuckets";
@@ -42,12 +45,15 @@ export function homeCandidatesQuery(
   actor: Pick<Actor, "id" | "role">,
   query: Pick<HomeQuery, "assigneeId" | "subprojectId">,
   r: ReturnType<typeof homeRanges>,
+  scope: ProjectScope = null,
 ) {
   // Done items count only if completed this week. Convert the local week to a generous UTC window, then bucket exactly.
   const windowStart = new Date(`${addDays(r.weekStart, -1)}T00:00:00Z`);
   const windowEnd = new Date(`${addDays(r.weekEnd, 2)}T00:00:00Z`);
 
   const filters: SQL[] = [isNull(projects.archivedAt), isNotNull(activities.dueDate)];
+  const inScope = scopeCondition(activities.projectId, scope);
+  if (inScope) filters.push(inScope);
   if (actor.role === "team_member") filters.push(eq(activities.assigneeId, actor.id));
   else {
     if (query.assigneeId) filters.push(eq(activities.assigneeId, query.assigneeId));
@@ -88,13 +94,17 @@ export function homeCandidatesQuery(
  * Home read model for the signed-in user. Team members see their own activities; a PM sees all,
  * optionally filtered by assignee or subproject. One candidate query, bucketed in memory.
  */
-export async function getHome(actor: Actor, query: HomeQuery = {}): Promise<HomeResponse> {
+export async function getHome(
+  actor: Actor,
+  query: HomeQuery = {},
+  scope: ProjectScope = null,
+): Promise<HomeResponse> {
   const timeZone = query.timeZone ?? env.APP_TIMEZONE;
   const now = query.now ?? new Date();
   const today = localDate(now, timeZone);
   const r = homeRanges(today);
 
-  const rows = await homeCandidatesQuery(actor, query, r);
+  const rows = await homeCandidatesQuery(actor, query, r, scope);
 
   const result: HomeResponse = {
     timezone: timeZone,
@@ -104,6 +114,8 @@ export async function getHome(actor: Actor, query: HomeQuery = {}): Promise<Home
     nextWeek: [],
     thisMonth: [],
     upcomingReleases: [],
+    moduleItems: { thisWeek: [], nextWeek: [], thisMonth: [] },
+    summary: summarize([]),
     truncated: rows.length >= HOME_ROW_LIMIT,
   };
 
@@ -126,6 +138,29 @@ export async function getHome(actor: Actor, query: HomeQuery = {}): Promise<Home
     result[bucket].push(item);
   }
 
+  // Unified work: summary counts over all five modules, plus the non-project items bucketed by due date.
+  const loaded = await loadWorkItems(
+    {
+      assigneeId: actor.role === "team_member" ? actor.id : query.assigneeId,
+      subprojectId: query.subprojectId,
+    },
+    scope,
+    now,
+  );
+  result.summary = summarize(loaded.items);
+  for (const item of loaded.items) {
+    if (item.sourceModule === "project") continue;
+    const bucket = bucketFor(
+      {
+        dueDate: item.dueDate,
+        status: item.isCompleted ? "done" : "open",
+        completedDate: item.completedAt ? localDate(new Date(item.completedAt), timeZone) : null,
+      },
+      r,
+    );
+    if (bucket) result.moduleItems[bucket].push(item);
+  }
+
   // This Month also lists releases still planned with a target date from today to month end.
   result.upcomingReleases = await db
     .select({ id: releases.id, name: releases.name, targetDate: releases.targetDate })
@@ -134,6 +169,7 @@ export async function getHome(actor: Actor, query: HomeQuery = {}): Promise<Home
     .where(
       and(
         isNull(projects.archivedAt),
+        scopeCondition(releases.projectId, scope),
         eq(releases.status, "planned"),
         gte(releases.targetDate, today),
         lte(releases.targetDate, r.monthEnd),
@@ -150,7 +186,12 @@ export async function getHome(actor: Actor, query: HomeQuery = {}): Promise<Home
     .from(sprints)
     .innerJoin(projects, eq(projects.id, sprints.projectId))
     .where(
-      and(eq(sprints.status, "active"), isNull(sprints.subprojectId), isNull(projects.archivedAt)),
+      and(
+        eq(sprints.status, "active"),
+        isNull(sprints.subprojectId),
+        isNull(projects.archivedAt),
+        scopeCondition(sprints.projectId, scope),
+      ),
     )
     .orderBy(asc(sprints.endDate))
     .limit(1);
@@ -160,7 +201,7 @@ export async function getHome(actor: Actor, query: HomeQuery = {}): Promise<Home
   const [limitRow] = await db
     .select({ limit: projects.wipLimitPerPerson })
     .from(projects)
-    .where(isNull(projects.archivedAt))
+    .where(and(isNull(projects.archivedAt), scopeCondition(projects.id, scope)))
     .orderBy(asc(projects.createdAt))
     .limit(1);
   const [wipRow] = await db

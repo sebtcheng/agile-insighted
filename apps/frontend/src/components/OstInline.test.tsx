@@ -16,19 +16,15 @@ import { OstTable } from "./OstTable";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const KEY = ["ost", "p1", undefined];
+const KEY = ["ost", "p1"];
 const baseTree = (): OstTreeDto => ({
   outcomes: [
     {
       id: "o1",
-      subprojectId: null,
-      subprojectCode: null,
-      subprojectName: null,
+      projectId: "p1",
+      projectName: "Student Engagement Analytics",
       title: "Reduce dropouts",
       description: null,
-      metricName: null,
-      baselineValue: null,
-      targetValue: null,
       targetDate: null,
     },
   ],
@@ -37,8 +33,6 @@ const baseTree = (): OstTreeDto => ({
       id: "p1",
       outcomeId: "o1",
       title: "Students feel lost",
-      description: null,
-      evidence: null,
       isTargeted: false,
     },
   ],
@@ -51,6 +45,7 @@ const baseTree = (): OstTreeDto => ({
       validationStatus: "validated",
       ownerId: null,
       ownerName: "Ana Reyes",
+      targetDate: null,
       convertedStoryId: null,
       convertedStoryCode: null,
     },
@@ -62,6 +57,7 @@ const baseTree = (): OstTreeDto => ({
       validationStatus: "planned",
       ownerId: null,
       ownerName: null,
+      targetDate: null,
       convertedStoryId: null,
       convertedStoryCode: null,
     },
@@ -168,7 +164,7 @@ describe("OstActionBar", () => {
           MantineProvider,
           null,
           createElement(OstActionBar, {
-            scope: "opportunity",
+            scope: "requirement",
             create: [{ label: "Add solution", onClick: () => {} }],
             workflow: [{ label: "Target this", onClick: () => {} }],
             onEdit: () => {},
@@ -180,9 +176,9 @@ describe("OstActionBar", () => {
     cleanups.push(() => act(() => root.unmount()));
     const groups = [...host.querySelectorAll('[role="group"]')];
     expect(groups.map((g) => g.getAttribute("aria-label"))).toEqual([
-      "Add to opportunity",
-      "Workflow for opportunity",
-      "Edit or delete opportunity",
+      "Add to requirement",
+      "Workflow for requirement",
+      "Edit or delete requirement",
     ]);
     expect(groups.map((g) => [...g.querySelectorAll("button")].map((b) => b.textContent))).toEqual([
       ["Add solution"],
@@ -190,7 +186,7 @@ describe("OstActionBar", () => {
       ["Edit", "Delete"],
     ]);
     expect(host.querySelector('[role="toolbar"]')?.getAttribute("aria-label")).toBe(
-      "opportunity actions",
+      "requirement actions",
     );
   });
 
@@ -251,7 +247,7 @@ describe.each(["card", "table"] as const)("inline solution ticks in the %s view"
 });
 
 describe("OST side modal", () => {
-  it("states the outcome once in the header and lists opportunities with solutions beneath", async () => {
+  it("states the outcome once in the header and lists requirements with solutions beneath", async () => {
     const { host } = await mount("card");
     const dialog = host.querySelector('[role="dialog"]')!;
     const header = dialog.querySelector("header, .mantine-Drawer-header")!;
@@ -261,7 +257,9 @@ describe("OST side modal", () => {
     const body = dialog.querySelector(".mantine-Drawer-body")!;
     expect(body.textContent).not.toContain("Reduce dropouts");
     expect(body.textContent).toContain("Students feel lost");
-    expect(body.textContent).toContain("Add opportunity");
+    expect(body.textContent).toContain("Requirements");
+    expect(body.textContent).toContain("Add requirements");
+    expect(body.textContent).not.toMatch(/Opportunit/);
     expect(body.textContent).toContain("Add solution");
     expect(body.textContent).toContain("Guided first lesson");
     expect(body.textContent).not.toMatch(/Add sub-opportunity|assumption/i);
@@ -312,9 +310,6 @@ describe("OstTable column inventory", () => {
       outcomes: [
         {
           ...server.outcomes[0]!,
-          subprojectId: "sp1",
-          subprojectCode: "PRJ-01",
-          subprojectName: "Student Engagement Analytics",
           targetDate: "2027-01-18",
         },
       ],
@@ -324,7 +319,7 @@ describe("OstTable column inventory", () => {
     expect(heads).toEqual([
       "Level",
       "Item",
-      "Subproject",
+      "Project",
       "Details",
       "Owner",
       "Progress / Target",
@@ -332,13 +327,11 @@ describe("OstTable column inventory", () => {
       "Actions",
     ]);
     const [outcome, opportunity, solution] = cells(host);
-    // Outcome: subproject name (never the PRJ code), target date, no owner.
+    // Outcome: project name, target date, no owner.
     expect(outcome?.[2]).toBe("Student Engagement Analytics");
-    expect(outcome?.[1]).not.toContain("PRJ-01");
-    expect(outcome?.join("|")).not.toContain("PRJ-01");
     expect(outcome?.[4]).toBe("—");
     expect(outcome?.[5]).toMatch(/2027/);
-    // Opportunity: solution coverage in Progress, workflow badge only in Status.
+    // Requirement: solution coverage in Progress, workflow badge only in Status.
     expect(opportunity?.[2]).toBe("—");
     expect(opportunity?.[5]).toBe("2/3 solutions");
     expect(opportunity?.[6]).toBe("—");

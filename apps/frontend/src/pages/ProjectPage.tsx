@@ -17,7 +17,7 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useDisclosure } from "@mantine/hooks";
-import { zodResolver } from "mantine-form-zod-resolver";
+import { zod4Resolver } from "mantine-form-zod-resolver";
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -354,7 +354,7 @@ function SubprojectsTab({ projectId, canEdit }: { projectId: string; canEdit: bo
       health: "on_track" as (typeof HEALTHS)[number],
       healthNote: "",
     },
-    validate: zodResolver(createSubprojectSchema),
+    validate: zod4Resolver(createSubprojectSchema),
   });
   const editForm = useForm({
     initialValues: {
@@ -585,7 +585,7 @@ function SprintsTab({ projectId, canEdit }: { projectId: string; canEdit: boolea
   const create = useCreateSprint(projectId);
   const form = useForm({
     initialValues: { name: "", goal: "", startDate: "", endDate: "", status: "planning" as const },
-    validate: zodResolver(createSprintSchema),
+    validate: zod4Resolver(createSprintSchema),
   });
   return (
     <Stack>

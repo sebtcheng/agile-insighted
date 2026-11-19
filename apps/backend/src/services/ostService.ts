@@ -7,6 +7,7 @@ import type {
   OpportunityDto,
   OstTreeDto,
   OutcomeDto,
+  RequirementSolutionInput,
   SolutionDto,
   UpdateOpportunityInput,
   UpdateOutcomeInput,
@@ -18,13 +19,13 @@ import {
   ostOutcomes,
   ostSolutions,
   projects,
-  subprojects,
   userStories,
   users,
 } from "../db/schema";
 import { AppError, conflict, forbidden, notFound, unprocessable } from "../errors";
 import { can, type Actor } from "../permissions";
 import { recordOverride } from "./governanceService";
+import { scopeCondition, type ProjectScope } from "./visibilityService";
 import {
   createOpportunity as insertOpportunity,
   createOutcome as insertOutcome,
@@ -48,20 +49,17 @@ async function assertOpen(tx: DbOrTx, projectId: string) {
   if (p.archivedAt) throw conflict("This project is archived and read-only");
 }
 
-const num = (v: string | null): number | null => (v === null ? null : Number(v));
-const str = (n: number | null | undefined): string | null | undefined =>
-  n === undefined ? undefined : n === null ? null : String(n);
-
 // ---------------------------------------------------------------- read
-export async function getTree(projectId: string, subprojectId?: string): Promise<OstTreeDto> {
+/** One project's tree, or every project's when `projectId` is omitted. */
+export async function getTree(projectId?: string, scope: ProjectScope = null): Promise<OstTreeDto> {
   const outcomeRows = await db
-    .select({ o: ostOutcomes, subprojectCode: subprojects.code, subprojectName: subprojects.name })
+    .select({ o: ostOutcomes, projectName: projects.name })
     .from(ostOutcomes)
-    .leftJoin(subprojects, eq(subprojects.id, ostOutcomes.subprojectId))
+    .innerJoin(projects, eq(projects.id, ostOutcomes.projectId))
     .where(
       and(
-        eq(ostOutcomes.projectId, projectId),
-        subprojectId ? eq(ostOutcomes.subprojectId, subprojectId) : undefined,
+        projectId ? eq(ostOutcomes.projectId, projectId) : undefined,
+        scopeCondition(ostOutcomes.projectId, scope),
       ),
     )
     .orderBy(asc(ostOutcomes.createdAt), asc(ostOutcomes.id));
@@ -84,24 +82,18 @@ export async function getTree(projectId: string, subprojectId?: string): Promise
           .leftJoin(userStories, eq(userStories.id, ostSolutions.convertedStoryId))
           .where(inArray(ostSolutions.opportunityId, oppIds))
           .orderBy(asc(ostSolutions.seq));
-  const outcomes: OutcomeDto[] = outcomeRows.map(({ o, subprojectCode, subprojectName }) => ({
+  const outcomes: OutcomeDto[] = outcomeRows.map(({ o, projectName }) => ({
     id: o.id,
-    subprojectId: o.subprojectId,
-    subprojectCode,
-    subprojectName,
+    projectId: o.projectId,
+    projectName,
     title: o.title,
     description: o.description,
-    metricName: o.metricName,
-    baselineValue: num(o.baselineValue),
-    targetValue: num(o.targetValue),
     targetDate: o.targetDate,
   }));
   const opportunities: OpportunityDto[] = opps.map((o) => ({
     id: o.id,
     outcomeId: o.outcomeId,
     title: o.title,
-    description: o.description,
-    evidence: o.evidence,
     isTargeted: o.isTargeted,
   }));
   const solutions: SolutionDto[] = sols.map(({ s, ownerName, storyCode }) => ({
@@ -112,6 +104,7 @@ export async function getTree(projectId: string, subprojectId?: string): Promise
     validationStatus: s.validationStatus,
     ownerId: s.ownerId,
     ownerName,
+    targetDate: s.targetDate,
     convertedStoryId: s.convertedStoryId,
     convertedStoryCode: storyCode,
   }));
@@ -120,18 +113,15 @@ export async function getTree(projectId: string, subprojectId?: string): Promise
 
 // ---------------------------------------------------------------- outcomes
 export async function createOutcome(actor: Actor, projectId: string, input: CreateOutcomeInput) {
+  const targetProjectId = input.projectId ?? projectId;
   return db.transaction(async (tx) => {
-    await assertOpen(tx, projectId);
+    await assertOpen(tx, targetProjectId);
     return insertOutcome(
       {
-        projectId,
+        projectId: targetProjectId,
         createdById: actor.id,
-        subprojectId: input.subprojectId ?? null,
         title: input.title,
         description: input.description ?? undefined,
-        metricName: input.metricName ?? undefined,
-        baselineValue: str(input.baselineValue) ?? undefined,
-        targetValue: str(input.targetValue) ?? undefined,
         targetDate: input.targetDate ?? undefined,
       },
       tx,
@@ -140,10 +130,7 @@ export async function createOutcome(actor: Actor, projectId: string, input: Crea
 }
 
 export async function updateOutcome(id: string, patch: UpdateOutcomeInput) {
-  const { baselineValue, targetValue, ...rest } = patch;
-  const set: Partial<typeof ostOutcomes.$inferInsert> = { ...rest };
-  if (baselineValue !== undefined) set.baselineValue = str(baselineValue) ?? null;
-  if (targetValue !== undefined) set.targetValue = str(targetValue) ?? null;
+  const set: Partial<typeof ostOutcomes.$inferInsert> = { ...patch };
   if (Object.keys(set).length === 0) throw unprocessable("Nothing to change");
   const [current] = await db
     .select({ projectId: ostOutcomes.projectId })
@@ -166,6 +153,81 @@ export async function deleteOutcome(id: string) {
 }
 
 // ---------------------------------------------------------------- opportunities
+/**
+ * Makes the stored solutions of one requirement equal to the input: rows missing from the input are deleted,
+ * rows with an id are updated, rows without one are inserted. Solutions already converted to a story cannot be
+ * removed. `completed` ticks a solution to validated; unticking returns a validated one to planned.
+ */
+async function syncSolutions(
+  tx: NonNullable<Parameters<typeof insertSolution>[1]>,
+  actor: Actor,
+  opp: { id: string; projectId: string },
+  input: RequirementSolutionInput[],
+) {
+  const existing = await tx
+    .select()
+    .from(ostSolutions)
+    .where(eq(ostSolutions.opportunityId, opp.id));
+  const byId = new Map(existing.map((e) => [e.id, e]));
+  const keep = new Set<string>();
+  for (const s of input) {
+    if (!s.id) continue;
+    if (!byId.has(s.id)) throw unprocessable("Unknown solution for this requirement");
+    if (keep.has(s.id)) throw unprocessable("Duplicate solution id");
+    keep.add(s.id);
+  }
+  const ownerIds = [...new Set(input.map((s) => s.ownerId).filter((x): x is string => !!x))];
+  if (ownerIds.length > 0) {
+    const found = await tx.select({ id: users.id }).from(users).where(inArray(users.id, ownerIds));
+    if (found.length !== ownerIds.length) throw unprocessable("Unknown staff member responsible");
+  }
+  const removed = existing.filter((e) => !keep.has(e.id));
+  if (removed.some((e) => e.convertedStoryId)) {
+    throw unprocessable("A solution already converted to a story cannot be removed");
+  }
+  if (removed.length > 0) {
+    await tx.delete(ostSolutions).where(
+      inArray(
+        ostSolutions.id,
+        removed.map((e) => e.id),
+      ),
+    );
+  }
+  for (const s of input) {
+    const prev = s.id ? byId.get(s.id) : undefined;
+    const completed = s.completed ?? false;
+    const status = completed
+      ? "validated"
+      : prev && prev.validationStatus !== "validated"
+        ? prev.validationStatus
+        : "planned";
+    if (prev) {
+      await tx
+        .update(ostSolutions)
+        .set({
+          title: s.title,
+          ownerId: s.ownerId ?? null,
+          targetDate: s.targetDate ?? null,
+          validationStatus: status,
+        })
+        .where(eq(ostSolutions.id, prev.id));
+    } else {
+      await insertSolution(
+        {
+          projectId: opp.projectId,
+          createdById: actor.id,
+          opportunityId: opp.id,
+          title: s.title,
+          ownerId: s.ownerId ?? null,
+          targetDate: s.targetDate ?? null,
+          validationStatus: status,
+        },
+        tx,
+      );
+    }
+  }
+}
+
 export async function createOpportunity(
   actor: Actor,
   outcomeId: string,
@@ -179,22 +241,22 @@ export async function createOpportunity(
       .limit(1);
     if (!outcome) throw notFound("Outcome");
     await assertOpen(tx, outcome.projectId);
-    return insertOpportunity(
+    const row = await insertOpportunity(
       {
         projectId: outcome.projectId,
         createdById: actor.id,
         outcomeId,
         title: input.title,
-        description: input.description ?? undefined,
-        evidence: input.evidence ?? undefined,
         isTargeted: input.isTargeted,
       },
       tx,
     );
+    await syncSolutions(tx, actor, row, input.solutions ?? []);
+    return row;
   });
 }
 
-export async function updateOpportunity(id: string, patch: UpdateOpportunityInput) {
+export async function updateOpportunity(actor: Actor, id: string, patch: UpdateOpportunityInput) {
   return db.transaction(async (tx) => {
     const [current] = await tx
       .select()
@@ -212,12 +274,17 @@ export async function updateOpportunity(id: string, patch: UpdateOpportunityInpu
         .set({ isTargeted: false })
         .where(and(eq(ostOpportunities.outcomeId, current.outcomeId), ne(ostOpportunities.id, id)));
     }
-    const [row] = await tx
-      .update(ostOpportunities)
-      .set(patch)
-      .where(eq(ostOpportunities.id, id))
-      .returning();
+    const { solutions, ...fields } = patch;
+    const [row] =
+      Object.keys(fields).length > 0
+        ? await tx
+            .update(ostOpportunities)
+            .set(fields)
+            .where(eq(ostOpportunities.id, id))
+            .returning()
+        : [current];
     if (!row) throw notFound("Opportunity");
+    if (solutions !== undefined) await syncSolutions(tx, actor, row, solutions);
     return row;
   });
 }
@@ -251,6 +318,7 @@ export async function createSolution(
         opportunityId,
         title: input.title,
         ownerId: input.ownerId ?? null,
+        targetDate: input.targetDate ?? null,
       },
       tx,
     );
@@ -291,14 +359,6 @@ export async function convertSolution(actor: Actor, id: string, input: ConvertSo
     if (!sol) throw notFound("Solution");
     await assertOpen(tx, sol.projectId);
     if (sol.convertedStoryId) throw conflict("This solution has already been converted to a story");
-    const [sub] = await tx
-      .select({ projectId: subprojects.projectId, archivedAt: subprojects.archivedAt })
-      .from(subprojects)
-      .where(eq(subprojects.id, input.subprojectId))
-      .limit(1);
-    if (!sub || sub.projectId !== sol.projectId) throw notFound("Subproject");
-    if (sub.archivedAt) throw conflict("That subproject is archived and read-only");
-
     if (sol.validationStatus !== "validated") {
       if (input.overrideReason) {
         if (!can(actor, "ost.manage"))
@@ -323,8 +383,10 @@ export async function convertSolution(actor: Actor, id: string, input: ConvertSo
       {
         projectId: sol.projectId,
         createdById: actor.id,
-        subprojectId: input.subprojectId,
         story: input.story ?? sol.title,
+        // The solution's owner and date carry over as the story's person responsible and target date.
+        responsibleId: sol.ownerId,
+        targetDate: sol.targetDate,
         position: 0,
       },
       tx,

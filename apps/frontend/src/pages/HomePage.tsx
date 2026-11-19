@@ -12,7 +12,8 @@ import {
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { useSearchParams } from "react-router-dom";
-import type { HomeResponse, HomeRow } from "@myapp/shared";
+import type { HomeResponse, HomeRow, WorkItem } from "@myapp/shared";
+import { SummaryStrip, WorkItemRow } from "../components/WorkItems";
 import { useHome, useSubprojects, useUsers, useCurrentProject } from "../api/hooks";
 import { useAuth, useIsPm } from "../auth";
 import { ActivityRow } from "../components/ActivityRow";
@@ -38,9 +39,11 @@ function Section({
   rows,
   grouped,
   extra,
+  moduleRows = [],
 }: {
   title: string;
   rows: HomeRow[];
+  moduleRows?: WorkItem[];
   grouped: boolean;
   extra?: React.ReactNode;
 }) {
@@ -55,7 +58,7 @@ function Section({
       >
         <Title order={4}>{title}</Title>
         <Badge variant="light" color="gray">
-          {rows.length}
+          {rows.length + moduleRows.length}
         </Badge>
       </Group>
       {isNextWeek && risky.length > 0 ? (
@@ -65,7 +68,17 @@ function Section({
         </Alert>
       ) : null}
       {extra}
-      {rows.length === 0 && !extra ? (
+      {moduleRows.length > 0 ? (
+        <div style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}>
+          <Text size="xs" fw={700} tt="uppercase" c="dimmed" px="sm" pt="sm">
+            Other modules
+          </Text>
+          {moduleRows.map((i) => (
+            <WorkItemRow key={i.id} item={i} />
+          ))}
+        </div>
+      ) : null}
+      {rows.length === 0 && !extra && moduleRows.length === 0 ? (
         <Text c="dimmed" size="sm" p="md">
           Nothing due.
         </Text>
@@ -120,6 +133,10 @@ function Header({ data }: { data: HomeResponse }) {
           ) : null}
         </div>
       </Group>
+      <Text size="xs" c="dimmed" tt="uppercase" fw={700} mt="md" mb={4}>
+        All modules
+      </Text>
+      <SummaryStrip summary={data.summary} />
     </Paper>
   );
 }
@@ -168,6 +185,18 @@ export function HomePage() {
                     .map((u) => ({ value: u.id, label: u.fullName }))}
                 />
                 <Select
+                  label="Scope"
+                  allowDeselect={false}
+                  value={filters.assigneeId === user.id ? "mine" : "team"}
+                  onChange={(v) =>
+                    update({ ...filters, assigneeId: v === "mine" ? user.id : undefined })
+                  }
+                  data={[
+                    { value: "team", label: "Whole team" },
+                    { value: "mine", label: "Only me" },
+                  ]}
+                />
+                <Select
                   label="Subproject"
                   placeholder="All subprojects"
                   clearable
@@ -195,11 +224,22 @@ export function HomePage() {
                 the rest.
               </Alert>
             ) : null}
-            <Section title="This Week" rows={data.thisWeek} grouped={grouped} />
-            <Section title="Next Week" rows={data.nextWeek} grouped={grouped} />
+            <Section
+              title="This Week"
+              rows={data.thisWeek}
+              moduleRows={data.moduleItems.thisWeek}
+              grouped={grouped}
+            />
+            <Section
+              title="Next Week"
+              rows={data.nextWeek}
+              moduleRows={data.moduleItems.nextWeek}
+              grouped={grouped}
+            />
             <Section
               title="This Month"
               rows={data.thisMonth}
+              moduleRows={data.moduleItems.thisMonth}
               grouped={grouped}
               extra={
                 data.upcomingReleases.length > 0 ? (

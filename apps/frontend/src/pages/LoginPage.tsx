@@ -10,7 +10,7 @@ import {
   Title,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { zodResolver } from "mantine-form-zod-resolver";
+import { zod4Resolver } from "mantine-form-zod-resolver";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { loginSchema } from "@myapp/shared";
 import { errorMessage } from "../api/client";
@@ -24,7 +24,7 @@ export function LoginPage() {
   const from = (location.state as { from?: string } | null)?.from ?? "/";
   const form = useForm({
     initialValues: { email: "", password: "" },
-    validate: zodResolver(loginSchema),
+    validate: zod4Resolver(loginSchema),
   });
 
   if (me.data) return <Navigate to={from} replace />;

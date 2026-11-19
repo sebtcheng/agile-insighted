@@ -1,86 +1,176 @@
-import { and, asc, eq, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import type { CreateKanoInput, KanoDto, PromoteKanoInput, UpdateKanoInput } from "@myapp/shared";
-import { db, type DbOrTx } from "../db/client";
+
 import {
-  journeySteps,
-  kanoRequests,
-  projects,
-  releases,
-  sprints,
-  subprojects,
-  userStories,
-} from "../db/schema";
+  kanoCompletion,
+  USER_ROLES,
+  type CreateKanoInput,
+  type KanoDto,
+  type KanoSpecDto,
+  type KanoSpecInput,
+  type UpdateKanoInput,
+} from "@myapp/shared";
+import { db, type DbOrTx } from "../db/client";
+import { kanoRequestSpecs, kanoRequests, projects, users } from "../db/schema";
 import { conflict, notFound, unprocessable } from "../errors";
 import type { Actor } from "../permissions";
-import { createKanoRequest, createStory } from "./moduleService";
+import { createKanoRequest } from "./moduleService";
+import { nextSeq } from "./seq";
+import { scopeCondition, type ProjectScope } from "./visibilityService";
 
 /**
- * Kano Request Tracker. Scores are computed by the database (generated columns) from the WSJF and RICE
- * inputs, so they can never be typed in or drift. Promoting a request creates a user story (Story Map)
- * in the request's subproject and links it back; a request is promoted at most once.
+ * Kano Request Tracker. A request carries a revision-request text, a Kano category, an optional target
+ * sprint/release and a checklist of revision specs; completion is derived from the specs.
  */
-
-const kanoSprint = alias(sprints, "kano_sprint");
-const kanoRelease = alias(releases, "kano_release");
 
 type Row = {
   r: typeof kanoRequests.$inferSelect;
-  subprojectCode: string | null;
-  sprintName: string | null;
-  releaseName: string | null;
-  storyCode: string | null;
+  projectCode: string;
+  projectName: string;
+  responsibleName: string | null;
 };
 
-const num = (v: string | null): number | null => (v === null ? null : Number(v));
+type SpecRow = { s: typeof kanoRequestSpecs.$inferSelect; responsibleName: string | null };
 
-function toDto(x: Row): KanoDto {
+function toSpecDto({ s: a, responsibleName }: SpecRow): KanoSpecDto {
+  return {
+    id: a.id,
+    label: a.label,
+    isCompleted: a.isCompleted,
+    completedAt: a.completedAt ? a.completedAt.toISOString() : null,
+    sortOrder: a.sortOrder,
+    targetDate: a.targetDate,
+    responsibleId: a.responsibleId,
+    responsibleName,
+  };
+}
+
+/** One batched query for a whole page of requests (no per-request lookups). */
+async function loadSpecs(tx: DbOrTx, requestIds: string[]): Promise<Map<string, KanoSpecDto[]>> {
+  const byRequest = new Map<string, KanoSpecDto[]>();
+  if (requestIds.length === 0) return byRequest;
+  const rows = await tx
+    .select({ s: kanoRequestSpecs, responsibleName: users.fullName })
+    .from(kanoRequestSpecs)
+    .leftJoin(users, eq(users.id, kanoRequestSpecs.responsibleId))
+    .where(inArray(kanoRequestSpecs.kanoRequestId, requestIds))
+    .orderBy(asc(kanoRequestSpecs.sortOrder), asc(kanoRequestSpecs.createdAt));
+  for (const a of rows) {
+    const list = byRequest.get(a.s.kanoRequestId) ?? [];
+    list.push(toSpecDto(a));
+    byRequest.set(a.s.kanoRequestId, list);
+  }
+  return byRequest;
+}
+
+/**
+ * Makes the stored spec checklist equal to the input: rows missing from the input are deleted, rows with an id are
+ * updated, rows without one are inserted. Array order becomes sort_order. completed_at follows is_completed.
+ */
+async function syncSpecs(tx: DbOrTx, requestId: string, input: KanoSpecInput[]) {
+  const existing = await tx
+    .select()
+    .from(kanoRequestSpecs)
+    .where(eq(kanoRequestSpecs.kanoRequestId, requestId));
+  const byId = new Map(existing.map((e) => [e.id, e]));
+  const keep = new Set<string>();
+  for (const a of input) {
+    if (!a.id) continue;
+    if (!byId.has(a.id)) throw unprocessable("Unknown spec for this request");
+    if (keep.has(a.id)) throw unprocessable("Duplicate spec id");
+    keep.add(a.id);
+  }
+  // A spec's person responsible follows the request rule; an unchanged (possibly now inactive) assignee is kept.
+  for (const a of input) {
+    if (a.responsibleId)
+      await assertResponsible(tx, a.responsibleId, a.id ? byId.get(a.id)?.responsibleId : null);
+  }
+  const removed = existing.filter((e) => !keep.has(e.id)).map((e) => e.id);
+  if (removed.length > 0) {
+    await tx.delete(kanoRequestSpecs).where(inArray(kanoRequestSpecs.id, removed));
+  }
+  if (input.length === 0) return;
+  const now = new Date();
+  await tx
+    .insert(kanoRequestSpecs)
+    .values(
+      input.map((a, i) => {
+        const done = a.isCompleted ?? false;
+        return {
+          id: a.id,
+          kanoRequestId: requestId,
+          label: a.label,
+          isCompleted: done,
+          completedAt: done ? (a.id && byId.get(a.id)?.completedAt) || now : null,
+          sortOrder: i,
+          targetDate: a.targetDate ?? null,
+          responsibleId: a.responsibleId ?? null,
+        };
+      }),
+    )
+    .onConflictDoUpdate({
+      target: kanoRequestSpecs.id,
+      set: {
+        label: sql`excluded.label`,
+        isCompleted: sql`excluded.is_completed`,
+        completedAt: sql`excluded.completed_at`,
+        sortOrder: sql`excluded.sort_order`,
+        targetDate: sql`excluded.target_date`,
+        responsibleId: sql`excluded.responsible_id`,
+      },
+    });
+}
+
+function toDto(x: Row, specs: KanoSpecDto[]): KanoDto {
   const r = x.r;
   return {
     id: r.id,
     projectId: r.projectId,
     code: r.code,
-    subprojectId: r.subprojectId,
-    subprojectCode: x.subprojectCode,
-    description: r.description,
-    requesterName: r.requesterName,
-    requesterRole: r.requesterRole,
+    projectCode: x.projectCode,
+    projectName: x.projectName,
+    revisionRequest: r.revisionRequest,
+    specs,
+    ...kanoCompletion(specs),
     kanoCategory: r.kanoCategory,
-    decision: r.decision,
-    targetSprintId: r.targetSprintId,
-    targetSprintName: x.sprintName,
-    targetReleaseId: r.targetReleaseId,
-    targetReleaseName: x.releaseName,
-    promotedStoryId: r.promotedStoryId,
-    promotedStoryCode: x.storyCode,
-    wsjfBusinessValue: r.wsjfBusinessValue,
-    wsjfTimeCriticality: r.wsjfTimeCriticality,
-    wsjfRiskReduction: r.wsjfRiskReduction,
-    wsjfJobSize: r.wsjfJobSize,
-    wsjfScore: num(r.wsjfScore),
-    riceReach: r.riceReach,
-    riceImpact: num(r.riceImpact),
-    riceConfidence: r.riceConfidence,
-    riceEffort: num(r.riceEffort),
-    riceScore: num(r.riceScore),
+    targetDate: r.targetDate,
+    responsibleId: r.responsibleId,
+    responsibleName: x.responsibleName,
     createdAt: r.createdAt.toISOString(),
   };
+}
+
+const responsible = alias(users, "kano_responsible");
+
+/** The person responsible must be an existing Team Member or PM; a new assignment must also be active. */
+async function assertResponsible(
+  tx: DbOrTx,
+  userId: string | null | undefined,
+  currentId?: string | null,
+) {
+  if (!userId) return;
+  const [u] = await tx
+    .select({ role: users.role, isActive: users.isActive })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!u || !(USER_ROLES as readonly string[]).includes(u.role)) {
+    throw unprocessable("Person responsible must be a Team Member or Project Manager");
+  }
+  if (!u.isActive && userId !== currentId) throw unprocessable("Person responsible is not active");
 }
 
 function baseQuery(tx: DbOrTx) {
   return tx
     .select({
       r: kanoRequests,
-      subprojectCode: subprojects.code,
-      sprintName: kanoSprint.name,
-      releaseName: kanoRelease.name,
-      storyCode: userStories.code,
+      projectCode: projects.code,
+      projectName: projects.name,
+      responsibleName: responsible.fullName,
     })
     .from(kanoRequests)
-    .leftJoin(subprojects, eq(subprojects.id, kanoRequests.subprojectId))
-    .leftJoin(kanoSprint, eq(kanoSprint.id, kanoRequests.targetSprintId))
-    .leftJoin(kanoRelease, eq(kanoRelease.id, kanoRequests.targetReleaseId))
-    .leftJoin(userStories, eq(userStories.id, kanoRequests.promotedStoryId));
+    .innerJoin(projects, eq(projects.id, kanoRequests.projectId))
+    .leftJoin(responsible, eq(responsible.id, kanoRequests.responsibleId));
 }
 
 async function assertWritable(tx: DbOrTx, projectId: string) {
@@ -94,35 +184,42 @@ async function assertWritable(tx: DbOrTx, projectId: string) {
 }
 
 export type KanoFilters = {
-  subprojectId?: string;
   kanoCategory?: KanoDto["kanoCategory"];
-  decision?: KanoDto["decision"];
   unevaluated?: boolean;
-  sort?: "wsjf" | "rice" | "code";
+  sort?: "newest" | "code";
+  /** Project visibility for the "all projects" listing; null (the default) is unrestricted. */
+  scope?: ProjectScope;
 };
 
-export async function listKano(projectId: string, f: KanoFilters = {}): Promise<KanoDto[]> {
-  const where: SQL[] = [eq(kanoRequests.projectId, projectId)];
-  if (f.subprojectId) where.push(eq(kanoRequests.subprojectId, f.subprojectId));
+/** Lists one project's requests, or every project's when `projectId` is omitted. */
+export async function listKano(
+  projectId: string | undefined,
+  f: KanoFilters = {},
+): Promise<KanoDto[]> {
+  const where: SQL[] = projectId ? [eq(kanoRequests.projectId, projectId)] : [];
+  const inScope = scopeCondition(kanoRequests.projectId, f.scope ?? null);
+  if (inScope) where.push(inScope);
   if (f.kanoCategory) where.push(eq(kanoRequests.kanoCategory, f.kanoCategory));
-  if (f.decision) where.push(eq(kanoRequests.decision, f.decision));
   if (f.unevaluated) where.push(sql`${kanoRequests.kanoCategory} IS NULL`);
   const order =
-    f.sort === "rice"
-      ? [sql`${kanoRequests.riceScore} DESC NULLS LAST`, asc(kanoRequests.seq)]
-      : f.sort === "code"
-        ? [asc(kanoRequests.seq)]
-        : [sql`${kanoRequests.wsjfScore} DESC NULLS LAST`, asc(kanoRequests.seq)];
+    f.sort === "code"
+      ? [asc(projects.code), asc(kanoRequests.seq)]
+      : [desc(kanoRequests.createdAt), desc(kanoRequests.seq)];
   const rows = await baseQuery(db)
     .where(and(...where))
     .orderBy(...order);
-  return rows.map(toDto);
+  const specs = await loadSpecs(
+    db,
+    rows.map((x) => x.r.id),
+  );
+  return rows.map((x) => toDto(x, specs.get(x.r.id) ?? []));
 }
 
 export async function getKano(id: string, tx: DbOrTx = db): Promise<KanoDto> {
   const [row] = await baseQuery(tx).where(eq(kanoRequests.id, id)).limit(1);
   if (!row) throw notFound("Request");
-  return toDto(row);
+  const specs = await loadSpecs(tx, [row.r.id]);
+  return toDto(row, specs.get(row.r.id) ?? []);
 }
 
 export async function createKano(
@@ -130,26 +227,26 @@ export async function createKano(
   projectId: string,
   input: CreateKanoInput,
 ): Promise<KanoDto> {
+  // The Project dropdown picks the owning project; the URL project is the default.
+  const targetProjectId = input.projectId ?? projectId;
   const id = await db.transaction(async (tx) => {
-    await assertWritable(tx, projectId);
+    await assertWritable(tx, targetProjectId);
+    await assertResponsible(tx, input.responsibleId);
     const row = await createKanoRequest(
       {
-        projectId,
+        projectId: targetProjectId,
         createdById: actor.id,
-        subprojectId: input.subprojectId ?? null,
-        description: input.description,
-        requesterName: input.requesterName,
-        requesterRole: input.requesterRole ?? undefined,
+        revisionRequest: input.revisionRequest,
+        targetDate: input.targetDate ?? null,
+        responsibleId: input.responsibleId ?? null,
       },
       tx,
     );
+    await syncSpecs(tx, row.id, input.specs ?? []);
     return row.id;
   });
   return getKano(id);
 }
-
-const str = (n: number | null | undefined): string | null | undefined =>
-  n === undefined ? undefined : n === null ? null : String(n);
 
 export async function updateKano(id: string, patch: UpdateKanoInput): Promise<KanoDto> {
   await db.transaction(async (tx) => {
@@ -161,20 +258,50 @@ export async function updateKano(id: string, patch: UpdateKanoInput): Promise<Ka
       .limit(1);
     if (!current) throw notFound("Request");
     await assertWritable(tx, current.projectId);
-    const { riceImpact, riceEffort, ...rest } = patch;
+    await assertResponsible(tx, patch.responsibleId, current.responsibleId);
+    const { projectId: nextProjectId, specs, ...rest } = patch;
     const set: Partial<typeof kanoRequests.$inferInsert> = { ...rest };
-    const impact = str(riceImpact);
-    const effort = str(riceEffort);
-    if (impact !== undefined) set.riceImpact = impact;
-    if (effort !== undefined) set.riceEffort = effort;
+    if (nextProjectId !== undefined && nextProjectId !== current.projectId) {
+      await assertWritable(tx, nextProjectId);
+      set.projectId = nextProjectId;
+      set.seq = await nextSeq(tx, nextProjectId, "req");
+    }
     for (const k of Object.keys(set) as Array<keyof typeof set>) {
       if (set[k] === undefined) delete set[k];
     }
     if (Object.keys(set).length > 0) {
       await tx.update(kanoRequests).set(set).where(eq(kanoRequests.id, id));
     }
+    if (specs !== undefined) await syncSpecs(tx, id, specs);
   });
   return getKano(id);
+}
+
+/** Flips one spec without touching the request. completed_at is set on first completion, cleared on undo. */
+export async function setKanoSpecCompleted(
+  requestId: string,
+  specId: string,
+  isCompleted: boolean,
+): Promise<KanoDto> {
+  await db.transaction(async (tx) => {
+    const [req] = await tx
+      .select({ projectId: kanoRequests.projectId })
+      .from(kanoRequests)
+      .where(eq(kanoRequests.id, requestId))
+      .limit(1);
+    if (!req) throw notFound("Request");
+    await assertWritable(tx, req.projectId);
+    const [row] = await tx
+      .update(kanoRequestSpecs)
+      .set({
+        isCompleted,
+        completedAt: isCompleted ? sql`coalesce(${kanoRequestSpecs.completedAt}, now())` : null,
+      })
+      .where(and(eq(kanoRequestSpecs.id, specId), eq(kanoRequestSpecs.kanoRequestId, requestId)))
+      .returning({ id: kanoRequestSpecs.id });
+    if (!row) throw notFound("Spec");
+  });
+  return getKano(requestId);
 }
 
 export async function deleteKano(id: string): Promise<void> {
@@ -183,60 +310,4 @@ export async function deleteKano(id: string): Promise<void> {
     .where(eq(kanoRequests.id, id))
     .returning({ id: kanoRequests.id });
   if (!row) throw notFound("Request");
-}
-
-/** Turns a request into a backlog user story in its subproject and links the two. */
-export async function promoteKano(
-  actor: Actor,
-  id: string,
-  input: PromoteKanoInput,
-): Promise<{ request: KanoDto; storyId: string }> {
-  const storyId = await db.transaction(async (tx) => {
-    const [req] = await tx
-      .select()
-      .from(kanoRequests)
-      .where(eq(kanoRequests.id, id))
-      .for("update")
-      .limit(1);
-    if (!req) throw notFound("Request");
-    await assertWritable(tx, req.projectId);
-    if (req.promotedStoryId) throw conflict("This request has already been promoted to a story");
-    if (!req.subprojectId) {
-      throw unprocessable("Assign a subproject before promoting: stories live in a subproject");
-    }
-    if (input.journeyStepId) {
-      const [step] = await tx
-        .select({ subprojectId: journeySteps.subprojectId })
-        .from(journeySteps)
-        .where(eq(journeySteps.id, input.journeyStepId))
-        .limit(1);
-      if (!step || step.subprojectId !== req.subprojectId) throw notFound("Journey step");
-    }
-    const [last] = await tx
-      .select({ p: sql<number | null>`max(${userStories.position})` })
-      .from(userStories)
-      .where(
-        and(
-          eq(userStories.subprojectId, req.subprojectId),
-          input.journeyStepId
-            ? eq(userStories.journeyStepId, input.journeyStepId)
-            : sql`${userStories.journeyStepId} IS NULL`,
-        ),
-      );
-    const story = await createStory(
-      {
-        projectId: req.projectId,
-        createdById: actor.id,
-        subprojectId: req.subprojectId,
-        story: input.story ?? req.description,
-        journeyStepId: input.journeyStepId ?? null,
-        releaseId: req.targetReleaseId,
-        position: (last?.p ?? -1) + 1,
-      },
-      tx,
-    );
-    await tx.update(kanoRequests).set({ promotedStoryId: story.id }).where(eq(kanoRequests.id, id));
-    return story.id;
-  });
-  return { request: await getKano(id), storyId };
 }

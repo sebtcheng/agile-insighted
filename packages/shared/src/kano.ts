@@ -1,103 +1,100 @@
 import { z } from "zod";
-import { KANO_CATEGORIES, KANO_DECISIONS, WSJF_VALUES } from "./enums";
+import { KANO_CATEGORIES } from "./enums";
 
 const id = z.string().uuid();
 const text = (max: number) => z.string().trim().min(1).max(max);
-const optionalText = (max: number) => z.string().trim().max(max).nullable().optional();
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
 
 // ---- Kano Request Tracker (Phase 7)
 export const kanoCategorySchema = z.enum(KANO_CATEGORIES);
-export const kanoDecisionSchema = z.enum(KANO_DECISIONS);
 export type KanoCategory = z.infer<typeof kanoCategorySchema>;
-export type KanoDecision = z.infer<typeof kanoDecisionSchema>;
 
-export const KANO_DECISION_LABELS: Record<KanoDecision, string> = {
-  approve_mvp: "Approve for MVP",
-  prioritize_sprint: "Prioritize for sprint",
-  schedule_release: "Schedule for release",
-  research_spike: "Research spike",
-  deprioritize: "Deprioritize",
-};
-export const RICE_IMPACT_VALUES = [0.25, 0.5, 1, 2, 3] as const;
-
-const wsjfValue = z
-  .number()
-  .int()
-  .refine((n) => (WSJF_VALUES as readonly number[]).includes(n), {
-    message: "Use 1, 2, 3, 5, 8, 13 or 20",
-  });
-const riceImpact = z.number().refine((n) => (RICE_IMPACT_VALUES as readonly number[]).includes(n), {
-  message: "Use 0.25, 0.5, 1, 2 or 3",
+export const MAX_KANO_SPECS = 20;
+/** One revision spec. `id` present = existing row to update; absent = new row. Array order is the display order. */
+export const kanoSpecInputSchema = z.object({
+  id: id.optional(),
+  label: text(500),
+  isCompleted: z.boolean().default(false),
+  targetDate: isoDate.nullable().optional(),
+  responsibleId: id.nullable().optional(),
 });
+const kanoSpecsInput = z.array(kanoSpecInputSchema).max(MAX_KANO_SPECS);
+export const toggleKanoSpecSchema = z.object({ isCompleted: z.boolean() });
 
 export const createKanoSchema = z.object({
-  subprojectId: id.nullable().optional(),
-  description: text(2000),
-  requesterName: text(120),
-  requesterRole: optionalText(120),
+  /** Owning project; defaults to the project in the URL. */
+  projectId: id.optional(),
+  revisionRequest: text(2000),
+  specs: kanoSpecsInput.optional(),
+  targetDate: isoDate.nullable().optional(),
+  responsibleId: id.nullable().optional(),
 });
 export const updateKanoSchema = z
   .object({
-    subprojectId: id.nullable(),
-    description: text(2000),
-    requesterName: text(120),
-    requesterRole: optionalText(120),
+    projectId: id,
+    revisionRequest: text(2000),
+    specs: kanoSpecsInput,
     kanoCategory: kanoCategorySchema.nullable(),
-    decision: kanoDecisionSchema.nullable(),
-    targetSprintId: id.nullable(),
-    targetReleaseId: id.nullable(),
-    wsjfBusinessValue: wsjfValue.nullable(),
-    wsjfTimeCriticality: wsjfValue.nullable(),
-    wsjfRiskReduction: wsjfValue.nullable(),
-    wsjfJobSize: wsjfValue.nullable(),
-    riceReach: z.number().int().min(0).max(100_000_000).nullable(),
-    riceImpact: riceImpact.nullable(),
-    riceConfidence: z.number().int().min(0).max(100).nullable(),
-    riceEffort: z.number().gt(0).max(100_000).nullable(),
+    targetDate: isoDate.nullable(),
+    responsibleId: id.nullable(),
   })
   .partial();
 export const kanoListQuerySchema = z.object({
-  subprojectId: id.optional(),
   kanoCategory: kanoCategorySchema.optional(),
-  decision: kanoDecisionSchema.optional(),
   unevaluated: z.enum(["true", "false"]).optional(),
-  sort: z.enum(["wsjf", "rice", "code"]).optional(),
+  sort: z.enum(["newest", "code"]).optional(),
 });
-export const promoteKanoSchema = z.object({
-  story: text(1000).optional(),
-  journeyStepId: id.nullable().optional(),
-});
-
+export type KanoSpecInput = z.input<typeof kanoSpecInputSchema>;
+export type ToggleKanoSpecInput = z.infer<typeof toggleKanoSpecSchema>;
 export type CreateKanoInput = z.infer<typeof createKanoSchema>;
 export type UpdateKanoInput = z.infer<typeof updateKanoSchema>;
-export type PromoteKanoInput = z.infer<typeof promoteKanoSchema>;
+
+export type KanoSpecDto = {
+  id: string;
+  label: string;
+  isCompleted: boolean;
+  completedAt: string | null;
+  sortOrder: number;
+  targetDate: string | null;
+  responsibleId: string | null;
+  responsibleName: string | null;
+};
+
+/** Completion is derived from the specs, never stored: complete only when there is at least one spec and all are done. */
+export function kanoCompletion(specs: ReadonlyArray<{ isCompleted: boolean }>): {
+  specsTotal: number;
+  specsCompleted: number;
+  completionPercent: number;
+  isComplete: boolean;
+} {
+  const specsTotal = specs.length;
+  const specsCompleted = specs.filter((s) => s.isCompleted).length;
+  return {
+    specsTotal,
+    specsCompleted,
+    completionPercent: specsTotal === 0 ? 0 : Math.round((specsCompleted / specsTotal) * 100),
+    isComplete: specsTotal > 0 && specsCompleted === specsTotal,
+  };
+}
 
 export type KanoDto = {
   id: string;
   projectId: string;
   code: string;
-  subprojectId: string | null;
-  subprojectCode: string | null;
-  description: string;
-  requesterName: string;
-  requesterRole: string | null;
+  projectCode: string;
+  projectName: string;
+  revisionRequest: string;
+  specs: KanoSpecDto[];
+  specsTotal: number;
+  specsCompleted: number;
+  /** 0-100, rounded; 0 when there are no specs. */
+  completionPercent: number;
+  /** True only when there is at least one spec and every spec is done. */
+  isComplete: boolean;
   kanoCategory: KanoCategory | null;
-  decision: KanoDecision | null;
-  targetSprintId: string | null;
-  targetSprintName: string | null;
-  targetReleaseId: string | null;
-  targetReleaseName: string | null;
-  promotedStoryId: string | null;
-  promotedStoryCode: string | null;
-  wsjfBusinessValue: number | null;
-  wsjfTimeCriticality: number | null;
-  wsjfRiskReduction: number | null;
-  wsjfJobSize: number | null;
-  wsjfScore: number | null;
-  riceReach: number | null;
-  riceImpact: number | null;
-  riceConfidence: number | null;
-  riceEffort: number | null;
-  riceScore: number | null;
+  /** Deprecated: dates now live on each spec. Kept so legacy requests still serialize. */
+  targetDate: string | null;
+  responsibleId: string | null;
+  responsibleName: string | null;
   createdAt: string;
 };

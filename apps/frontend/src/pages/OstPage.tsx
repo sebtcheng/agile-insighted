@@ -28,7 +28,7 @@ import {
   useDeleteOutcome,
   useDeleteSolution,
   useOstTree,
-  useSubprojects,
+  useProjects,
   useUpdateOpportunity,
   useUpdateOutcome,
   useUpdateSolution,
@@ -41,6 +41,7 @@ import { SolutionCheck } from "../components/SolutionCheck";
 import { OstActionBar } from "../components/OstActionBar";
 import { OstTable } from "../components/OstTable";
 import { PageHeader, QueryState, fmtDate, toast } from "../components/ui";
+import { RequirementModal, stepsToDrafts } from "../components/RequirementModal";
 import { ViewModeToggle } from "../components/ViewModeToggle";
 import { useViewMode } from "../lib/viewMode";
 import { outcomeSolutions, solutionProgress } from "../lib/ostOptimistic";
@@ -53,14 +54,8 @@ type Dialog =
   | { kind: "solution"; opportunityId: string; existing?: SolutionDto }
   | null;
 
-const toNum = (s: string): number | null => (s === "" ? null : Number(s));
-
-function metricLine(o: OutcomeDto): string | null {
-  if (!o.metricName && o.targetValue === null) return null;
-  const from = o.baselineValue === null ? "?" : String(o.baselineValue);
-  const to = o.targetValue === null ? "?" : String(o.targetValue);
-  const by = o.targetDate ? ` by ${fmtDate(o.targetDate)}` : "";
-  return `${o.metricName ?? "Metric"}: ${from} → ${to}${by}`;
+function targetLine(o: OutcomeDto): string | null {
+  return o.targetDate ? `Target date: ${fmtDate(o.targetDate)}` : null;
 }
 
 export type OstCtx = {
@@ -71,7 +66,7 @@ export type OstCtx = {
   openSolution: (id: string) => void;
 };
 
-/** A solution is the action under an opportunity: tick it when done. */
+/** A solution is the action under a requirement: tick it when done. */
 function SolutionRow({ s, ctx }: { s: SolutionDto; ctx: OstCtx }) {
   const remove = useDeleteSolution();
   const canEdit = ctx.isPm && !ctx.readOnly;
@@ -80,9 +75,14 @@ function SolutionRow({ s, ctx }: { s: SolutionDto; ctx: OstCtx }) {
       <Group justify="space-between" wrap="wrap" py={4} align="flex-start">
         <div style={{ minWidth: 0, flex: 1 }}>
           <SolutionCheck solution={s} editable={canEdit} />
-          {s.ownerName ? (
+          {s.ownerName || s.targetDate ? (
             <Text size="xs" c="dimmed" ml={26}>
-              Owner {s.ownerName}
+              {[
+                s.ownerName ? `Owner ${s.ownerName}` : null,
+                s.targetDate ? `due ${fmtDate(s.targetDate)}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </Text>
           ) : null}
         </div>
@@ -129,15 +129,10 @@ function OpportunityNode({ o, ctx }: { o: OpportunityDto; ctx: OstCtx }) {
             <Text fw={600}>{o.title}</Text>
             {o.isTargeted ? <Badge>Targeted</Badge> : null}
           </Group>
-          {o.evidence ? (
-            <Text size="xs" c="dimmed">
-              Evidence: {o.evidence}
-            </Text>
-          ) : null}
         </div>
         {canEdit ? (
           <OstActionBar
-            scope="opportunity"
+            scope="requirement"
             create={[
               {
                 label: "Add solution",
@@ -150,7 +145,7 @@ function OpportunityNode({ o, ctx }: { o: OpportunityDto; ctx: OstCtx }) {
                 : [
                     {
                       label: "Target this",
-                      hint: "Mark as the opportunity to solve now",
+                      hint: "Mark as the requirement to solve now",
                       onClick: () =>
                         update.mutate(
                           { id: o.id, patch: { isTargeted: true } },
@@ -172,7 +167,7 @@ function OpportunityNode({ o, ctx }: { o: OpportunityDto; ctx: OstCtx }) {
       </Group>
       {thin ? (
         <Alert color="yellow" mt="xs" p="xs">
-          This is the targeted opportunity but has {solutions.length} of {MIN_SOLUTIONS_PER_TARGET}{" "}
+          This is the targeted requirement but has {solutions.length} of {MIN_SOLUTIONS_PER_TARGET}{" "}
           solutions. Compare at least {MIN_SOLUTIONS_PER_TARGET} different ideas before committing.
         </Alert>
       ) : null}
@@ -201,13 +196,13 @@ function OutcomeHeader({
   onDeleted: () => void;
 }) {
   const remove = useDeleteOutcome();
-  const line = metricLine(outcome);
+  const line = targetLine(outcome);
   const canEdit = ctx.isPm && !ctx.readOnly;
   return (
     <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
       <div style={{ minWidth: 0 }}>
         <Text size="xs" fw={700} tt="uppercase" c="dimmed">
-          Outcome{outcome.subprojectName ? `, ${outcome.subprojectName}` : ""}
+          Outcome, {outcome.projectName}
         </Text>
         <Text fz={18} fw={700}>
           {outcome.title}
@@ -232,7 +227,7 @@ function OutcomeHeader({
   );
 }
 
-/** Body of the side modal: opportunities for this outcome, each with its solutions as the actions. */
+/** Body of the side modal: requirements for this outcome, each with its solutions as the actions. */
 function OutcomeDetail({ outcome, ctx }: { outcome: OutcomeDto; ctx: OstCtx }) {
   const opportunities = ctx.tree.opportunities.filter((o) => o.outcomeId === outcome.id);
   const canEdit = ctx.isPm && !ctx.readOnly;
@@ -240,7 +235,7 @@ function OutcomeDetail({ outcome, ctx }: { outcome: OutcomeDto; ctx: OstCtx }) {
     <Stack gap="xs">
       <Group justify="space-between" align="center">
         <Text size="xs" fw={700} tt="uppercase" c="dimmed">
-          Opportunities
+          Requirements
         </Text>
         {canEdit ? (
           <Button
@@ -248,13 +243,13 @@ function OutcomeDetail({ outcome, ctx }: { outcome: OutcomeDto; ctx: OstCtx }) {
             variant="light"
             onClick={() => ctx.setDialog({ kind: "opportunity", outcomeId: outcome.id })}
           >
-            Add opportunity
+            Add requirements
           </Button>
         ) : null}
       </Group>
       {opportunities.length === 0 ? (
         <Text size="sm" c="dimmed">
-          No opportunities yet. Start with the customer pain points that block this outcome.
+          No requirements yet. Add the requirements to make this outcome a reality.
         </Text>
       ) : (
         opportunities.map((o) => <OpportunityNode key={o.id} o={o} ctx={ctx} />)
@@ -263,11 +258,11 @@ function OutcomeDetail({ outcome, ctx }: { outcome: OutcomeDto; ctx: OstCtx }) {
   );
 }
 
-/** Compact grid card; opens the opportunities and their solution actions in a slide-over. */
+/** Compact grid card; opens the requirements and their solution actions in a slide-over. */
 export function OutcomeCard({ outcome, ctx }: { outcome: OutcomeDto; ctx: OstCtx }) {
   const [opened, setOpened] = useState(false);
   const { done, total } = solutionProgress(outcomeSolutions(ctx.tree, outcome.id));
-  const line = metricLine(outcome);
+  const line = targetLine(outcome);
   return (
     <>
       <Card withBorder p="md" h="100%">
@@ -277,7 +272,7 @@ export function OutcomeCard({ outcome, ctx }: { outcome: OutcomeDto; ctx: OstCtx
           aria-label={`View steps for ${outcome.title}`}
         >
           <Text size="xs" fw={700} tt="uppercase" c="dimmed">
-            Outcome{outcome.subprojectName ? `, ${outcome.subprojectName}` : ""}
+            Outcome, {outcome.projectName}
           </Text>
           <Text fz={16} fw={700} lineClamp={2}>
             {outcome.title}
@@ -311,11 +306,19 @@ export function OstPage() {
   const isPm = useIsPm();
   const [viewMode, setViewMode] = useViewMode("card");
   const [params, setParams] = useSearchParams();
-  const { project } = useCurrentProject();
-  const subprojects = useSubprojects(project?.id);
+  // PMs see every project's outcomes by default; others see one project at a time.
+  const scope = params.get("project") ?? (isPm ? "all" : null);
+  const isAll = scope === "all";
+  const { project } = useCurrentProject(isAll ? null : scope);
+  const setScope = (v: string | null) => {
+    const next = new URLSearchParams(params);
+    if (v) next.set("project", v);
+    else next.delete("project");
+    setParams(next, { replace: true });
+  };
   const users = useUsers();
-  const subprojectId = params.get("subprojectId") ?? undefined;
-  const query = useOstTree(project?.id, subprojectId);
+  const projects = useProjects();
+  const query = useOstTree(isAll ? "all" : project?.id);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const readOnly = !project || !!project.archivedAt;
@@ -329,32 +332,21 @@ export function OstPage() {
   const close = () => setDialog(null);
   const done = { onSuccess: close, onError: (e: Error) => toast.error(e.message) };
 
+  const projectOptions = (projects.data ?? [])
+    .filter((p) => !p.archivedAt)
+    .map((p) => ({ value: p.id, label: p.name }));
   const outcomeFields: QuickField[] = [
     { key: "title", label: "Business outcome", required: true },
     { key: "description", label: "Description", kind: "textarea" },
-    { key: "metricName", label: "Metric", description: "What you will measure" },
-    { key: "baselineValue", label: "Baseline", kind: "number" },
-    { key: "targetValue", label: "Target", kind: "number" },
     { key: "targetDate", label: "Target date", kind: "date" },
-    {
-      key: "subprojectId",
-      label: "Subproject",
-      kind: "select",
-      options: (subprojects.data ?? []).map((s) => ({ value: s.id, label: s.name })),
-    },
-  ];
-  const oppFields: QuickField[] = [
-    {
-      key: "title",
-      label: "Customer opportunity",
-      description: "A pain point or need",
-      required: true,
-    },
-    { key: "evidence", label: "Evidence", kind: "textarea" },
-    { key: "description", label: "Notes", kind: "textarea" },
+    // An outcome stays in the project it was created in, so the choice only applies when adding.
+    ...(dialog?.kind === "outcome" && dialog.existing
+      ? []
+      : [{ key: "projectId", label: "Project", kind: "select" as const, options: projectOptions }]),
   ];
   const solFields: QuickField[] = [
     { key: "title", label: "Potential solution", required: true },
+    { key: "targetDate", label: "Target date", kind: "date" },
     {
       key: "ownerId",
       label: "Owner",
@@ -369,7 +361,7 @@ export function OstPage() {
     <>
       <PageHeader
         title="Opportunity Solution Tree"
-        subtitle="Start from an outcome, map the opportunities, and compare the solutions you could take as actions."
+        subtitle="Start from an outcome, map the requirements, and compare the solutions you could take as actions."
         actions={
           isPm && !readOnly ? (
             <Button onClick={() => setDialog({ kind: "outcome" })}>Add outcome</Button>
@@ -378,21 +370,12 @@ export function OstPage() {
       />
       <Group mb="md" align="flex-end" wrap="wrap">
         <Select
-          label="Subproject"
-          w={260}
-          clearable
-          placeholder="All subprojects"
-          data={(subprojects.data ?? []).map((s) => ({
-            value: s.id,
-            label: s.name,
-          }))}
-          value={subprojectId ?? null}
-          onChange={(v) => {
-            const next = new URLSearchParams(params);
-            if (v) next.set("subprojectId", v);
-            else next.delete("subprojectId");
-            setParams(next, { replace: true });
-          }}
+          label="Project"
+          allowDeselect={false}
+          w={200}
+          data={[...(isPm ? [{ value: "all", label: "All projects" }] : []), ...projectOptions]}
+          value={isAll ? "all" : (project?.id ?? null)}
+          onChange={setScope}
         />
         <div style={{ marginInlineStart: "auto" }}>
           <ViewModeToggle value={viewMode} onChange={setViewMode} />
@@ -422,14 +405,6 @@ export function OstPage() {
               {open ? (
                 <SolutionModal
                   solution={open}
-                  subprojects={subprojects.data ?? []}
-                  defaultSubprojectId={
-                    tree.outcomes.find(
-                      (o) =>
-                        o.id ===
-                        tree.opportunities.find((p) => p.id === open.opportunityId)?.outcomeId,
-                    )?.subprojectId ?? null
-                  }
                   isPm={isPm}
                   readOnly={readOnly}
                   onClose={() => setOpenId(null)}
@@ -451,62 +426,54 @@ export function OstPage() {
               ? {
                   title: dialog.existing.title,
                   description: dialog.existing.description ?? "",
-                  metricName: dialog.existing.metricName ?? "",
-                  baselineValue: dialog.existing.baselineValue?.toString() ?? "",
-                  targetValue: dialog.existing.targetValue?.toString() ?? "",
                   targetDate: dialog.existing.targetDate ?? "",
-                  subprojectId: dialog.existing.subprojectId ?? "",
                 }
-              : undefined
+              : { projectId: project?.id ?? "" }
           }
           onClose={close}
           onSubmit={(v) => {
             const input = {
               title: v.title ?? "",
               description: v.description || null,
-              metricName: v.metricName || null,
-              baselineValue: toNum(v.baselineValue ?? ""),
-              targetValue: toNum(v.targetValue ?? ""),
               targetDate: v.targetDate || null,
-              subprojectId: v.subprojectId || null,
             };
             if (dialog.existing)
               updateOutcome.mutate({ id: dialog.existing.id, patch: input }, done);
-            else createOutcome.mutate(input, done);
+            else
+              createOutcome.mutate(
+                { ...input, projectId: v.projectId || undefined },
+                {
+                  ...done,
+                  // Show the project the outcome landed in, otherwise it looks like nothing happened.
+                  onSuccess: () => {
+                    if (!isAll && v.projectId) setScope(v.projectId);
+                    close();
+                  },
+                },
+              );
           }}
         />
       ) : null}
       {dialog?.kind === "opportunity" ? (
-        <QuickModal
-          opened
-          title={dialog.existing ? "Edit opportunity" : "Add opportunity"}
-          fields={oppFields}
-          pending={createOpp.isPending || updateOpp.isPending}
-          initial={
+        <RequirementModal
+          title={dialog.existing ? "Edit requirement" : "Add requirements"}
+          initialTitle={dialog.existing?.title}
+          initialSteps={
             dialog.existing
-              ? {
-                  title: dialog.existing.title,
-                  evidence: dialog.existing.evidence ?? "",
-                  description: dialog.existing.description ?? "",
-                }
-              : undefined
+              ? stepsToDrafts(
+                  query.data?.solutions.filter((s) => s.opportunityId === dialog.existing?.id) ??
+                    [],
+                )
+              : []
           }
+          staffOptions={(users.data ?? [])
+            .filter((u) => u.isActive)
+            .map((u) => ({ value: u.id, label: u.fullName }))}
+          pending={createOpp.isPending || updateOpp.isPending}
           onClose={close}
-          onSubmit={(v) => {
-            const input = {
-              title: v.title ?? "",
-              evidence: v.evidence || null,
-              description: v.description || null,
-            };
+          onSubmit={(input) => {
             if (dialog.existing) updateOpp.mutate({ id: dialog.existing.id, patch: input }, done);
-            else
-              createOpp.mutate(
-                {
-                  outcomeId: dialog.outcomeId,
-                  input,
-                },
-                done,
-              );
+            else createOpp.mutate({ outcomeId: dialog.outcomeId, input }, done);
           }}
         />
       ) : null}

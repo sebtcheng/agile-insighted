@@ -13,3 +13,19 @@
   border-inline-start: 1px solid var(--mantine-color-default-border);
   padding-inline-start: 2px;
 }
+
+/* Story cards reuse the RAID card anatomy (raid-item, raid-card-foot, raid-action-check): equal heights per row,
+   date / status / actions pinned to the bottom, same border and shadow tokens. */
+.usm-card.raid-item {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border: 1px solid var(--border-muted);
+  box-shadow: var(--mantine-shadow-md);
+}
+.usm-card .raid-sub {
+  font-weight: 500;
+}
+.usm-completion {
+  flex-shrink: 0;
+}

@@ -1,23 +1,49 @@
-import { ActionIcon, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
+import { useRef } from "react";
+import { ActionIcon, Button, Checkbox, Group, Select, Stack, Text, TextInput } from "@mantine/core";
 import { MAX_MITIGATING_ACTIONS, type RaidItemDto } from "@myapp/shared";
 import { useToggleMitigatingAction } from "../api/hooks";
-import { toast } from "./ui";
+import { fmtDate, toast } from "./ui";
 
 /** Editable row in the drawer. `id` is set for rows that already exist on the server. */
-export type MitigatingActionDraft = { id?: string; description: string; isCompleted: boolean };
+export type MitigatingActionDraft = {
+  id?: string;
+  description: string;
+  isCompleted: boolean;
+  /** ISO yyyy-mm-dd; "" until the user picks a date. */
+  targetDate: string;
+  /** User id of the staff member responsible; "" until chosen. */
+  responsibleId: string;
+};
 
 /** Drawer control: add, rename, remove and tick actions. The whole list is saved with the item. */
 export function MitigatingActionsField({
   value,
   onChange,
+  staffOptions,
 }: {
   value: MitigatingActionDraft[];
   onChange: (next: MitigatingActionDraft[]) => void;
+  /** Same staff list the Owner dropdown uses, as Select data. */
+  staffOptions: Array<{ value: string; label: string }>;
 }) {
   const patch = (i: number, change: Partial<MitigatingActionDraft>) =>
     onChange(value.map((a, idx) => (idx === i ? { ...a, ...change } : a)));
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Enter adds a new action below instead of submitting the drawer form.
+  const addBelow = (i: number) => {
+    if (value.length >= MAX_MITIGATING_ACTIONS) return;
+    onChange([
+      ...value.slice(0, i + 1),
+      { description: "", isCompleted: false, targetDate: "", responsibleId: "" },
+      ...value.slice(i + 1),
+    ]);
+    // Focus the new row once React has rendered it.
+    requestAnimationFrame(() =>
+      rootRef.current?.querySelector<HTMLInputElement>(`[data-action-input="${i + 1}"]`)?.focus(),
+    );
+  };
   return (
-    <Stack gap="xs">
+    <Stack gap="xs" ref={rootRef}>
       <Text size="sm" fw={500}>
         Mitigating actions
       </Text>
@@ -36,10 +62,34 @@ export function MitigatingActionsField({
           <TextInput
             aria-label={`Action ${i + 1}`}
             placeholder="Describe the action"
-            style={{ flex: 1 }}
+            style={{ flex: 1, minWidth: 180 }}
             maxLength={500}
+            data-action-input={i}
             value={a.description}
             onChange={(e) => patch(i, { description: e.currentTarget.value })}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+              e.preventDefault();
+              if (a.description.trim()) addBelow(i);
+            }}
+          />
+          <TextInput
+            type="date"
+            aria-label={`Action ${i + 1} target date`}
+            w={150}
+            required
+            value={a.targetDate}
+            onChange={(e) => patch(i, { targetDate: e.currentTarget.value })}
+          />
+          <Select
+            aria-label={`Action ${i + 1} staff responsible`}
+            placeholder="Responsible"
+            w={190}
+            searchable
+            allowDeselect={false}
+            data={staffOptions}
+            value={a.responsibleId || null}
+            onChange={(v) => patch(i, { responsibleId: v ?? "" })}
           />
           <ActionIcon
             variant="subtle"
@@ -57,7 +107,12 @@ export function MitigatingActionsField({
           variant="default"
           className="side-modal-inline-btn"
           disabled={value.length >= MAX_MITIGATING_ACTIONS}
-          onClick={() => onChange([...value, { description: "", isCompleted: false }])}
+          onClick={() =>
+            onChange([
+              ...value,
+              { description: "", isCompleted: false, targetDate: "", responsibleId: "" },
+            ])
+          }
         >
           Add action
         </Button>
@@ -66,16 +121,28 @@ export function MitigatingActionsField({
   );
 }
 
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
 /** List/card display: each action with a checkbox. Ticking calls the dedicated toggle endpoint. */
-export function MitigationChecklist({ item, editable }: { item: RaidItemDto; editable: boolean }) {
+export function MitigationChecklist({
+  item,
+  editable,
+  hideCount = false,
+}: {
+  item: RaidItemDto;
+  editable: boolean;
+  hideCount?: boolean;
+}) {
   const toggle = useToggleMitigatingAction();
   if (item.mitigatingActions.length === 0) return null;
   const done = item.mitigatingActions.filter((a) => a.isCompleted).length;
   return (
     <div onClick={(e) => e.stopPropagation()}>
-      <Text size="xs" mt={2} className="raid-sub">
-        Mitigation: {done}/{item.mitigatingActions.length} done
-      </Text>
+      {hideCount ? null : (
+        <Text size="xs" mt={2} className="raid-sub">
+          Mitigation: {done}/{item.mitigatingActions.length} done
+        </Text>
+      )}
       <Stack gap="xs" mt="xs">
         {item.mitigatingActions.map((a) => (
           <Checkbox
@@ -84,7 +151,27 @@ export function MitigationChecklist({ item, editable }: { item: RaidItemDto; edi
             className="raid-action-check"
             checked={a.isCompleted}
             disabled={!editable || toggle.isPending}
-            label={a.description}
+            label={
+              <>
+                <span className="raid-action-text">{a.description}</span>
+                {a.targetDate || a.responsibleName ? (
+                  <span className="raid-action-meta">
+                    {a.targetDate ? (
+                      <span
+                        className="raid-action-due"
+                        data-overdue={!a.isCompleted && a.targetDate < todayIso() ? "" : undefined}
+                      >
+                        due {fmtDate(a.targetDate)}
+                      </span>
+                    ) : null}
+                    {a.targetDate && a.responsibleName ? " · " : null}
+                    {a.responsibleName ? (
+                      <span className="raid-action-person">{a.responsibleName}</span>
+                    ) : null}
+                  </span>
+                ) : null}
+              </>
+            }
             onChange={(e) =>
               toggle.mutate(
                 { raidItemId: item.id, actionId: a.id, isCompleted: e.currentTarget.checked },
