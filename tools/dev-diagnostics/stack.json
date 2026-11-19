@@ -1,0 +1,25 @@
+{
+  "devCommands": ["npm run dev:raw"],
+  "frontendDir": "apps/frontend",
+  "backendDir": "apps/backend",
+  "tsconfigDirs": ["apps/backend", "apps/frontend", "packages/shared"],
+  "linter": "oxlint",
+  "packageManager": "npm",
+  "playwright": false,
+  "has": {
+    "vite": true,
+    "react": true,
+    "react19": false,
+    "express": true,
+    "drizzle": true,
+    "pg": true,
+    "pino": true,
+    "tanstackQuery": true,
+    "eslint": true,
+    "oxlint": true,
+    "typescript": true,
+    "vitest": true,
+    "playwright": false
+  },
+  "notes": ["root dev already starts the backend: the runner wraps the original script unchanged"]
+}

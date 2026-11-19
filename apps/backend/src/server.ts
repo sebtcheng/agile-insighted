@@ -1,3 +1,4 @@
+import "./devtools/dev-bootstrap";
 import { createApp } from "./app";
 import { pool } from "./db/client";
 import { env } from "./env";

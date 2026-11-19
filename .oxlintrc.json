@@ -7,7 +7,7 @@
     "typescript/no-explicit-any": "error",
     "typescript/consistent-type-imports": "warn",
     "react/react-in-jsx-scope": "off",
-    "import/no-unassigned-import": ["warn", { "allow": ["**/*.css"] }]
+    "import/no-unassigned-import": ["warn", { "allow": ["**/*.css", "**/devtools/dev-bootstrap"] }]
   },
   "ignorePatterns": [
     "**/dist/**",

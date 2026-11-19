@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { instrumentPool } from "../devtools/pg-pool-instrument";
 import { env } from "../env";
 import * as schema from "./schema";
 
@@ -21,7 +22,7 @@ export function createPool(
   });
 }
 
-export const pool = createPool();
+export const pool = instrumentPool(createPool());
 export const db = drizzle(pool, { schema });
 
 export type Db = typeof db;

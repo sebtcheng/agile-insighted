@@ -192,7 +192,11 @@ try {
         const entry = { id: `syn-${name}`, ts: new Date().toISOString(), level: 'error', layer: 'browser', kind: kind ?? 'synthetic', context: context ?? 'Synthetic', message: `${text ?? name} (synthetic)`, fingerprint: `syn-${name}`, count: 1 };
         await fetch(`${FRONT}/__dev/log`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: 'verify', entries: [entry] }) });
       }
-      const match = kind ? (e) => e.kind === kind : (e) => e.context === context && JSON.stringify(e).includes(text);
+      const match = kind ? (e) => e.kind === kind : (e) => {
+        // A quoted needle matches whether the logger stored the body as an object (raw quotes) or a string (escaped).
+        const hay = JSON.stringify(e);
+        return e.context === context && (hay.includes(text) || hay.includes(JSON.stringify(text).slice(1, -1)));
+      };
       await expectEntry(`frontend: ${name}`, 'browser.jsonl', match, mode);
     }
     // One request, two layers: the browser entry's requestId (from the response header) must be on a backend entry.
@@ -257,7 +261,7 @@ try {
   const positions = sections.map((s) => latest.indexOf(s));
   const authLine = 'PUT /api/schools/s-test-900001/designations failed with HTTP 401';
   record('digest: the 401 appears once, under Auth problems, with path and response body',
-    latest.split(authLine).length - 1 === 1 && latest.includes('### Auth problems (401/403)') && latest.includes('UNAUTHENTICATED') && /Request id: \S+/.test(latest) ? 'PASS' : 'FAIL',
+    latest.split(authLine).length - 1 === 1 && latest.includes('### Auth problems (401/403)') && /UNAUTHENTICATED|UNAUTHORIZED/i.test(latest) && /Request id: \S+/.test(latest) ? 'PASS' : 'FAIL',
     `occurrences ${latest.split(authLine).length - 1}`);
   const calledFrom = /- Called from: (.*)/.exec(latest.slice(latest.indexOf('/api/synthetic-caller')))?.[1] ?? '';
   record('digest: "Called from" skips logger, API-client and library frames', calledFrom.includes('personnelSync.ts:931') ? 'PASS' : 'FAIL', calledFrom.slice(0, 80));

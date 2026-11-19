@@ -34,6 +34,26 @@ export default tseslint.config(
     plugins: { "react-hooks": reactHooks },
     rules: reactHooks.configs.recommended.rules,
   },
-  { files: ["**/*.config.{js,ts}"], ...tseslint.configs.disableTypeChecked },
+  {
+    files: ["**/*.config.{js,ts}", "tools/dev-diagnostics/*.mjs"],
+    ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    // Plain Node scripts (the dev runner and the log digest): give them the Node globals they use.
+    files: ["tools/dev-diagnostics/*.mjs"],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        console: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
+        URL: "readonly",
+        Buffer: "readonly",
+        fetch: "readonly",
+      },
+    },
+  },
   ...oxlint.configs["flat/recommended"], // keep last
 );

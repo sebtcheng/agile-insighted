@@ -3,6 +3,12 @@ import express, { type Express } from "express";
 import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import { pinoHttp } from "pino-http";
+import { pool } from "./db/client";
+import { devRequestMiddleware } from "./devtools/dev-diagnostics";
+import {
+  devErrorMiddleware,
+  registerDevFaultRoutes,
+} from "./devtools/express-dev-error-middleware";
 import { env } from "./env";
 import { logger } from "./logger";
 import { errorHandler, loadUser, notFoundHandler, requestId, requireJsonBody } from "./middleware";
@@ -22,6 +28,7 @@ export function createApp(): Express {
       customProps: (_req, res) => ({ requestId: String(res.locals.requestId) }),
     }),
   );
+  app.use(devRequestMiddleware());
   app.use(helmet());
   if (env.NODE_ENV !== "test") {
     app.use(
@@ -47,7 +54,12 @@ export function createApp(): Express {
   });
   app.use("/api", loadUser, api);
 
+  if (env.NODE_ENV !== "production" && env.NODE_ENV !== "test") {
+    registerDevFaultRoutes(app, { pool });
+  }
+
   app.use(notFoundHandler);
+  app.use(devErrorMiddleware);
   app.use(errorHandler);
   return app;
 }

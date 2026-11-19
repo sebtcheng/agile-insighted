@@ -46,3 +46,5 @@ Every UI task (new or changed screens, components, styling, motion) uses the Imp
 ## Skills
 
 Run on demand, not in a fixed order. Catalog in `docs/skills.md`.
+
+When troubleshooting or improving runtime behavior, read `.logs/LATEST.md` first (run `npm run logs:summary` to refresh it); raw entries are in `.logs/*.jsonl`.

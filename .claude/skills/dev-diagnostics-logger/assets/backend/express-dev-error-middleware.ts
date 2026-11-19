@@ -76,9 +76,13 @@ export function registerDevFaultRoutes(app: Application, deps: { pool?: Pool } =
     devLog('error', 'fault', 'Retention', `retention test ${tag}`);
     res.json({ ok: true });
   });
-  app.get(`${base}/async-reject`, localOnly, async () => {
-    await sleep(1);
-    throw new Error('Injected async rejection');
+  app.get(`${base}/async-reject`, localOnly, (_req, _res, next) => {
+    // An async handler that rejects. Express 4 does not forward the rejection by itself (apps wrap handlers
+    // for that), so forward it explicitly; this behaves the same on Express 4 and 5.
+    void (async () => {
+      await sleep(1);
+      throw new Error('Injected async rejection');
+    })().catch(next);
   });
   app.get(`${base}/unhandled-rejection`, localOnly, (_req, res) => {
     void Promise.reject(new Error('Injected unhandled rejection'));
