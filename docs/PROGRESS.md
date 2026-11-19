@@ -120,3 +120,81 @@ Verified by hand in the browser: login redirect, Home render, Portfolio and Work
 Not verified in the browser: creating and editing forms (project, subproject, sprint, release, user), the one-in-one-out dialog and the checklist tick flow (covered by backend tests only), mobile layout, and Playwright flows (not installed).
 
 Decisions: search results for a subproject open the project's activity list filtered to it; "current project" is the oldest open project unless the page is opened directly; the Settings and Releases screens operate on that project.
+
+## Phase 5: RAID Log (API + UI)
+
+Status: complete. Plain default Mantine, matching the rest of the frontend (see `DESIGN.md`).
+
+Built:
+
+- Shared: `raidTypeSchema`, `raidStatusSchema`, `createRaidSchema`, `updateRaidSchema`, `raidListQuerySchema`, `RaidItemDto`, labels in `ENUM_LABELS`.
+- Backend: `services/raidService.ts` (list with filters, create via `createRaidItem` and `nextSeq`, update, delete), `routes/modules.ts` (the router that Phases 6 to 8 extend), permissions `raid.create` (PM and team member) and `raid.manage` (PM only). `closed_at` follows status (set on close, cleared on reopen). Archived projects are read-only.
+- Frontend: `RaidPage` at `/raid` (filters in the URL, open items by default with an "Include closed" toggle, severity badge, overdue flag, PM inline status change, edit and delete, anyone can add).
+- Tests: `routes/raid.api.test.ts` (401, 403, codes, severity, validation, cross-project subproject rejected, close/reopen, filters, overdue).
+
+Decisions where the plan was silent:
+
+- Sorted open items first, then by severity (impact times likelihood, falling back to impact), then code.
+- Team members cannot edit or delete items after submitting; the PM owns triage.
+
+Not done: linking RAID dependencies to activities and the Portfolio open-high-RAID count already reads `raid_items`; no browser check of the form yet.
+
+## Phase 6: User Story Mapping (API + UI)
+
+Status: complete. Plain default Mantine.
+
+Built:
+
+- Shared: `packages/shared/src/stories.ts` (persona, journey step and story schemas, `StoryDto`, `StoryMapDto`), `storyStatusSchema` and `STORY_STATUS_LABELS`.
+- Backend: `services/storyService.ts` (map read model, personas, backbone and steps, stories, Definition of Ready checklist and gate), routes added to `routes/modules.ts`, permissions `story.create` (PM and team member) and `story.manage` (PM only). Ticking Definition of Ready items reuses `checklist_check.write`.
+- Gate: moving a story into a sprint, or from backlog or planning into in progress or completed, returns `422 dor_incomplete` with the missing labels. A PM can pass `overrideReason`, which writes a `gate_overrides` row (gate `dor`, entity `story`).
+- Frontend: `/usm` map (subproject picker, backbone over steps, release lanes with MVP marked, per-cell "+ Story", unmapped stories listed below), story dialog (edit, Definition of Ready ticks, override flow), add step and add persona dialogs, rename and delete steps.
+- Tests: `routes/story.api.test.ts` (401, 403, codes, ordering, validation, gate block, tick then allow, logged override, backlog changes not gated, step deletion keeps stories).
+
+Decisions where the plan was silent:
+
+- Team members can add stories and tick Definition of Ready items; only the PM shapes the map, edits stories and overrides.
+- A story is placed on a leaf column only (a step, or a backbone activity that has no steps). Stories on a missing or non-leaf step show under "Not on the map yet".
+- New stories go to the bottom of their step; vertical reordering by drag is not built (position is stored and editable through the API).
+
+Not done: drag and drop, linking activities to stories from the activity drawer (the count of linked activities is shown), keyboard reordering.
+
+## Phase 7: Kano Request Tracker (API + UI)
+
+Status: complete. Plain default Mantine.
+
+Built:
+
+- Shared: `packages/shared/src/kano.ts` (create, update, list and promote schemas, `KanoDto`, decision labels, RICE impact scale).
+- Backend: `services/kanoService.ts`, routes in `routes/modules.ts`, permissions `kano.create` (PM and team member) and `kano.manage` (PM only). WSJF and RICE scores are never accepted from the client: the database generated columns compute them from the inputs, and an incomplete input set leaves the score null. Lists sort by WSJF (default), RICE or code, with unscored requests last.
+- Promotion: `POST /api/kano/:id/promote` creates a backlog user story (next `USM` code, the request's subproject and target release, the request text unless overridden, bottom of the chosen step) and links it through `promoted_story_id`. A request is promoted once (409 after), and needs a subproject (422).
+- Frontend: `/kano` (filters for category, decision, subproject and "not evaluated yet", sort, anyone can submit, PM "Evaluate" dialog with category, decision, targets, WSJF and RICE inputs, promote and delete).
+- Tests: `routes/kano.api.test.ts`.
+
+Decisions where the plan was silent:
+
+- Promotion does not move the story into a sprint, so the Definition of Ready gate still applies when the PM does that on the story map. The request's target sprint is only recorded.
+- Deleting a promoted request keeps the story.
+
+Not done: promote into a chosen journey step from the UI (the API accepts `journeyStepId`), and a bulk categorize view.
+
+## Phase 8: Opportunity Solution Tree (API + UI)
+
+Status: complete. Plain default Mantine. All four discovery modules now have screens; the "Coming soon" page is removed.
+
+Built:
+
+- Shared: `packages/shared/src/ost.ts` (outcome, opportunity, solution, assumption and convert schemas, `OstTreeDto`, labels, `MIN_SOLUTIONS_PER_TARGET`).
+- Backend: `services/ostService.ts`, routes in `routes/modules.ts`, permissions `ost.manage` (PM) and `ost.contribute` (PM and team member). `GET /api/projects/:id/ost` returns the whole tree as four flat lists. Targeting an opportunity clears the previous target for its outcome; flagging a riskiest assumption moves the flag; every assumption change recalculates the solution's validation status in the same transaction.
+- Roles: team members add assumptions and record validation status, test and results; only the PM changes statements, categories, the riskiest flag, structure, and converts solutions.
+- Conversion: `POST /api/ost/solutions/:id/convert` creates a backlog story (next `USM` code, chosen subproject) and links it. An unvalidated solution returns `422 validation_incomplete`; a PM can pass `overrideReason`, which writes a `gate_overrides` row (gate `validation`, entity `solution`). A solution converts once.
+- Frontend: `/ost` (outcome cards with metric line, nested opportunities, targeted badge, a warning when a targeted opportunity has fewer than three solutions, solution rows, a dialog for assumptions with the convert-to-story flow and override). Shared `QuickModal` for the small forms.
+- Tests: `routes/ost.api.test.ts`.
+
+Decisions where the plan was silent:
+
+- The "3+ solutions" rule is a warning only, never a block.
+- A converted story lands unmapped at the top of the backlog until the PM places it on a journey step.
+- Deleting a converted solution keeps its story.
+
+Not done: dragging opportunities to re-parent them, a tree diagram view, and linking discovery activities to assumptions from the activity drawer.

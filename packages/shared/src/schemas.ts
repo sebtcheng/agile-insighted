@@ -18,6 +18,10 @@ import {
   trackSchema,
   userRoleSchema,
   workTypeSchema,
+  raidStatusSchema,
+  raidTypeSchema,
+  type RaidStatus,
+  type RaidType,
 } from "./enums";
 
 const id = z.string().uuid();
@@ -506,3 +510,60 @@ export type PersonItemsDto = {
   }>;
 };
 export type MeDto = { user: { id: string; email: string; fullName: string; role: UserRole } };
+
+// ---- RAID log (Phase 5)
+const level = z.number().int().min(1).max(3);
+export const createRaidSchema = z.object({
+  subprojectId: id.nullable().optional(),
+  itemType: raidTypeSchema,
+  description: text(2000),
+  impact: level,
+  likelihood: level.nullable().optional(),
+  mitigatingAction: optionalText(2000),
+  ownerId: id.nullable().optional(),
+  targetDate: isoDate.nullable().optional(),
+});
+export const updateRaidSchema = z
+  .object({
+    subprojectId: id.nullable(),
+    itemType: raidTypeSchema,
+    description: text(2000),
+    impact: level,
+    likelihood: level.nullable(),
+    mitigatingAction: optionalText(2000),
+    ownerId: id.nullable(),
+    status: raidStatusSchema,
+    targetDate: isoDate.nullable(),
+  })
+  .partial();
+export const raidListQuerySchema = z.object({
+  subprojectId: id.optional(),
+  itemType: raidTypeSchema.optional(),
+  status: raidStatusSchema.optional(),
+  ownerId: id.optional(),
+  openOnly: z.enum(["true", "false"]).optional(),
+});
+export type CreateRaidInput = z.infer<typeof createRaidSchema>;
+export type UpdateRaidInput = z.infer<typeof updateRaidSchema>;
+export type RaidItemDto = {
+  id: string;
+  projectId: string;
+  subprojectId: string | null;
+  subprojectCode: string | null;
+  code: string;
+  itemType: RaidType;
+  description: string;
+  impact: number;
+  likelihood: number | null;
+  severityScore: number | null;
+  mitigatingAction: string | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  raisedById: string;
+  raisedByName: string;
+  status: RaidStatus;
+  targetDate: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  isOverdue: boolean;
+};

@@ -99,4 +99,26 @@ export const ENUM_LABELS = {
   },
   track: { discovery: "Discovery", delivery: "Delivery" },
   health: { on_track: "On track", at_risk: "At risk", off_track: "Off track" },
+  raidType: { risk: "Risk", assumption: "Assumption", issue: "Issue", dependency: "Dependency" },
+  raidStatus: {
+    open: "Open",
+    in_progress: "In progress",
+    mitigated: "Mitigated",
+    closed: "Closed",
+  },
+  level: { 1: "Low", 2: "Medium", 3: "High" },
 } as const;
+
+export const raidTypeSchema = z.enum(RAID_TYPES);
+export const raidStatusSchema = z.enum(RAID_STATUSES);
+export type RaidType = z.infer<typeof raidTypeSchema>;
+export type RaidStatus = z.infer<typeof raidStatusSchema>;
+
+export const storyStatusSchema = z.enum(STORY_STATUSES);
+export type StoryStatus = z.infer<typeof storyStatusSchema>;
+export const STORY_STATUS_LABELS: Record<StoryStatus, string> = {
+  backlog: "Backlog",
+  planning: "Planning",
+  in_progress: "In progress",
+  completed: "Completed",
+};

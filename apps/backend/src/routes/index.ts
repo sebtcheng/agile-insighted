@@ -24,6 +24,7 @@ import * as queries from "../services/activityQueries";
 import * as authService from "../services/authService";
 import { getHome } from "../services/homeService";
 import { governance } from "./governance";
+import { modules } from "./modules";
 import { readModels } from "./readModels";
 import * as projects from "../services/projectService";
 import * as userService from "../services/userService";
@@ -274,6 +275,9 @@ api.use(governance);
 
 // ---- Phase 3: portfolio, workload, search
 api.use(readModels);
+
+// ---- Phases 5 to 8: RAID, Story Map, Kano, OST
+api.use(modules);
 
 // ---- home read model
 api.get(

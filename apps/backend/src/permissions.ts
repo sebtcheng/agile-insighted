@@ -25,6 +25,18 @@ export const PERMISSIONS = {
   "gate_override.read": ["pm"],
   "dependency.write": ["pm", "team_member"],
   "checklist_check.write": ["pm", "team_member"],
+  // Phase 5: team members submit RAID items; the PM edits, assigns owners and resolves them.
+  "raid.create": ["pm", "team_member"],
+  "raid.manage": ["pm"],
+  // Phase 6: team members propose stories and tick Definition of Ready items; the PM shapes the map.
+  "story.create": ["pm", "team_member"],
+  "story.manage": ["pm"],
+  // Phase 7: anyone can submit a request; the PM categorizes, scores, decides and promotes.
+  "kano.create": ["pm", "team_member"],
+  "kano.manage": ["pm"],
+  // Phase 8: the PM shapes the tree and converts solutions; team members add assumptions and record test results.
+  "ost.manage": ["pm"],
+  "ost.contribute": ["pm", "team_member"],
 } as const satisfies Record<string, readonly UserRole[]>;
 
 export type Action = keyof typeof PERMISSIONS;

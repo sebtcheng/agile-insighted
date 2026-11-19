@@ -13,7 +13,17 @@ import type {
   ChecklistTemplateDto,
   CommentDto,
   CreateActivityInput,
+  ConvertSolutionInput,
+  CreateAssumptionInput,
+  CreateJourneyStepInput,
+  CreateOpportunityInput,
+  CreateOutcomeInput,
+  CreateSolutionInput,
+  CreateKanoInput,
+  CreatePersonaInput,
   CreateProjectInput,
+  CreateStoryInput,
+  CreateRaidInput,
   CreateSprintInput,
   CreateSubprojectInput,
   CreateUserInput,
@@ -24,15 +34,32 @@ import type {
   PersonItemsDto,
   PortfolioResponse,
   ProjectDto,
+  RaidItemDto,
   ReleaseDto,
   ScopeChangeDto,
   SearchResponse,
   SprintCapacityDto,
+  KanoCategory,
+  KanoDecision,
+  KanoDto,
+  OstTreeDto,
+  PromoteKanoInput,
+  StoryChecklistItemDto,
+  StoryDto,
+  StoryMapDto,
   SprintDto,
   SubprojectDto,
   TagDto,
   UpdateActivityInput,
+  UpdateAssumptionInput,
+  UpdateJourneyStepInput,
+  UpdateOpportunityInput,
+  UpdateOutcomeInput,
+  UpdateSolutionInput,
+  UpdateKanoInput,
   UpdateProjectInput,
+  UpdateStoryInput,
+  UpdateRaidInput,
   UpdateSprintInput,
   UpdateSubprojectInput,
   UpdateUserInput,
@@ -404,3 +431,202 @@ export const useOverrides = () =>
     queryKey: ["overrides"],
     queryFn: async () => (await api.get<{ items: GateOverrideDto[] }>("/gate-overrides")).items,
   });
+
+// ---------------------------------------------------------------- RAID log (Phase 5)
+export type RaidFilters = {
+  subprojectId?: string;
+  itemType?: RaidItemDto["itemType"];
+  status?: RaidItemDto["status"];
+  ownerId?: string;
+  openOnly?: boolean;
+};
+export const useRaid = (projectId: string | undefined, f: RaidFilters) =>
+  useQuery({
+    queryKey: ["raid", projectId, f],
+    enabled: !!projectId,
+    placeholderData: keepPreviousData,
+    queryFn: async () =>
+      (
+        await api.get<{ items: RaidItemDto[] }>(`/projects/${projectId}/raid`, {
+          subprojectId: f.subprojectId,
+          itemType: f.itemType,
+          status: f.status,
+          ownerId: f.ownerId,
+          openOnly: f.openOnly ? "true" : undefined,
+        })
+      ).items,
+  });
+export const useCreateRaid = (projectId: string) =>
+  useAdminMutation(
+    (v: CreateRaidInput) => api.post<RaidItemDto>(`/projects/${projectId}/raid`, v),
+    ["raid", "portfolio"],
+  );
+export const useUpdateRaid = () =>
+  useAdminMutation(
+    (v: { id: string; patch: UpdateRaidInput }) => api.patch<RaidItemDto>(`/raid/${v.id}`, v.patch),
+    ["raid", "portfolio"],
+  );
+export const useDeleteRaid = () =>
+  useAdminMutation((id: string) => api.delete(`/raid/${id}`), ["raid", "portfolio"]);
+
+// ---------------------------------------------------------------- User Story Mapping (Phase 6)
+export const useStoryMap = (subprojectId: string | undefined) =>
+  useQuery({
+    queryKey: ["story-map", subprojectId],
+    enabled: !!subprojectId,
+    queryFn: () => api.get<StoryMapDto>("/story-map", { subprojectId }),
+  });
+export const useCreatePersona = (projectId: string) =>
+  useAdminMutation(
+    (v: CreatePersonaInput) => api.post(`/projects/${projectId}/personas`, v),
+    ["story-map"],
+  );
+export const useCreateStep = (subprojectId: string) =>
+  useAdminMutation(
+    (v: CreateJourneyStepInput) => api.post(`/subprojects/${subprojectId}/journey-steps`, v),
+    ["story-map"],
+  );
+export const useUpdateStep = () =>
+  useAdminMutation(
+    (v: { id: string; patch: UpdateJourneyStepInput }) =>
+      api.patch(`/journey-steps/${v.id}`, v.patch),
+    ["story-map"],
+  );
+export const useDeleteStep = () =>
+  useAdminMutation((id: string) => api.delete(`/journey-steps/${id}`), ["story-map"]);
+export const useCreateStory = (subprojectId: string) =>
+  useAdminMutation(
+    (v: CreateStoryInput) => api.post<StoryDto>(`/subprojects/${subprojectId}/stories`, v),
+    ["story-map"],
+  );
+export const useUpdateStory = () =>
+  useAdminMutation(
+    (v: { id: string; patch: UpdateStoryInput }) =>
+      api.patch<StoryDto>(`/stories/${v.id}`, v.patch),
+    ["story-map", "story-checklist", "overrides"],
+  );
+export const useDeleteStory = () =>
+  useAdminMutation((id: string) => api.delete(`/stories/${id}`), ["story-map"]);
+export const useStoryChecklist = (storyId: string | undefined) =>
+  useQuery({
+    queryKey: ["story-checklist", storyId],
+    enabled: !!storyId,
+    queryFn: async () =>
+      (await api.get<{ items: StoryChecklistItemDto[] }>(`/stories/${storyId}/checklist`)).items,
+  });
+export const useSetStoryCheck = (storyId: string) =>
+  useAdminMutation(
+    (v: { templateId: string; checked: boolean }) =>
+      api.put(`/stories/${storyId}/checklist/${v.templateId}`, { checked: v.checked }),
+    ["story-checklist", "story-map"],
+  );
+
+// ---------------------------------------------------------------- Kano Request Tracker (Phase 7)
+export type KanoFilters = {
+  subprojectId?: string;
+  kanoCategory?: KanoCategory;
+  decision?: KanoDecision;
+  unevaluated?: boolean;
+  sort?: "wsjf" | "rice" | "code";
+};
+export const useKano = (projectId: string | undefined, f: KanoFilters) =>
+  useQuery({
+    queryKey: ["kano", projectId, f],
+    enabled: !!projectId,
+    placeholderData: keepPreviousData,
+    queryFn: async () =>
+      (
+        await api.get<{ items: KanoDto[] }>(`/projects/${projectId}/kano`, {
+          subprojectId: f.subprojectId,
+          kanoCategory: f.kanoCategory,
+          decision: f.decision,
+          unevaluated: f.unevaluated ? "true" : undefined,
+          sort: f.sort,
+        })
+      ).items,
+  });
+export const useCreateKano = (projectId: string) =>
+  useAdminMutation(
+    (v: CreateKanoInput) => api.post<KanoDto>(`/projects/${projectId}/kano`, v),
+    ["kano"],
+  );
+export const useUpdateKano = () =>
+  useAdminMutation(
+    (v: { id: string; patch: UpdateKanoInput }) => api.patch<KanoDto>(`/kano/${v.id}`, v.patch),
+    ["kano"],
+  );
+export const useDeleteKano = () =>
+  useAdminMutation((id: string) => api.delete(`/kano/${id}`), ["kano"]);
+export const usePromoteKano = () =>
+  useAdminMutation(
+    (v: { id: string; input: PromoteKanoInput }) =>
+      api.post<{ request: KanoDto; storyId: string }>(`/kano/${v.id}/promote`, v.input),
+    ["kano", "story-map"],
+  );
+
+// ---------------------------------------------------------------- Opportunity Solution Tree (Phase 8)
+export const useOstTree = (projectId: string | undefined, subprojectId?: string) =>
+  useQuery({
+    queryKey: ["ost", projectId, subprojectId],
+    enabled: !!projectId,
+    queryFn: () => api.get<OstTreeDto>(`/projects/${projectId}/ost`, { subprojectId }),
+  });
+export const useCreateOutcome = (projectId: string) =>
+  useAdminMutation(
+    (v: CreateOutcomeInput) => api.post(`/projects/${projectId}/ost/outcomes`, v),
+    ["ost"],
+  );
+export const useUpdateOutcome = () =>
+  useAdminMutation(
+    (v: { id: string; patch: UpdateOutcomeInput }) => api.patch(`/ost/outcomes/${v.id}`, v.patch),
+    ["ost"],
+  );
+export const useDeleteOutcome = () =>
+  useAdminMutation((id: string) => api.delete(`/ost/outcomes/${id}`), ["ost"]);
+export const useCreateOpportunity = () =>
+  useAdminMutation(
+    (v: { outcomeId: string; input: CreateOpportunityInput }) =>
+      api.post(`/ost/outcomes/${v.outcomeId}/opportunities`, v.input),
+    ["ost"],
+  );
+export const useUpdateOpportunity = () =>
+  useAdminMutation(
+    (v: { id: string; patch: UpdateOpportunityInput }) =>
+      api.patch(`/ost/opportunities/${v.id}`, v.patch),
+    ["ost"],
+  );
+export const useDeleteOpportunity = () =>
+  useAdminMutation((id: string) => api.delete(`/ost/opportunities/${id}`), ["ost"]);
+export const useCreateSolution = () =>
+  useAdminMutation(
+    (v: { opportunityId: string; input: CreateSolutionInput }) =>
+      api.post(`/ost/opportunities/${v.opportunityId}/solutions`, v.input),
+    ["ost"],
+  );
+export const useUpdateSolution = () =>
+  useAdminMutation(
+    (v: { id: string; patch: UpdateSolutionInput }) => api.patch(`/ost/solutions/${v.id}`, v.patch),
+    ["ost"],
+  );
+export const useDeleteSolution = () =>
+  useAdminMutation((id: string) => api.delete(`/ost/solutions/${id}`), ["ost"]);
+export const useConvertSolution = () =>
+  useAdminMutation(
+    (v: { id: string; input: ConvertSolutionInput }) =>
+      api.post<{ storyId: string; storyCode: string }>(`/ost/solutions/${v.id}/convert`, v.input),
+    ["ost", "story-map", "overrides"],
+  );
+export const useCreateAssumption = () =>
+  useAdminMutation(
+    (v: { solutionId: string; input: CreateAssumptionInput }) =>
+      api.post(`/ost/solutions/${v.solutionId}/assumptions`, v.input),
+    ["ost"],
+  );
+export const useUpdateAssumption = () =>
+  useAdminMutation(
+    (v: { id: string; patch: UpdateAssumptionInput }) =>
+      api.patch(`/ost/assumptions/${v.id}`, v.patch),
+    ["ost"],
+  );
+export const useDeleteAssumption = () =>
+  useAdminMutation((id: string) => api.delete(`/ost/assumptions/${id}`), ["ost"]);
