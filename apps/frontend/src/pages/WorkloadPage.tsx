@@ -1,52 +1,10 @@
-import { Badge, Collapse, Group, Stack, Table, Text, UnstyledButton } from "@mantine/core";
+import { Badge, Collapse, Table, Text, UnstyledButton } from "@mantine/core";
 import { Fragment } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { WorkItem, WorkMemberRollup } from "@myapp/shared";
-import { WorkItemRow } from "../components/WorkItems";
-import { useCurrentProject, usePersonItems, useWorkload } from "../api/hooks";
-import { useOpenActivity } from "../components/ActivityRow";
-import { PageHeader, PriorityBadge, QueryState, StatusBadge, fmtDate } from "../components/ui";
-
-function PersonItems({ userId }: { userId: string }) {
-  const q = usePersonItems(userId);
-  const open = useOpenActivity();
-  return (
-    <QueryState query={q} isEmpty={(d) => d.groups.length === 0} empty="No open items.">
-      {(data) => (
-        <Stack gap="sm" p="sm">
-          {data.groups.map((g) => (
-            <div key={g.subprojectId ?? "none"}>
-              <Text size="xs" fw={700} tt="uppercase" c="dimmed">
-                {g.code ? `${g.code} ${g.name ?? ""}` : "No subproject"}
-              </Text>
-              {g.items.map((i) => (
-                <Group key={i.id} justify="space-between" wrap="nowrap" py={2}>
-                  <UnstyledButton onClick={() => open(i.id)} style={{ minWidth: 0 }}>
-                    <Text size="sm" lineClamp={1}>
-                      {i.title}
-                    </Text>
-                  </UnstyledButton>
-                  <Group gap={6} wrap="nowrap">
-                    {i.isBlocked ? (
-                      <Badge color="red" variant="light">
-                        Blocked
-                      </Badge>
-                    ) : null}
-                    <PriorityBadge priority={i.priority} />
-                    <StatusBadge status={i.status} />
-                    <Text size="xs" c="dimmed" miw={90}>
-                      {fmtDate(i.dueDate)}
-                    </Text>
-                  </Group>
-                </Group>
-              ))}
-            </div>
-          ))}
-        </Stack>
-      )}
-    </QueryState>
-  );
-}
+import { WorkItemsTable } from "../components/WorkItems";
+import { useProjects, useWorkload } from "../api/hooks";
+import { PageHeader, QueryState } from "../components/ui";
 
 function MemberCells({ m }: { m: WorkMemberRollup | undefined }) {
   return (
@@ -60,7 +18,13 @@ function MemberCells({ m }: { m: WorkMemberRollup | undefined }) {
   );
 }
 
-function WorkList({ items }: { items: WorkItem[] }) {
+function WorkList({
+  items,
+  projectNames,
+}: {
+  items: WorkItem[];
+  projectNames: Map<string, string>;
+}) {
   if (items.length === 0) {
     return (
       <Text c="dimmed" size="sm" p="sm">
@@ -68,34 +32,15 @@ function WorkList({ items }: { items: WorkItem[] }) {
       </Text>
     );
   }
-  return (
-    <Stack gap={0} pb="xs">
-      {items.map((i) => (
-        <WorkItemRow key={i.id} item={i} />
-      ))}
-    </Stack>
-  );
-}
-
-/** Items from OST, Kano, User Story Map and RAID; project activities are listed by PersonItems. */
-function ModuleItems({ m }: { m: WorkMemberRollup | undefined }) {
-  const items = (m?.items ?? []).filter((i) => i.sourceModule !== "project");
-  if (items.length === 0) return null;
-  return (
-    <div>
-      <Text size="xs" fw={700} tt="uppercase" c="dimmed" px="sm">
-        Other modules
-      </Text>
-      <WorkList items={items} />
-    </div>
-  );
+  return <WorkItemsTable items={items} projectNames={projectNames} checkable />;
 }
 
 export function WorkloadPage() {
   const [params, setParams] = useSearchParams();
   const expanded = params.get("person");
-  const { project } = useCurrentProject();
-  const query = useWorkload(project?.id);
+  const query = useWorkload();
+  const projects = useProjects();
+  const projectNames = new Map((projects.data ?? []).map((p) => [p.id, p.name]));
   const toggle = (id: string) => {
     const next = new URLSearchParams(params);
     if (expanded === id) next.delete("person");
@@ -113,25 +58,17 @@ export function WorkloadPage() {
           const byUser = new Map(data.members.map((m) => [m.userId, m]));
           const unassigned = byUser.get(null);
           return (
-            <Table.ScrollContainer minWidth={1100}>
+            <Table.ScrollContainer minWidth={700}>
               <Table verticalSpacing="xs">
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Person</Table.Th>
-                    <Table.Th>In progress / limit</Table.Th>
                     <Table.Th>Due this week</Table.Th>
-                    <Table.Th>Blocked</Table.Th>
-                    <Table.Th>Waiting on dependency</Table.Th>
                     <Table.Th>All tasks</Table.Th>
                     <Table.Th>Ongoing</Table.Th>
                     <Table.Th>On time</Table.Th>
                     <Table.Th>Delayed</Table.Th>
                     <Table.Th>Completed</Table.Th>
-                    <Table.Th>
-                      {data.items[0]?.sprint
-                        ? `${data.items[0].sprint.name}: assigned / capacity`
-                        : "Active sprint"}
-                    </Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -148,55 +85,21 @@ export function WorkloadPage() {
                             {r.fullName}
                           </UnstyledButton>
                         </Table.Td>
-                        <Table.Td>
-                          <Text
-                            c={r.overWipLimit ? "red" : undefined}
-                            fw={r.overWipLimit ? 700 : 400}
-                          >
-                            {r.inProgress} / {r.wipLimit}
-                            {r.overWipLimit ? " (over limit)" : ""}
-                          </Text>
-                        </Table.Td>
                         <Table.Td>{r.dueThisWeek}</Table.Td>
-                        <Table.Td>
-                          {r.blocked > 0 ? <Badge color="red">{r.blocked}</Badge> : 0}
-                        </Table.Td>
-                        <Table.Td>
-                          {r.waitingOnDependency > 0 ? (
-                            <Badge color="orange">{r.waitingOnDependency}</Badge>
-                          ) : (
-                            0
-                          )}
-                        </Table.Td>
-                        <Table.Td>
-                          {r.sprint ? (
-                            <Text
-                              c={r.overCapacity ? "red" : undefined}
-                              fw={r.overCapacity ? 700 : 400}
-                            >
-                              {r.sprintAssigned} / {r.sprintCapacity ?? "not set"}
-                              {r.overCapacity ? " (over capacity)" : ""}
-                            </Text>
-                          ) : (
-                            <Text c="dimmed" size="sm">
-                              No active sprint
-                            </Text>
-                          )}
-                        </Table.Td>
                         <MemberCells m={byUser.get(r.userId)} />
                       </Table.Tr>
                       <Table.Tr key={`${r.userId}-items`}>
                         <Table.Td
-                          colSpan={11}
+                          colSpan={7}
                           p={0}
                           style={{ borderBottom: expanded === r.userId ? undefined : "none" }}
                         >
                           <Collapse in={expanded === r.userId}>
                             {expanded === r.userId ? (
-                              <>
-                                <PersonItems userId={r.userId} />
-                                <ModuleItems m={byUser.get(r.userId)} />
-                              </>
+                              <WorkList
+                                items={byUser.get(r.userId)?.items ?? []}
+                                projectNames={projectNames}
+                              />
                             ) : null}
                           </Collapse>
                         </Table.Td>
@@ -206,7 +109,7 @@ export function WorkloadPage() {
                   {unassigned ? (
                     <Fragment key="unassigned">
                       <Table.Tr>
-                        <Table.Td colSpan={6}>
+                        <Table.Td colSpan={2}>
                           <UnstyledButton
                             onClick={() => toggle("unassigned")}
                             aria-expanded={expanded === "unassigned"}
@@ -218,9 +121,9 @@ export function WorkloadPage() {
                         <MemberCells m={unassigned} />
                       </Table.Tr>
                       <Table.Tr>
-                        <Table.Td colSpan={11} p={0} style={{ borderBottom: "none" }}>
+                        <Table.Td colSpan={7} p={0} style={{ borderBottom: "none" }}>
                           <Collapse in={expanded === "unassigned"}>
-                            <WorkList items={unassigned.items} />
+                            <WorkList items={unassigned.items} projectNames={projectNames} />
                           </Collapse>
                         </Table.Td>
                       </Table.Tr>

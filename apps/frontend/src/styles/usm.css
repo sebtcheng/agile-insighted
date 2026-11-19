@@ -29,3 +29,70 @@
 .usm-completion {
   flex-shrink: 0;
 }
+
+/* Step track: journey steps run left to right and scroll sideways; cards never shrink. */
+.usm-track {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  padding-block: 4px 12px;
+}
+.usm-slot {
+  flex: 0 0 auto;
+  display: flex;
+}
+.usm-step {
+  width: 260px;
+  min-width: 260px;
+  height: 100%;
+  overflow: hidden;
+}
+.usm-step[data-drop="before"] {
+  box-shadow: -4px 0 0 0 var(--brand-primary);
+}
+.usm-step[data-drop="after"] {
+  box-shadow: 4px 0 0 0 var(--brand-primary);
+}
+.usm-step-number {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--brand-primary);
+}
+.usm-insert {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Drag handle: a quiet strip that shows its grip on hover or keyboard focus within the card. */
+.usm-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--text-secondary);
+  cursor: grab;
+  opacity: 0.45;
+  transition: var(--ui-transition);
+}
+.usm-step:hover .usm-grip,
+.usm-step:focus-within .usm-grip,
+.usm-grip:hover {
+  opacity: 1;
+  background: var(--info-bg);
+}
+.usm-grip:active {
+  cursor: grabbing;
+}
+.usm-grip-dots {
+  font-size: 12px;
+  letter-spacing: 2px;
+  transform: rotate(90deg);
+  user-select: none;
+}

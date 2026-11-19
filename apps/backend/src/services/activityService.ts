@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type {
   ActivityDto,
   ActivityEventType,
@@ -94,25 +94,6 @@ async function assertProjectWritable(
     if (sprint.projectId !== projectId)
       throw unprocessable("That sprint belongs to a different project");
   }
-}
-
-/** Counts in-progress work after the write, so call it inside the same transaction. */
-async function wipWarning(tx: DbOrTx, assigneeId: string | null, projectId: string) {
-  if (!assigneeId) return [];
-  const [project] = await tx
-    .select({ limit: projects.wipLimitPerPerson })
-    .from(projects)
-    .where(eq(projects.id, projectId))
-    .limit(1);
-  const [row] = await tx
-    .select({ n: count() })
-    .from(activities)
-    .where(and(eq(activities.assigneeId, assigneeId), eq(activities.status, "in_progress")));
-  const inProgress = row?.n ?? 0;
-  if (project && inProgress > project.limit) {
-    return [`Over the WIP limit: ${inProgress} in progress, limit is ${project.limit}`];
-  }
-  return [];
 }
 
 async function writeEvents(
@@ -392,9 +373,7 @@ export async function create(
     await writeEvents(t, row.id, ctx.actor.id, now, events);
     if (input.tagIds?.length) await setTags(t, row.id, input.tagIds);
 
-    const warnings =
-      input.status === "in_progress" ? await wipWarning(t, assigneeId, projectId) : [];
-    return { activity: await toDto(t, row.id), warnings };
+    return { activity: await toDto(t, row.id), warnings: [] };
   };
   return tx ? run(tx) : db.transaction(run);
 }
@@ -541,11 +520,7 @@ export async function update(
     await writeEvents(t, activityId, ctx.actor.id, now, events);
     if (patch.tagIds) await setTags(t, activityId, patch.tagIds);
 
-    const warnings =
-      next.status === "in_progress" && current.status !== "in_progress"
-        ? await wipWarning(t, next.assigneeId, current.projectId)
-        : [];
-    return { activity: await toDto(t, activityId), warnings };
+    return { activity: await toDto(t, activityId), warnings: [] };
   };
   return tx ? run(tx) : db.transaction(run);
 }

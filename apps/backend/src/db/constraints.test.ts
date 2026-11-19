@@ -126,12 +126,7 @@ describe("database-level rules", () => {
     expect(c).toBe("projects_code_lower_uq");
   });
 
-  it("rejects a non-positive WIP limit and a sprint ending before it starts", async () => {
-    expect(
-      await rejectedBy(
-        db.update(projects).set({ wipLimitPerPerson: 0 }).where(eq(projects.id, f.project.id)),
-      ),
-    ).toBe("projects_wip_limit_positive");
+  it("rejects a sprint ending before it starts", async () => {
     expect(
       await rejectedBy(
         db.insert(sprints).values({

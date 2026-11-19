@@ -186,7 +186,7 @@ export async function seedDatabase(opts: SeedOptions): Promise<{ projectId: stri
 
   const [project] = await db
     .insert(projects)
-    .values({ name: "Student Success Platform", code: "SSP", ownerId: pm.id, wipLimitPerPerson: 3 })
+    .values({ name: "Student Success Platform", code: "SSP", ownerId: pm.id })
     .returning();
   if (!project) throw new Error("Project insert failed");
 
@@ -398,7 +398,7 @@ export async function seedDatabase(opts: SeedOptions): Promise<{ projectId: stri
     }
   }
 
-  // One person over the WIP limit: four more in-progress items for the first member (limit is 3).
+  // One heavily loaded person: four more in-progress items for the first member.
   const overloaded = members[0];
   if (overloaded) {
     const extraSubs = subs.slice(0, 4);

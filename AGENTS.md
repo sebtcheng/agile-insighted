@@ -45,6 +45,16 @@ Every UI task (new or changed screens, components, styling, motion) uses the Imp
 
 ## Skills
 
-Run on demand, not in a fixed order. Catalog in `docs/skills.md`.
+Run on demand, not in a fixed order. Each lives in `.claude/skills/<name>/SKILL.md`; full catalog in `docs/skills.md`.
+
+| Task                       | Skill                                                         |
+| -------------------------- | ------------------------------------------------------------- |
+| Finishing any change       | `ci-gate`                                                     |
+| New or changed endpoint    | `backend-integration-tests`, then `api-endpoint-health-check` |
+| Schema or migration change | `drizzle-repo-scorecard` (and `docs/db-changes.md`)           |
+| Slow query or page         | `orm-optimizer`, then `load-capacity-test`                    |
+| Security or diff review    | `security-testing`, `diff-vuln-scan`                          |
+| Any UI change              | `impeccable`                                                  |
+| Repo structure question    | `folder-architecture-audit`                                   |
 
 When troubleshooting or improving runtime behavior, read `.logs/LATEST.md` first (run `npm run logs:summary` to refresh it); raw entries are in `.logs/*.jsonl`.

@@ -36,7 +36,13 @@ describe("home bucketing", () => {
     expect(bucketFor(open("2026-11-23"), r)).toBe("nextWeek");
     expect(bucketFor(open("2026-11-29"), r)).toBe("nextWeek");
     expect(bucketFor(open("2026-11-30"), r)).toBe("thisMonth");
-    expect(bucketFor(open("2026-12-01"), r)).toBeNull();
+    expect(bucketFor(open("2026-12-01"), r)).toBe("later");
+    expect(bucketFor(open("2027-03-15"), r)).toBe("later");
+  });
+  it("never drops a dated open item and still hides undated ones", () => {
+    for (const d of ["2025-01-01", "2026-11-02", "2026-11-18", "2026-12-31"])
+      expect(bucketFor(open(d), r)).not.toBeNull();
+    expect(bucketFor(open(null), r)).toBeNull();
   });
   it("keeps overdue open work in This Week", () => {
     expect(bucketFor(open("2026-11-02"), r)).toBe("thisWeek");

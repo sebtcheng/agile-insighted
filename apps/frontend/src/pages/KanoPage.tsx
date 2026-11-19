@@ -348,7 +348,7 @@ export function KanoPage() {
   return (
     <>
       <PageHeader
-        title="Kano Request Tracker"
+        title="KANO Request Tracker"
         subtitle="Requests from the people you build for. Categorize them and track each one's revision specs to completion."
         actions={
           <Button onClick={submit.open} disabled={readOnly}>

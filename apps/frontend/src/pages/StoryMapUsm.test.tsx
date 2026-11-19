@@ -36,7 +36,7 @@ const step = (id: string, title: string, sortOrder: number, features: unknown[] 
   projectId: "p1",
   personaId: "per1",
   title,
-  description: null,
+  description: null as string | null,
   sortOrder,
   features,
 });
@@ -142,6 +142,16 @@ const setValue = async (el: HTMLInputElement | null, v: string) => {
     return Promise.resolve();
   });
 };
+const pressEnter = async (el: Element | null | undefined) => {
+  expect(el).toBeTruthy();
+  await act(() => {
+    el?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+    return Promise.resolve();
+  });
+  await flush();
+};
 const posted = (url: string) =>
   vi
     .mocked(api.post)
@@ -190,7 +200,7 @@ describe("User Story Mapping page", () => {
 
   it("reorders step cards through the atomic reorder endpoint", async () => {
     await mount();
-    await click(byAria("Move step 1 later"));
+    await click(byAria("Move step 1 right"));
     expect(vi.mocked(api.patch)).toHaveBeenCalledWith("/story-map/steps/reorder", {
       projectId: "p1",
       personaId: "per1",
@@ -217,7 +227,8 @@ describe("User Story Mapping page", () => {
     await click(buttonByText("Add feature"));
     await setValue(byLabel("New feature"), "Forgot password link");
     await setValue(byLabel("New feature target date"), "2026-12-30");
-    await click(buttonByText("Save"));
+    expect(buttonByText("Save")).toBeUndefined();
+    await pressEnter(byLabel("New feature"));
     expect(posted("/story-map/features")).toEqual([
       {
         projectId: "p1",
@@ -227,5 +238,267 @@ describe("User Story Mapping page", () => {
         responsibleId: null,
       },
     ]);
+  });
+});
+
+describe("Add user flow", () => {
+  const person = (id: string, name: string, sortOrder: number) => ({
+    id,
+    projectId: "p1",
+    name,
+    description: null,
+    sortOrder,
+  });
+  let personas: ReturnType<typeof person>[] = [];
+  beforeEach(() => {
+    personas = [];
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === "/projects")
+        return Promise.resolve({
+          items: [
+            { id: "p1", name: "AGAP Applicant", archivedAt: null },
+            { id: "p2", name: "Other", archivedAt: null },
+          ],
+        });
+      if (url === "/users") return Promise.resolve({ items: USERS });
+      if (url === "/story-map/personas") return Promise.resolve({ items: personas });
+      if (url === "/story-map/steps") return Promise.resolve({ items: STEPS });
+      return Promise.resolve({ items: [] });
+    });
+  });
+  const submitButton = () => buttonByText("Add user");
+  const emptyText = "No users yet. Add one to start mapping their journey.";
+
+  it("uses the first project that the selector shows, without it being picked by hand", async () => {
+    await mount();
+    expect(document.body.textContent).toContain(emptyText);
+    await setValue(byLabel("New user name"), "Teacher");
+    await click(submitButton());
+    expect(posted("/story-map/personas")).toEqual([{ projectId: "p1", name: "Teacher" }]);
+  });
+
+  it("shows inline validation and focuses the input when the name is empty", async () => {
+    await mount();
+    await setValue(byLabel("New user name"), "   ");
+    await click(submitButton());
+    expect(posted("/story-map/personas")).toEqual([]);
+    expect(document.body.textContent).toContain("Enter a user or role");
+    expect(document.activeElement).toBe(byLabel("New user name"));
+  });
+
+  it("creates the user, clears the input, replaces the empty state and selects the new user", async () => {
+    vi.mocked(api.post).mockImplementation((url: string) => {
+      if (url !== "/story-map/personas") return Promise.resolve({});
+      const created = person("per9", "Admin", 0);
+      personas = [created];
+      return Promise.resolve(created);
+    });
+    await mount();
+    await setValue(byLabel("New user name"), "  Admin ");
+    await click(submitButton());
+    expect(posted("/story-map/personas")).toEqual([{ projectId: "p1", name: "Admin" }]);
+    expect(byLabel("New user name")?.value).toBe("");
+    expect(document.body.textContent).not.toContain(emptyText);
+    const tab = buttonByText("Admin");
+    expect(tab?.getAttribute("aria-selected")).toBe("true");
+    expect(document.querySelectorAll("[data-step]").length).toBe(2);
+  });
+
+  it("surfaces a server error inline and re-enables the button", async () => {
+    vi.mocked(api.post).mockRejectedValue(new Error("A user with that name already exists"));
+    await mount();
+    await setValue(byLabel("New user name"), "Teacher");
+    await click(submitButton());
+    expect(document.body.textContent).toContain("A user with that name already exists");
+    expect(byLabel("New user name")?.value).toBe("Teacher");
+    expect(submitButton()?.hasAttribute("disabled")).toBe(false);
+    expect(submitButton()?.hasAttribute("data-loading")).toBe(false);
+  });
+});
+
+describe("Horizontal step track", () => {
+  const fl = (id: string, done: boolean) =>
+    feature({ id, stepId: "x", title: id, isCompleted: done, targetDate: null });
+  let track: ReturnType<typeof step>[] = [];
+  beforeEach(() => {
+    track = [
+      step("a", "Register", 0, []),
+      step("b", "Login", 1, [fl("b1", true), fl("b2", false)]),
+      step("c", "Browse", 2, [fl("c1", true), fl("c2", true)]),
+      step("d", "Checkout", 3, [fl("d1", false), fl("d2", false), fl("d3", false)]),
+    ];
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === "/projects")
+        return Promise.resolve({ items: [{ id: "p1", name: "Infra", archivedAt: null }] });
+      if (url === "/users") return Promise.resolve({ items: USERS });
+      if (url === "/story-map/personas")
+        return Promise.resolve({
+          items: [
+            { id: "per1", projectId: "p1", name: "Teacher", description: null, sortOrder: 0 },
+          ],
+        });
+      if (url === "/story-map/steps") return Promise.resolve({ items: track });
+      return Promise.resolve({ items: [] });
+    });
+  });
+  const order = () =>
+    [...document.querySelectorAll("[data-step]")].map((c) => c.getAttribute("data-step"));
+  const numbers = () =>
+    [...document.querySelectorAll(".usm-step-number")].map((n) => n.textContent);
+  const grip = (id: string) => document.querySelector<HTMLElement>(`[data-grip="${id}"]`);
+  const slot = (id: string) =>
+    document.querySelector(`[data-step="${id}"]`)?.closest<HTMLElement>(".usm-slot");
+  const fire = (type: string, el: Element | null | undefined) =>
+    act(() => {
+      expect(el).toBeTruthy();
+      const ev = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, "dataTransfer", {
+        value: {
+          setData: () => undefined,
+          setDragImage: () => undefined,
+          effectAllowed: "",
+          dropEffect: "",
+        },
+      });
+      el!.dispatchEvent(ev);
+      return Promise.resolve();
+    });
+  const dragTo = async (from: string, to: string) => {
+    await fire("dragstart", grip(from));
+    await fire("dragover", slot(to));
+    await fire("drop", slot(to));
+    await fire("dragend", grip(from));
+    await flush();
+  };
+
+  it("lays the steps out in a horizontal track with large numbers and completion states", async () => {
+    await mount();
+    expect(document.querySelector(".usm-track")).toBeTruthy();
+    expect(order()).toEqual(["a", "b", "c", "d"]);
+    expect(numbers()).toEqual(["1", "2", "3", "4"]);
+    const card = (id: string) => document.querySelector(`[data-step="${id}"]`);
+    const state = (id: string) =>
+      card(id)?.querySelector("[data-state]")?.getAttribute("data-state");
+    expect(card("a")?.textContent).toContain("0/0 features completed");
+    expect(state("a")).toBe("No features");
+    expect(card("b")?.textContent).toContain("1/2 features completed");
+    expect(state("b")).toBe("In progress");
+    expect(card("c")?.textContent).toContain("2/2 features completed");
+    expect(state("c")).toBe("Complete");
+    expect(card("d")?.textContent).toContain("0/3 features completed");
+    expect(state("d")).toBe("Not started");
+    const bar = (id: string) => card(id)?.querySelector("[role='progressbar']");
+    expect(bar("b")?.getAttribute("aria-valuenow")).toBe("50");
+    expect(bar("c")?.getAttribute("aria-valuenow")).toBe("100");
+    expect(bar("a")?.getAttribute("aria-valuenow")).toBe("0");
+  });
+
+  it("shows the step description as a subtitle under the title, and nothing when it is empty", async () => {
+    track[1] = { ...track[1]!, description: "Existing users sign in with email" };
+    await mount();
+    const sub = (id: string) => document.querySelector(`[data-step="${id}"] .usm-step-desc`);
+    expect(sub("b")?.textContent).toBe("Existing users sign in with email");
+    expect(sub("a")).toBeNull();
+  });
+
+  it("drags a card to any position and sends the exact new order", async () => {
+    await mount();
+    await dragTo("a", "d");
+    expect(vi.mocked(api.patch)).toHaveBeenCalledWith("/story-map/steps/reorder", {
+      projectId: "p1",
+      personaId: "per1",
+      stepIds: ["b", "c", "d", "a"],
+    });
+    vi.mocked(api.patch).mockClear();
+    await dragTo("d", "b");
+    expect(vi.mocked(api.patch)).toHaveBeenCalledWith("/story-map/steps/reorder", {
+      projectId: "p1",
+      personaId: "per1",
+      stepIds: ["a", "d", "b", "c"],
+    });
+  });
+
+  it("shows the new order and numbers at once, then rolls back with an inline error on failure", async () => {
+    let fail: (e: Error) => void = () => undefined;
+    vi.mocked(api.patch).mockImplementation(() => new Promise((_, reject) => void (fail = reject)));
+    await mount();
+    await dragTo("a", "c");
+    expect(order()).toEqual(["b", "c", "a", "d"]);
+    expect(numbers()).toEqual(["1", "2", "3", "4"]);
+    await act(() => {
+      fail(new Error("Reorder refused"));
+      return Promise.resolve();
+    });
+    await flush();
+    expect(order()).toEqual(["a", "b", "c", "d"]);
+    expect(document.body.textContent).toContain("Reorder refused");
+  });
+
+  it("offers left and right buttons as a fallback", async () => {
+    await mount();
+    expect(byAria("Move step 1 left")?.hasAttribute("disabled")).toBe(true);
+    expect(byAria("Move step 4 right")?.hasAttribute("disabled")).toBe(true);
+    await click(byAria("Move step 2 left"));
+    expect(vi.mocked(api.patch)).toHaveBeenCalledWith("/story-map/steps/reorder", {
+      projectId: "p1",
+      personaId: "per1",
+      stepIds: ["b", "a", "c", "d"],
+    });
+  });
+
+  it("opens the checklist from the card body but never from the drag handle", async () => {
+    await mount();
+    await click(grip("b"));
+    await fire("dragstart", grip("b"));
+    await fire("dragend", grip("b"));
+    expect(document.body.textContent).not.toContain("Feature checklist");
+    await click(document.querySelector("[data-step='b'] .usm-step-number"));
+    expect(document.body.textContent).toContain("Feature checklist");
+  });
+
+  it("keeps a + slot before, between and after the cards with the exact insert index", async () => {
+    await mount();
+    for (let at = 1; at <= 5; at++) expect(byAria(`Insert step at position ${at}`)).toBeTruthy();
+    await click(byAria("Insert step at position 3"));
+    await setValue(stepInput(), "Compare");
+    await click(buttonByText("Add"));
+    expect(posted("/story-map/steps").at(-1)).toMatchObject({ title: "Compare", insertAtIndex: 2 });
+    await click(byAria("Insert step at position 5"));
+    await setValue(stepInput(), "Pay");
+    await click(buttonByText("Add"));
+    expect(posted("/story-map/steps").at(-1)).toMatchObject({ title: "Pay", insertAtIndex: 4 });
+  });
+});
+
+describe("Feature checklist Enter key", () => {
+  const openStep = async () => {
+    await mount();
+    await click(document.querySelector('[data-step="s1"]'));
+  };
+  it("adds the next feature when Enter is pressed in a feature row, with no Save button", async () => {
+    await openStep();
+    expect(byLabel("New feature")).toBeNull();
+    await pressEnter(byLabel("Feature 1"));
+    expect(byLabel("New feature")).toBeTruthy();
+    expect(document.activeElement).toBe(byLabel("New feature"));
+    expect(buttonByText("Save")).toBeUndefined();
+  });
+  it("creates the typed feature on Enter and opens another empty row", async () => {
+    await openStep();
+    await click(buttonByText("Add feature"));
+    await setValue(byLabel("New feature"), "Reset password");
+    await pressEnter(byLabel("New feature"));
+    expect(posted("/story-map/features")).toEqual([
+      {
+        projectId: "p1",
+        stepId: "s1",
+        title: "Reset password",
+        targetDate: null,
+        responsibleId: null,
+      },
+    ]);
+    expect(byLabel("New feature")?.value).toBe("");
+    await pressEnter(byLabel("New feature"));
+    expect(posted("/story-map/features")).toHaveLength(1);
   });
 });

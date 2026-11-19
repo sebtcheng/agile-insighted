@@ -174,7 +174,7 @@ describe("USM step features", () => {
       403,
     );
   });
-  it("feeds Home, Workload and Insights through the shared work-item selector", async () => {
+  it("feeds Home and Workload through the shared work-item selector", async () => {
     const p = await persona("Rollup");
     const s = await step(p.id, "S");
     const mk = async (title: string, extra: Record<string, unknown>) =>
@@ -193,5 +193,40 @@ describe("USM step features", () => {
     expect(usm.every((i) => i.assigneeId === f.m1.id && i.parentTitle === "Rollup › S")).toBe(true);
     expect(usm.find((i) => i.title === "Late")?.scheduleStatus).toBe("delayed");
     expect(usm.find((i) => i.title === "Finished")?.isCompleted).toBe(true);
+  });
+});
+
+describe("USM add user (persona) contract", () => {
+  it("creates from projectId and name alone: 201, trimmed, with a per-project sort order", async () => {
+    const a = await pm
+      .post(`${BASE}/personas`)
+      .send({ projectId: f.project.id, name: "  First  " });
+    expect(a.status).toBe(201);
+    expect(json<UsmPersonaDto>(a)).toMatchObject({ name: "First", projectId: f.project.id });
+    const b = await pm.post(`${BASE}/personas`).send({ projectId: f.project.id, name: "Second" });
+    expect(json<UsmPersonaDto>(b).sortOrder).toBe(json<UsmPersonaDto>(a).sortOrder + 1);
+    const other = await pm
+      .post(`${BASE}/personas`)
+      .send({ projectId: f.otherProject.id, name: "X" });
+    expect(json<UsmPersonaDto>(other).sortOrder).toBe(0);
+  });
+  it("answers bad input with a structured error, never an empty body", async () => {
+    for (const body of [
+      { projectId: f.project.id, name: "   " },
+      { projectId: f.project.id },
+      { name: "No project" },
+      { projectId: "not-a-uuid", name: "Bad id" },
+    ]) {
+      const res = await pm.post(`${BASE}/personas`).send(body);
+      expect(res.status, JSON.stringify(body)).toBeGreaterThanOrEqual(400);
+      expect(res.status).toBeLessThan(500);
+      expect(json<{ error: { code: string; message: string } }>(res).error.message).toBeTruthy();
+    }
+  });
+  it("tells the caller when the name is a duplicate", async () => {
+    await pm.post(`${BASE}/personas`).send({ projectId: f.project.id, name: "Twin" });
+    const res = await pm.post(`${BASE}/personas`).send({ projectId: f.project.id, name: "twin" });
+    expect(res.status).toBe(409);
+    expect(json<{ error: { message: string } }>(res).error.message).toBeTruthy();
   });
 });

@@ -4,8 +4,7 @@ import type { WorkloadResponse, WorkloadRow } from "@myapp/shared";
 import { db } from "../db/client";
 import { activities, subprojects } from "../db/schema";
 import { env } from "../env";
-import { homeRanges, localDate } from "./dateBuckets";
-import { WAITING_CTE_BODY } from "./portfolioService";
+import { bucketFor, homeRanges, localDate } from "./dateBuckets";
 import { loadWorkItems } from "./workItemService";
 import { memberRollups } from "./workItemRollups";
 import { scopeCondition, scopeSql, type ProjectScope } from "./visibilityService";
@@ -13,62 +12,16 @@ import { scopeCondition, scopeSql, type ProjectScope } from "./visibilityService
 type Row = {
   user_id: string;
   full_name: string;
-  in_progress: number;
-  due_week: number;
-  blocked: number;
-  waiting: number;
-  sprint_id: string | null;
-  sprint_name: string | null;
-  sprint_assigned: number;
-  sprint_capacity: number | null;
-  wip_limit: number;
 };
 
 /**
- * Load and capacity per active person across all subprojects. It shows counts against limits only:
- * it never ranks people or computes an output score, and rows are ordered alphabetically.
+ * Active people visible in scope, ordered alphabetically. Counts come from the shared work-item selector in
+ * getWorkload, so Workload reconciles with Home. It never ranks people or computes an output score.
  */
-export function workloadSql(
-  weekStart: string,
-  weekEnd: string,
-  projectId: string | null = null,
-  scope: ProjectScope = null,
-): SQL {
-  // projectId scopes the WIP limit and active sprint to one project; null means the oldest open project.
+export function workloadSql(scope: ProjectScope = null): SQL {
   return sql`
-    WITH ${WAITING_CTE_BODY},
-    cfg AS (
-      SELECT (SELECT wip_limit_per_person FROM projects
-              WHERE archived_at IS NULL AND (${projectId}::uuid IS NULL OR id = ${projectId}::uuid)
-                AND ${scopeSql(sql`id`, scope)}
-              ORDER BY created_at LIMIT 1) AS wip_limit,
-             sp.id AS sprint_id, sp.name AS sprint_name
-      FROM (SELECT 1) one
-      LEFT JOIN LATERAL (
-        SELECT s.id, s.name FROM sprints s JOIN projects p ON p.id = s.project_id AND p.archived_at IS NULL
-        WHERE s.status = 'active' AND s.subproject_id IS NULL
-          AND (${projectId}::uuid IS NULL OR p.id = ${projectId}::uuid)
-          AND ${scopeSql(sql`p.id`, scope)}
-        ORDER BY s.end_date LIMIT 1
-      ) sp ON true
-    )
-    SELECT u.id AS user_id, u.full_name,
-           a.in_progress, a.due_week, a.blocked, a.waiting, a.sprint_assigned,
-           cfg.sprint_id, cfg.sprint_name, cap.capacity_items AS sprint_capacity,
-           COALESCE(cfg.wip_limit, 0)::int AS wip_limit
+    SELECT u.id AS user_id, u.full_name
     FROM users u
-    CROSS JOIN cfg
-    CROSS JOIN LATERAL (
-      SELECT count(*) FILTER (WHERE x.status = 'in_progress')::int AS in_progress,
-             count(*) FILTER (WHERE x.due_date BETWEEN ${weekStart}::date AND ${weekEnd}::date)::int AS due_week,
-             count(*) FILTER (WHERE x.is_blocked)::int AS blocked,
-             count(*) FILTER (WHERE w.blocked_activity_id IS NOT NULL)::int AS waiting,
-             count(*) FILTER (WHERE cfg.sprint_id IS NOT NULL AND x.sprint_id = cfg.sprint_id)::int AS sprint_assigned
-      FROM activities x
-      LEFT JOIN waiting w ON w.blocked_activity_id = x.id
-      WHERE x.assignee_id = u.id AND x.status <> 'done' AND ${scopeSql(sql`x.project_id`, scope)}
-    ) a
-    LEFT JOIN sprint_member_capacity cap ON cap.sprint_id = cfg.sprint_id AND cap.user_id = u.id
     WHERE u.is_active
       AND (${sql.raw(scope === null ? "true" : "false")} OR u.id IN (
         SELECT pm.user_id FROM project_members pm WHERE ${scopeSql(sql`pm.project_id`, scope)}
@@ -77,35 +30,30 @@ export function workloadSql(
 }
 
 export async function getWorkload(
-  opts: { now?: Date; projectId?: string; scope?: ProjectScope } = {},
+  opts: { now?: Date; scope?: ProjectScope } = {},
 ): Promise<WorkloadResponse> {
   const r = homeRanges(localDate(opts.now ?? new Date(), env.APP_TIMEZONE));
-  const res = await db.execute<Row>(
-    workloadSql(r.weekStart, r.weekEnd, opts.projectId ?? null, opts.scope ?? null),
-  );
-  const items: WorkloadRow[] = res.rows.map((x) => ({
-    userId: x.user_id,
-    fullName: x.full_name,
-    inProgress: x.in_progress,
-    wipLimit: x.wip_limit,
-    overWipLimit: x.wip_limit > 0 && x.in_progress > x.wip_limit,
-    dueThisWeek: x.due_week,
-    blocked: x.blocked,
-    waitingOnDependency: x.waiting,
-    sprint: x.sprint_id && x.sprint_name ? { id: x.sprint_id, name: x.sprint_name } : null,
-    sprintAssigned: x.sprint_assigned,
-    sprintCapacity: x.sprint_capacity,
-    overCapacity: x.sprint_capacity !== null && x.sprint_assigned > x.sprint_capacity,
+  const res = await db.execute<Row>(workloadSql(opts.scope ?? null));
+  const people = res.rows.map((x) => ({ id: x.user_id, fullName: x.full_name }));
+  // Counts cover every visible project and module, exactly like Home, so the two reconcile.
+  const loaded = await loadWorkItems({}, opts.scope ?? null, opts.now ?? new Date());
+  const members = memberRollups(loaded.items, people).map((m) => ({
+    ...m,
+    items: m.items.slice(0, 300),
   }));
-  const loaded = await loadWorkItems(
-    { projectId: opts.projectId },
-    opts.scope ?? null,
-    opts.now ?? new Date(),
-  );
-  const members = memberRollups(
-    loaded.items,
-    items.map((i) => ({ id: i.userId, fullName: i.fullName })),
-  ).map((m) => ({ ...m, items: m.items.slice(0, 300) }));
+
+  const items: WorkloadRow[] = people.map((p) => ({
+    userId: p.id,
+    fullName: p.fullName,
+    dueThisWeek: loaded.items.filter(
+      (i) =>
+        i.assigneeId === p.id &&
+        !i.isCompleted &&
+        i.dueDate &&
+        bucketFor({ dueDate: i.dueDate, status: "open", completedDate: null }, r) === "thisWeek",
+    ).length,
+  }));
+
   return { items, members };
 }
 

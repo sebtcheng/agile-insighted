@@ -34,9 +34,6 @@ export type HomeQuery = {
 /** Home never returns more than this many candidate rows; `truncated` tells the client when the cap was hit. */
 export const HOME_ROW_LIMIT = 1000;
 
-/** Open work overdue by more than this many days before the week start drops off Home (Portfolio still counts it). */
-export const OVERDUE_LOOKBACK_DAYS = 60;
-
 /**
  * The one candidate query behind Home, returned unexecuted so EXPLAIN tooling can run exactly what the app runs.
  * Open items due up to the horizon (with a bounded overdue lookback) plus items completed around this week.
@@ -59,13 +56,10 @@ export function homeCandidatesQuery(
     if (query.assigneeId) filters.push(eq(activities.assigneeId, query.assigneeId));
     if (query.subprojectId) filters.push(eq(activities.subprojectId, query.subprojectId));
   }
-  const horizon = r.nextWeekEnd > r.monthEnd ? r.nextWeekEnd : r.monthEnd;
+  // No overdue lookback or future horizon: every dated open item lands in a bucket (overdue pins to This
+  // Week, beyond this month goes to Later), so the lists agree with the summary. HOME_ROW_LIMIT bounds it.
   const candidate = or(
-    and(
-      ne(activities.status, "done"),
-      gte(activities.dueDate, addDays(r.weekStart, -OVERDUE_LOOKBACK_DAYS)),
-      lte(activities.dueDate, horizon),
-    ),
+    ne(activities.status, "done"),
     and(
       eq(activities.status, "done"),
       gte(activities.completedAt, windowStart),
@@ -109,12 +103,13 @@ export async function getHome(
   const result: HomeResponse = {
     timezone: timeZone,
     activeSprint: null,
-    wip: { inProgress: 0, limit: 0 },
+    wip: { inProgress: 0 },
     thisWeek: [],
     nextWeek: [],
     thisMonth: [],
+    later: [],
     upcomingReleases: [],
-    moduleItems: { thisWeek: [], nextWeek: [], thisMonth: [] },
+    moduleItems: { thisWeek: [], nextWeek: [], thisMonth: [], later: [] },
     summary: summarize([]),
     truncated: rows.length >= HOME_ROW_LIMIT,
   };
@@ -180,7 +175,7 @@ export async function getHome(
       list.flatMap((x) => (x.targetDate ? [{ ...x, targetDate: x.targetDate }] : [])),
     );
 
-  // Header: active project-wide sprint of any open project, and the user's WIP vs limit.
+  // Header: active project-wide sprint of any open project, and the user's in-progress count.
   const [sprint] = await db
     .select({ id: sprints.id, name: sprints.name, goal: sprints.goal, endDate: sprints.endDate })
     .from(sprints)
@@ -198,16 +193,10 @@ export async function getHome(
   if (sprint)
     result.activeSprint = { ...sprint, daysLeft: Math.max(0, diffDays(sprint.endDate, today)) };
 
-  const [limitRow] = await db
-    .select({ limit: projects.wipLimitPerPerson })
-    .from(projects)
-    .where(and(isNull(projects.archivedAt), scopeCondition(projects.id, scope)))
-    .orderBy(asc(projects.createdAt))
-    .limit(1);
   const [wipRow] = await db
     .select({ n: count() })
     .from(activities)
     .where(and(eq(activities.assigneeId, actor.id), inArray(activities.status, ["in_progress"])));
-  result.wip = { inProgress: wipRow?.n ?? 0, limit: limitRow?.limit ?? 0 };
+  result.wip = { inProgress: wipRow?.n ?? 0 };
   return result;
 }

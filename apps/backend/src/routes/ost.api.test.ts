@@ -122,6 +122,21 @@ describe("OST API", () => {
     expect(again?.outcomeId).toBe(out2.id);
   });
 
+  it("saves a solution target date and owner from a single-solution edit, and clears them", async () => {
+    const sol = json<Id>(
+      await pm.post(`/api/ost/opportunities/${oppId}/solutions`).send({ title: "Dated edit" }),
+    );
+    const saved = await pm
+      .patch(`/api/ost/solutions/${sol.id}`)
+      .send({ title: "Dated edit", ownerId: f.m1.id, targetDate: "2026-12-09" });
+    expect(saved.status).toBe(200);
+    const read = async () =>
+      (await tree()).solutions.find((s) => s.id === sol.id) as unknown as Record<string, unknown>;
+    expect(await read()).toMatchObject({ targetDate: "2026-12-09", ownerId: f.m1.id });
+    await pm.patch(`/api/ost/solutions/${sol.id}`).send({ ownerId: null, targetDate: null });
+    expect(await read()).toMatchObject({ targetDate: null, ownerId: null });
+  });
+
   it("saves a requirement with a checklist of solutions, assignees and dates, and syncs edits", async () => {
     const created = json<Id>(
       await pm.post(`/api/ost/outcomes/${outcomeId}/opportunities`).send({

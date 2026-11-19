@@ -4,6 +4,7 @@
   "categories": { "correctness": "error", "suspicious": "warn" },
   "rules": {
     "no-console": "warn",
+    "import/no-cycle": "error",
     "typescript/no-explicit-any": "error",
     "typescript/consistent-type-imports": "warn",
     "react/react-in-jsx-scope": "off",

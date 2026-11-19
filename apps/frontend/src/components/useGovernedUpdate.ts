@@ -26,7 +26,7 @@ export function useGovernedUpdate(activityId: string) {
     try {
       const res = await update.mutateAsync({ id: activityId, patch });
       clear();
-      for (const w of res.warnings) toast.warn(w, "WIP limit");
+      for (const w of res.warnings) toast.warn(w);
       return res;
     } catch (e) {
       if (e instanceof ApiClientError && e.code === "dod_incomplete") {

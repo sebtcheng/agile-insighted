@@ -108,22 +108,12 @@ describe("a team member sees only assigned projects", () => {
     expect(ids).toContain(owned.id);
   });
 
-  it("scopes activities, search, insights, portfolio, workload, RAID, Kano and OST", async () => {
+  it("scopes activities, search, workload, RAID, Kano and OST", async () => {
     const acts = json<{ items: Array<{ id: string }> }>(await m1.get("/api/activities")).items.map(
       (a) => a.id,
     );
     expect(acts).toContain(visibleActivityId);
     expect(acts).not.toContain(hiddenActivityId);
-
-    const portfolio = json<{ items: Array<{ id: string }> }>(
-      await m1.get("/api/portfolio"),
-    ).items.map((r) => r.id);
-    expect(portfolio).toContain(f.subA.id);
-    expect(portfolio).not.toContain(f.otherSub.id);
-
-    const insights = await m1.get("/api/insights");
-    expect(insights.status).toBe(200);
-    expect(json<{ forecast: { remaining: number } }>(insights).forecast.remaining).toBe(1);
 
     const workload = json<{ items: Array<{ userId: string }> }>(
       await m1.get("/api/workload"),
@@ -154,7 +144,6 @@ describe("a team member sees only assigned projects", () => {
       `/api/activities/${hiddenActivityId}`,
       `/api/story-map?projectId=${f.otherProject.id}`,
       `/api/activities?projectId=${f.otherProject.id}`,
-      `/api/insights?projectId=${f.otherProject.id}`,
     ]) {
       expect((await m1.get(path)).status, path).toBe(404);
     }
@@ -175,10 +164,8 @@ describe("a team member sees only assigned projects", () => {
     const res = await m2.get("/api/projects");
     expect(json<{ items: ProjectDto[] }>(res).items.map((p) => p.id)).not.toContain(f.project.id);
     expect(json<{ items: unknown[] }>(await m2.get("/api/activities")).items).toEqual([]);
-    expect(json<{ items: unknown[] }>(await m2.get("/api/portfolio")).items).toEqual([]);
     expect(json<{ items: unknown[] }>(await m2.get("/api/raid")).items).toEqual([]);
     expect((await m2.get("/api/home")).status).toBe(200);
     expect((await m2.get("/api/workload")).status).toBe(200);
-    expect((await m2.get("/api/insights")).status).toBe(200);
   });
 });

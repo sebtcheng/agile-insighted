@@ -67,7 +67,6 @@ const CONSTRAINT_MESSAGES: Record<string, [number, string]> = {
   sprints_dates_ordered: [422, "A sprint cannot end before it starts"],
   sprints_project_name_uq: [409, "A sprint with that name already exists in this project"],
   projects_code_lower_uq: [409, "A project with that code already exists"],
-  projects_wip_limit_positive: [422, "The WIP limit must be greater than zero"],
   subprojects_project_code_uq: [409, "A subproject with that code already exists"],
   users_email_lower_uq: [409, "A user with that email already exists"],
   tags_name_lower_uq: [409, "A tag with that name already exists"],

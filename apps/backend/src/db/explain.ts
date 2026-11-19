@@ -5,7 +5,6 @@ import { sql, type SQL } from "drizzle-orm";
 import { homeRanges, localDate } from "../services/dateBuckets";
 import { env } from "../env";
 import { getHome, homeCandidatesQuery } from "../services/homeService";
-import { getPortfolio, portfolioSql } from "../services/portfolioService";
 import {
   activitySearchSql,
   peopleSearchSql,
@@ -13,7 +12,6 @@ import {
   subprojectSearchSql,
 } from "../services/searchService";
 import { getWorkload, workloadSql } from "../services/workloadService";
-import { portfolioQuerySchema } from "@myapp/shared";
 import { assertLocalDatabase } from "./seedPerf";
 import { db, pool } from "./client";
 
@@ -89,8 +87,7 @@ async function main(): Promise<void> {
   const plans = [
     await plan("Home, project manager (all activities)", homeCandidatesQuery(pm, {}, r).toSQL()),
     await plan("Home, team member (own activities)", homeCandidatesQuery(member, {}, r).toSQL()),
-    await plan("Portfolio", fromSql(portfolioSql(today, pm.id))),
-    await plan("Workload", fromSql(workloadSql(r.weekStart, r.weekEnd))),
+    await plan("Workload", fromSql(workloadSql())),
     await plan(
       "Search: activities, term `engagement`",
       fromSql(activitySearchSql("engagement", 8)),
@@ -106,7 +103,6 @@ async function main(): Promise<void> {
   const timings = [
     await time("Home (PM)", () => getHome(pm, { now })),
     await time("Home (team member)", () => getHome(member, { now })),
-    await time("Portfolio", () => getPortfolio(pm, portfolioQuerySchema.parse({}), now)),
     await time("Workload", () => getWorkload({ now })),
     await time("Search `engagement`", () => search("engagement")),
     await time("Search `dashbo`", () => search("dashbo")),

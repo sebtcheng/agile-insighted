@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActionIcon, Button, Checkbox, Group, Select, Stack, Text, TextInput } from "@mantine/core";
 import { MAX_USM_FEATURES_PER_STEP, type UsmFeatureDto, type UsmStepDto } from "@myapp/shared";
 import {
@@ -25,11 +25,14 @@ function FeatureRow({
   index,
   canEdit,
   canTick,
+  onEnter,
 }: {
   feature: UsmFeatureDto;
   index: number;
   canEdit: boolean;
   canTick: boolean;
+  /** Enter in the text field: the parent opens a new feature row below. */
+  onEnter: () => void;
 }) {
   const update = useUpdateUsmFeature();
   const remove = useDeleteUsmFeature();
@@ -37,6 +40,11 @@ function FeatureRow({
   const [title, setTitle] = useState(feature.title);
   const save = (patch: Parameters<typeof update.mutate>[0]["patch"]) =>
     update.mutate({ id: feature.id, patch }, { onError: (e) => toast.error(e.message) });
+  const commitTitle = () => {
+    const next = title.trim();
+    if (!next) setTitle(feature.title);
+    else if (next !== feature.title) save({ title: next });
+  };
   return (
     <Group gap="xs" wrap="nowrap" align="center" data-feature={feature.id}>
       <Checkbox
@@ -52,10 +60,12 @@ function FeatureRow({
         disabled={!canEdit}
         value={title}
         onChange={(e) => setTitle(e.currentTarget.value)}
-        onBlur={() => {
-          const next = title.trim();
-          if (!next) setTitle(feature.title);
-          else if (next !== feature.title) save({ title: next });
+        onBlur={commitTitle}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+          e.preventDefault();
+          commitTitle();
+          if (title.trim()) onEnter();
         }}
       />
       <TextInput
@@ -92,7 +102,10 @@ function FeatureRow({
   );
 }
 
-/** A new, not yet saved row. It is created on the server once it has text. */
+/**
+ * A new row with no Save button. Enter creates the feature and opens the next row; leaving the row with text
+ * creates it too, and leaving it empty discards it. `onDone(true)` asks the parent for another new row.
+ */
 function NewFeatureRow({
   projectId,
   stepId,
@@ -100,36 +113,55 @@ function NewFeatureRow({
 }: {
   projectId: string;
   stepId: string;
-  onDone: () => void;
+  onDone: (openNext: boolean) => void;
 }) {
   const create = useCreateUsmFeature();
   const people = usePeople(null);
   const [title, setTitle] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [responsibleId, setResponsibleId] = useState<string | null>(null);
-  const commit = () => {
+  const sent = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => inputRef.current?.focus(), []);
+  const commit = (openNext: boolean) => {
+    if (sent.current) return;
     const text = title.trim();
-    if (!text) return onDone();
+    if (!text) return onDone(false);
+    sent.current = true;
     create.mutate(
       { projectId, stepId, title: text, targetDate: targetDate || null, responsibleId },
-      { onSuccess: onDone, onError: (e) => toast.error(e.message) },
+      {
+        onSuccess: () => onDone(openNext),
+        onError: (e) => {
+          sent.current = false;
+          toast.error(e.message);
+        },
+      },
     );
   };
   return (
-    <Group gap="xs" wrap="nowrap" align="center">
+    <Group
+      gap="xs"
+      wrap="nowrap"
+      align="center"
+      onBlur={(e) => {
+        // Only when focus leaves the whole row (not when moving between its own fields).
+        if (!e.currentTarget.contains(e.relatedTarget)) commit(false);
+      }}
+    >
       <Checkbox aria-label="New feature done" disabled checked={false} readOnly />
       <TextInput
+        ref={inputRef}
         aria-label="New feature"
         placeholder="Describe the feature"
         style={{ flex: 1 }}
         maxLength={300}
-        data-autofocus
         value={title}
         onChange={(e) => setTitle(e.currentTarget.value)}
         onKeyDown={(e) => {
           if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
           e.preventDefault();
-          commit();
+          commit(true);
         }}
       />
       <TextInput
@@ -149,10 +181,16 @@ function NewFeatureRow({
         value={responsibleId}
         onChange={setResponsibleId}
       />
-      <Button size="compact-xs" onClick={commit} loading={create.isPending}>
-        Save
-      </Button>
-      <ActionIcon variant="subtle" color="red" aria-label="Discard new feature" onClick={onDone}>
+      <ActionIcon
+        variant="subtle"
+        color="red"
+        aria-label="Discard new feature"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          sent.current = true;
+          onDone(false);
+        }}
+      >
         ✕
       </ActionIcon>
     </Group>
@@ -201,6 +239,13 @@ function StepBody({
   const [title, setTitle] = useState(step.title);
   const [description, setDescription] = useState(step.description ?? "");
   const [adding, setAdding] = useState(false);
+  // Bumping the key mounts a fresh, focused row, so Enter can chain one feature after another.
+  const [rowKey, setRowKey] = useState(0);
+  const openNewRow = () => {
+    if (step.features.length >= MAX_USM_FEATURES_PER_STEP) return;
+    setRowKey((k) => k + 1);
+    setAdding(true);
+  };
   const dirty = title.trim() !== step.title || description.trim() !== (step.description ?? "");
   return (
     <Stack gap="md">
@@ -264,13 +309,23 @@ function StepBody({
           </Text>
         ) : null}
         {step.features.map((f, i) => (
-          <FeatureRow key={f.id} feature={f} index={i} canEdit={canEdit} canTick={canTick} />
+          <FeatureRow
+            key={f.id}
+            feature={f}
+            index={i}
+            canEdit={canEdit}
+            canTick={canTick}
+            onEnter={() => {
+              if (!adding) openNewRow();
+            }}
+          />
         ))}
         {adding ? (
           <NewFeatureRow
+            key={rowKey}
             projectId={step.projectId}
             stepId={step.id}
-            onDone={() => setAdding(false)}
+            onDone={(openNext) => (openNext ? openNewRow() : setAdding(false))}
           />
         ) : null}
         {canEdit ? (

@@ -40,9 +40,7 @@ function Icon({ children, size = 20 }: { children: ReactNode; size?: number }) {
 
 const ICONS = {
   home: <path d="M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10" />,
-  portfolio: <path d="M3 7h18v13H3zM8 7V4h8v3M3 13h18" />,
   workload: <path d="M4 20V10M10 20V4M16 20v-8M22 20H2" />,
-  insights: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
   projects: <path d="M3 6a2 2 0 012-2h4l2 3h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z" />,
   ost: <path d="M12 3v6M12 9H5v5M12 9h7v5M3 14h4v5H3zM17 14h4v5h-4zM10 14h4v5h-4z" />,
   usm: <path d="M3 4h5v16H3zM10 4h5v10h-5zM17 4h4v6h-4z" />,
@@ -158,7 +156,7 @@ export function Layout() {
       <AppShell.Navbar
         className="shell-navbar"
         p="xs"
-        w={expanded ? 260 : undefined}
+        w={expanded ? 300 : undefined}
         {...rail.handlers}
         style={{ transition: "width 150ms ease", overflow: "hidden", zIndex: 101 }}
       >

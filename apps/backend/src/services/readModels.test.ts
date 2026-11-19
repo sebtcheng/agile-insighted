@@ -1,11 +1,9 @@
 import request from "supertest";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { portfolioQuerySchema } from "@myapp/shared";
 import { createApp } from "../app";
 import { db } from "../db/client";
 import {
-  activities,
   activityDependencies,
   releases,
   sprintMemberCapacity,
@@ -14,13 +12,11 @@ import {
 } from "../db/schema";
 import { createFixture, rawActivity, setProjectArchived, type Fixture } from "../test/helpers";
 import { createRaidItem } from "./moduleService";
-import { getPortfolio } from "./portfolioService";
 import { escapeLike, search } from "./searchService";
 import { getWorkload } from "./workloadService";
 
 // Wednesday 18 Nov 2026 in Manila. Week is Mon 16 to Sun 22.
 const NOW = new Date("2026-11-18T04:00:00Z");
-const defaults = portfolioQuerySchema.parse({});
 const started = new Date("2026-10-01T00:00:00Z");
 const doneFields = {
   status: "done" as const,
@@ -30,7 +26,6 @@ const doneFields = {
 };
 
 let f: Fixture;
-let ids: Record<string, string>;
 
 beforeAll(async () => {
   f = await createFixture();
@@ -47,25 +42,24 @@ beforeAll(async () => {
     .values({ projectId: p, name: "R-past", targetDate: "2026-10-01" })
     .returning();
 
-  const a1 = await mk("a1", { assigneeId: f.m1.id, releaseId: future[0]?.id });
-  const a2 = await mk("a2", {
+  await mk("a1", { assigneeId: f.m1.id, releaseId: future[0]?.id });
+  await mk("a2", {
     status: "in_progress",
     startedAt: started,
     isBlocked: true,
     blockedReason: "x",
     assigneeId: f.m1.id,
   });
-  const a3 = await mk("a3", { dueDate: "2026-01-01" });
+  await mk("a3", { dueDate: "2026-01-01" });
   const a4 = await mk("a4", {});
   const a5 = await mk("a5", { releaseId: past[0]?.id });
   const a6 = await mk("a6", {});
   const a7 = await mk("a7", doneFields);
-  const a8 = await mk("a8", doneFields);
+  await mk("a8", doneFields);
   await db.insert(activityDependencies).values([
     { blockedActivityId: a4.id, blockingActivityId: a5.id }, // a4 waits on an unfinished activity
     { blockedActivityId: a6.id, blockingActivityId: a7.id }, // a6's blocker is done: not waiting
   ]);
-  ids = { a1: a1.id, a2: a2.id, a3: a3.id, a4: a4.id, a5: a5.id, a6: a6.id, a7: a7.id, a8: a8.id };
 
   await db.update(sprints).set({ status: "active" }).where(eq(sprints.id, f.sprint.id));
   await db
@@ -107,69 +101,6 @@ afterAll(async () => {
   await f.cleanup();
 });
 
-const mine = <T extends { id: string }>(rows: T[]) =>
-  rows.filter((r) => r.id === f.subA.id || r.id === f.subB.id);
-
-describe("portfolio", () => {
-  it("counts open, blocked, waiting, overdue and percent done from the data", async () => {
-    const { items } = await getPortfolio(f.pmActor, defaults, NOW);
-    const a = items.find((r) => r.id === f.subA.id);
-    expect(a).toMatchObject({
-      code: "SUB-A",
-      total: 8,
-      open: 6,
-      blocked: 1,
-      waitingOnDependency: 1, // a4 only: a6's blocker is done
-      overdue: 1, // a3 due Jan 2026
-      percentDone: 25, // 2 of 8
-      openHighRaid: 2, // open and in-progress High items; closed and Medium excluded
-    });
-    expect(a?.activeSprint?.name).toBe("S1");
-  });
-
-  it("picks the next upcoming planned release for the subproject, ignoring past targets", async () => {
-    const { items } = await getPortfolio(f.pmActor, defaults, NOW);
-    const a = items.find((r) => r.id === f.subA.id);
-    expect(a?.nextRelease).toMatchObject({ name: "R-future", targetDate: "2026-12-01" });
-    expect(items.find((r) => r.id === f.subB.id)?.nextRelease).toBeNull();
-  });
-
-  it("filters by health, lead, blockers and 'my subprojects'", async () => {
-    const run = async (q: object) =>
-      mine((await getPortfolio(f.m1Actor, portfolioQuerySchema.parse(q), NOW)).items).map(
-        (r) => r.code,
-      );
-    expect(await run({ health: "at_risk" })).toEqual(["SUB-B"]);
-    expect(await run({ leadId: f.m2.id })).toEqual(["SUB-B"]);
-    expect(await run({ hasBlockers: "true" })).toEqual(["SUB-A"]);
-    // m1 has work assigned in SUB-A and leads nothing, so "mine" shows SUB-A only.
-    expect(await run({ mine: "true" })).toEqual(["SUB-A"]);
-  });
-
-  it("sorts and keeps a stable order", async () => {
-    const byOpen = mine(
-      (
-        await getPortfolio(
-          f.pmActor,
-          portfolioQuerySchema.parse({ sort: "open", dir: "desc" }),
-          NOW,
-        )
-      ).items,
-    );
-    expect(byOpen.map((r) => r.code)).toEqual(["SUB-A", "SUB-B"]);
-    const byHealth = mine(
-      (await getPortfolio(f.pmActor, portfolioQuerySchema.parse({ sort: "health" }), NOW)).items,
-    );
-    expect(byHealth.map((r) => r.code)).toEqual(["SUB-B", "SUB-A"]); // at risk before on track
-  });
-
-  it("hides subprojects of archived projects", async () => {
-    await setProjectArchived(f.project.id, true);
-    expect(mine((await getPortfolio(f.pmActor, defaults, NOW)).items)).toHaveLength(0);
-    await setProjectArchived(f.project.id, false);
-  });
-});
-
 describe("workload", () => {
   beforeAll(async () => {
     const p = f.project.id;
@@ -193,40 +124,13 @@ describe("workload", () => {
     ]);
   });
 
-  it("flags over-limit WIP and over-capacity, and counts due-this-week, blocked and waiting", async () => {
-    const { items } = await getWorkload({ now: NOW, projectId: f.project.id });
-    const m1 = items.find((r) => r.userId === f.m1.id);
-    const m2 = items.find((r) => r.userId === f.m2.id);
-    expect(m1).toMatchObject({
-      inProgress: 5, // 4 wip + the blocked a2 in progress
-      wipLimit: 3,
-      overWipLimit: true,
-      dueThisWeek: 2,
-      blocked: 1,
-      sprintCapacity: 1,
-      sprintAssigned: 2,
-      overCapacity: true,
-    });
-    expect(m1?.sprint?.name).toBe("S1");
-    expect(m2).toMatchObject({
-      overWipLimit: false,
-      sprintAssigned: 1,
-      sprintCapacity: 5,
-      overCapacity: false,
-    });
-  });
-
-  it("counts activities waiting on an unfinished dependency per assignee", async () => {
-    await db
-      .update(activities)
-      .set({ assigneeId: f.m2.id })
-      .where(eq(activities.id, ids.a4 ?? ""));
-    const { items } = await getWorkload({ now: NOW, projectId: f.project.id });
-    expect(items.find((r) => r.userId === f.m2.id)?.waitingOnDependency).toBe(1);
+  it("counts due-this-week per person", async () => {
+    const { items } = await getWorkload({ now: NOW });
+    expect(items.find((r) => r.userId === f.m1.id)).toMatchObject({ dueThisWeek: 2 });
   });
 
   it("orders people alphabetically and exposes no ranking or score fields", async () => {
-    const { items } = await getWorkload({ now: NOW, projectId: f.project.id });
+    const { items } = await getWorkload({ now: NOW });
     const names = items.map((r) => r.fullName);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
     for (const key of Object.keys(items[0] ?? {}))
@@ -300,15 +204,13 @@ describe("search", () => {
 describe("read-model API", () => {
   const app = createApp();
   it("requires a signed-in user and validates parameters", async () => {
-    for (const path of ["/api/portfolio", "/api/workload", "/api/search?q=abc"]) {
+    for (const path of ["/api/workload", "/api/search?q=abc"]) {
       expect((await request(app).get(path)).status).toBe(401);
     }
     const agent = request.agent(app);
     await agent.post("/api/auth/login").send({ email: f.m1.email, password: f.password });
-    expect((await agent.get("/api/portfolio?health=bogus")).status).toBe(400);
     expect((await agent.get(`/api/search?q=${"x".repeat(101)}`)).status).toBe(400);
     expect((await agent.get("/api/search")).status).toBe(200);
-    expect((await agent.get("/api/portfolio?sort=open&dir=desc&mine=true")).status).toBe(200);
     expect((await agent.get("/api/workload")).status).toBe(200);
     expect((await agent.get(`/api/workload/${f.m1.id}/items`)).status).toBe(200);
   });

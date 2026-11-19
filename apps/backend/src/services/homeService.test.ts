@@ -59,18 +59,29 @@ describe("getHome", () => {
     expect(titles(mine(home.thisWeek))).toEqual(["done-this-week", "monday", "overdue", "sunday"]);
     expect(titles(mine(home.nextWeek))).toEqual(["next-monday"]);
     expect(titles(mine(home.thisMonth))).toEqual(["month-end"]);
+    expect(titles(mine(home.later))).toEqual(["december"]);
   });
 
-  it("excludes no-due-date items, December items, and done items from other weeks", async () => {
+  it("keeps every dated open item in a bucket and the summary consistent with the lists", async () => {
     const home = await getHome(f.m1Actor, { now: NOW, timeZone: "Asia/Manila" });
-    const all = [...home.thisWeek, ...home.nextWeek, ...home.thisMonth].map((r) => r.title);
-    for (const hidden of [
-      "no-date",
-      "december",
-      "done-last-week",
-      "done-sunday-night",
-      "someone-else",
-    ]) {
+    const mine = (rows: Array<{ projectId: string }>) =>
+      rows.filter((r) => r.projectId === f.project.id).length;
+    const listed =
+      mine(home.thisWeek) + mine(home.nextWeek) + mine(home.thisMonth) + mine(home.later);
+    // 6 open dated (monday, sunday, overdue, next-monday, month-end, december) + done-this-week.
+    expect(listed).toBe(7);
+    // Summary: 6 dated open + 1 undated open = 7 incomplete at minimum.
+    expect(home.summary.incomplete).toBeGreaterThanOrEqual(7);
+    expect(home.summary.incomplete + home.summary.completed).toBe(home.summary.total);
+    expect(home.summary.unscheduled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("excludes no-due-date items and done items from other weeks", async () => {
+    const home = await getHome(f.m1Actor, { now: NOW, timeZone: "Asia/Manila" });
+    const all = [...home.thisWeek, ...home.nextWeek, ...home.thisMonth, ...home.later].map(
+      (r) => r.title,
+    );
+    for (const hidden of ["no-date", "done-last-week", "done-sunday-night", "someone-else"]) {
       expect(all).not.toContain(hidden);
     }
   });

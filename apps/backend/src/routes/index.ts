@@ -8,6 +8,7 @@ import {
   createSubprojectSchema,
   createTagSchema,
   createUserSchema,
+  homeQuerySchema,
   loginSchema,
   updateActivitySchema,
   updateProjectSchema,
@@ -320,7 +321,7 @@ api.post(
 // ---- Phase 2: releases, capacity, dependencies, checklists, gate overrides
 api.use(governance);
 
-// ---- Phase 3: portfolio, workload, search
+// ---- Phase 3: workload, search
 api.use(readModels);
 
 // ---- Phases 5 to 8: RAID, Story Map, Kano, OST
@@ -330,13 +331,7 @@ api.use(modules);
 api.get(
   "/home",
   asyncHandler(async (req, res) => {
-    const q = parse(
-      z.object({
-        assigneeId: z.string().uuid().optional(),
-        subprojectId: z.string().uuid().optional(),
-      }),
-      req.query,
-    );
+    const q = parse(homeQuerySchema, req.query);
     res.json(await getHome(actorOf(res), q, await getVisibleProjectIds(actorOf(res))));
   }),
 );

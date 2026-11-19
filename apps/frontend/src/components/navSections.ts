@@ -1,14 +1,5 @@
 export type NavIconKey =
-  | "home"
-  | "portfolio"
-  | "workload"
-  | "insights"
-  | "projects"
-  | "ost"
-  | "usm"
-  | "kano"
-  | "raid"
-  | "settings";
+  "home" | "workload" | "projects" | "ost" | "usm" | "kano" | "raid" | "settings";
 
 export type NavItem = {
   to: string;
@@ -24,21 +15,9 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "overview",
     title: "Overview",
-    items: [{ to: "/", label: "Home", icon: "home", end: true }],
-  },
-  {
-    id: "insights",
-    title: "Insights",
     items: [
+      { to: "/", label: "Home", icon: "home", end: true },
       { to: "/workload", label: "Workload", icon: "workload" },
-      { to: "/insights", label: "Insights", icon: "insights" },
-    ],
-  },
-  {
-    id: "delivery",
-    title: "Projects",
-    items: [
-      { to: "/portfolio", label: "Portfolio", icon: "portfolio" },
       { to: "/projects", label: "Projects", icon: "projects" },
     ],
   },
@@ -46,10 +25,10 @@ export const NAV_SECTIONS: NavSection[] = [
     id: "tools",
     title: "Agile & Discovery",
     items: [
-      { to: "/ost", label: "Opportunity Solution Tree", icon: "ost" },
-      { to: "/usm", label: "User Story Mapping", icon: "usm" },
-      { to: "/kano", label: "Kano Request Tracker", icon: "kano" },
+      { to: "/usm", label: "User Story Mapping (USM)", icon: "usm" },
+      { to: "/ost", label: "Opportunity Solution Tree (OST)", icon: "ost" },
       { to: "/raid", label: "RAID Log", icon: "raid" },
+      { to: "/kano", label: "KANO Request Tracker", icon: "kano" },
     ],
   },
   {

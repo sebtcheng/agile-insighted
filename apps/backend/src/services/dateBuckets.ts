@@ -37,7 +37,7 @@ export function localDate(instant: Date, timeZone: string): string {
   }).format(instant);
 }
 
-export type HomeBucket = "thisWeek" | "nextWeek" | "thisMonth";
+export type HomeBucket = "thisWeek" | "nextWeek" | "thisMonth" | "later";
 
 export type HomeRanges = {
   today: string;
@@ -66,6 +66,7 @@ export function homeRanges(today: string): HomeRanges {
  * - Open and overdue: pinned to This Week so late work stays visible.
  * - Done: shown only when completed this week, in the bucket of its due date (This Week if the due date is elsewhere).
  * - This Month: remaining items due later this month, after next week.
+ * - Later: open items due after this month, so no dated open item is ever dropped.
  */
 export function bucketFor(
   item: { dueDate: string | null; status: string; completedDate: string | null },
@@ -83,5 +84,5 @@ export function bucketFor(
   if (due <= r.weekEnd) return "thisWeek";
   if (due <= r.nextWeekEnd) return "nextWeek";
   if (due <= r.monthEnd) return "thisMonth";
-  return null;
+  return "later";
 }

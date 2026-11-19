@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "../db/client";
-import { activities, activityEvents, projects, subprojects } from "../db/schema";
+import { activities, activityEvents, subprojects } from "../db/schema";
 import { AppError } from "../errors";
 import { createFixture, setProjectArchived, type Fixture } from "../test/helpers";
 import * as activityService from "./activityService";
@@ -201,28 +201,6 @@ describe("activityService rules", () => {
     );
     await expectAppError(activityService.create({ actor: f.pmActor }, f.project.id, base), 409);
     await setProjectArchived(f.project.id, false);
-  });
-
-  it("warns, but does not block, when moving past the WIP limit", async () => {
-    await db.update(projects).set({ wipLimitPerPerson: 1 }).where(eq(projects.id, f.project.id));
-    const first = await activityService.create({ actor: f.pmActor }, f.project.id, {
-      ...base,
-      assigneeId: f.m2.id,
-    });
-    const second = await activityService.create({ actor: f.pmActor }, f.project.id, {
-      ...base,
-      assigneeId: f.m2.id,
-    });
-    const r1 = await activityService.update({ actor: f.pmActor }, first.activity.id, {
-      status: "in_progress",
-    });
-    expect(r1.warnings).toHaveLength(0);
-    const r2 = await activityService.update({ actor: f.pmActor }, second.activity.id, {
-      status: "in_progress",
-    });
-    expect(r2.activity.status).toBe("in_progress");
-    expect(r2.warnings[0]).toMatch(/WIP limit/);
-    await db.update(projects).set({ wipLimitPerPerson: 3 }).where(eq(projects.id, f.project.id));
   });
 
   it("lets a team member change only their own progress and blocker fields", async () => {

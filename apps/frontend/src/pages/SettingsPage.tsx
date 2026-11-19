@@ -6,7 +6,6 @@ import {
   Card,
   Checkbox,
   Group,
-  NumberInput,
   PasswordInput,
   Select,
   Stack,
@@ -491,40 +490,12 @@ function TemplateList({
 function ProjectPanel() {
   const { project } = useCurrentProject();
   const update = useUpdateProject();
-  const [wip, setWip] = useState<number | string>("");
   if (!project) return <Text c="dimmed">No open project.</Text>;
-  const value = wip === "" ? project.wipLimitPerPerson : wip;
   return (
     <Card withBorder maw={480}>
       <Stack>
         <Title order={4}>{project.name}</Title>
-        <NumberInput
-          label="WIP limit per person"
-          description="Moving past it is allowed but shows a warning"
-          min={1}
-          max={50}
-          value={value}
-          onChange={setWip}
-        />
         <Group>
-          <Button
-            loading={update.isPending}
-            disabled={Number(value) === project.wipLimitPerPerson}
-            onClick={() =>
-              update.mutate(
-                { id: project.id, patch: { wipLimitPerPerson: Number(value) } },
-                {
-                  onSuccess: () => {
-                    toast.ok("Saved");
-                    setWip("");
-                  },
-                  onError: (e) => toast.error(e.message),
-                },
-              )
-            }
-          >
-            Save
-          </Button>
           <Button
             variant="light"
             color="red"

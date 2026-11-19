@@ -1,0 +1,364 @@
+{
+  "scannedAt": "2026-11-19T17:28:29.782Z",
+  "root": "C:\\InsightED and STRIDE\\InsightED v2\\agile-insighted",
+  "schemaPath": "../../../Users/user/AppData/Local/Temp/schema.backup.ts",
+  "poolerHint": true,
+  "filesScanned": 139,
+  "includeScripts": false,
+  "excludedScriptHits": 0,
+  "excludedScriptHitsByDir": {},
+  "candidates": [
+    {
+      "file": "apps/backend/src/db/seed.ts",
+      "line": 244,
+      "pattern": "select-all",
+      "snippet": "await db.select().from(sprints).where(eq(sprints.name, \"Sprint 3\")).limit(1)",
+      "note": "db.select() with no column list",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:apps/backend/src/db/seed.ts"
+    },
+    {
+      "file": "apps/backend/src/db/seedModules.ts",
+      "line": 302,
+      "pattern": "write-in-loop",
+      "snippet": "await db.insert(storyActionSteps).values(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:apps/backend/src/db/seedModules.ts"
+    },
+    {
+      "file": "apps/backend/src/db/seedModules.ts",
+      "line": 504,
+      "pattern": "write-in-loop",
+      "snippet": "await db.insert(raidMitigatingActions).values({",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:apps/backend/src/db/seedModules.ts"
+    },
+    {
+      "file": "apps/backend/src/services/activityQueries.ts",
+      "line": 159,
+      "pattern": "select-all",
+      "snippet": "return db.select().from(tags).orderBy(asc(tags.name));",
+      "note": "db.select() with no column list",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:apps/backend/src/services/activityQueries.ts"
+    },
+    {
+      "file": "apps/backend/src/services/activityQueries.ts",
+      "line": 159,
+      "pattern": "missing-limit",
+      "snippet": "return db.select().from(tags).orderBy(asc(tags.name));",
+      "note": "select with no where and no limit (full table read)",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "missing-limit:apps/backend/src/services/activityQueries.ts"
+    },
+    {
+      "file": "apps/backend/src/services/governanceService.ts",
+      "line": 107,
+      "pattern": "select-all",
+      "snippet": "const [sprint] = await db.select().from(sprints).where(eq(sprints.id, sprintId)).limit(1);",
+      "note": "db.select() with no column list",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:apps/backend/src/services/governanceService.ts"
+    },
+    {
+      "file": "apps/backend/src/services/governanceService.ts",
+      "line": 374,
+      "pattern": "select-all",
+      "snippet": ": await db.select().from(checklistTemplates).where(eq(checklistTemplates.id, id)).limit(1);",
+      "note": "db.select() with no column list",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:apps/backend/src/services/governanceService.ts"
+    },
+    {
+      "file": "apps/backend/src/services/projectService.ts",
+      "line": 74,
+      "pattern": "select-all",
+      "snippet": "const [row] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);",
+      "note": "db.select() with no column list",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:apps/backend/src/services/projectService.ts"
+    },
+    {
+      "file": "apps/backend/src/services/projectService.ts",
+      "line": 206,
+      "pattern": "select-all",
+      "snippet": "const [row] = await db.select().from(subprojects).where(eq(subprojects.id, id)).limit(1);",
+      "note": "db.select() with no column list",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:apps/backend/src/services/projectService.ts"
+    },
+    {
+      "file": "apps/backend/src/services/projectService.ts",
+      "line": 290,
+      "pattern": "select-all",
+      "snippet": ": await db.select().from(subprojects).where(eq(subprojects.id, id)).limit(1);",
+      "note": "db.select() with no column list",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:apps/backend/src/services/projectService.ts"
+    },
+    {
+      "file": "apps/backend/src/services/userService.ts",
+      "line": 17,
+      "pattern": "missing-limit",
+      "snippet": "return db.select(columns).from(users).orderBy(asc(users.fullName));",
+      "note": "select with no where and no limit (full table read)",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "missing-limit:apps/backend/src/services/userService.ts"
+    },
+    {
+      "file": "apps/backend/src/services/userService.ts",
+      "line": 17,
+      "pattern": "orderby-unindexed",
+      "snippet": "return db.select(columns).from(users).orderBy(asc(users.fullName));",
+      "note": "ORDER BY users.full_name: no index in schema.ts leads with this column",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:apps/backend/src/services/userService.ts"
+    },
+    {
+      "file": "apps/backend/src/services/usmService.ts",
+      "line": 167,
+      "pattern": "select-all",
+      "snippet": "const [s] = await tx.select().from(usmSteps).where(eq(usmSteps.id, id)).limit(1);",
+      "note": "db.select() with no column list",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:apps/backend/src/services/usmService.ts"
+    },
+    {
+      "file": "apps/backend/src/services/workItemService.ts",
+      "line": 262,
+      "pattern": "missing-limit",
+      "snippet": "db.select({ id: users.id, fullName: users.fullName, email: users.email }).from(users),",
+      "note": "select with no where and no limit (full table read)",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "missing-limit:apps/backend/src/services/workItemService.ts"
+    }
+  ],
+  "columnUsage": [
+    {
+      "file": "apps/backend/src/db/seed.ts",
+      "line": 244,
+      "table": "sprints",
+      "column": "name",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/activityQueries.ts",
+      "line": 159,
+      "table": "tags",
+      "column": "name",
+      "kind": "orderBy"
+    },
+    {
+      "file": "apps/backend/src/services/activityService.ts",
+      "line": 175,
+      "table": "activity_tags",
+      "column": "activity_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/authService.ts",
+      "line": 62,
+      "table": "sessions",
+      "column": "token_hash",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/governanceService.ts",
+      "line": 101,
+      "table": "releases",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/governanceService.ts",
+      "line": 107,
+      "table": "sprints",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/governanceService.ts",
+      "line": 155,
+      "table": "sprint_member_capacity",
+      "column": "sprint_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/governanceService.ts",
+      "line": 374,
+      "table": "checklist_templates",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/kanoService.ts",
+      "line": 90,
+      "table": "kano_request_specs",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/ostService.ts",
+      "line": 181,
+      "table": "users",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/projectService.ts",
+      "line": 74,
+      "table": "projects",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/projectService.ts",
+      "line": 99,
+      "table": "project_members",
+      "column": "project_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/projectService.ts",
+      "line": 147,
+      "table": "projects",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/projectService.ts",
+      "line": 201,
+      "table": "projects",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/projectService.ts",
+      "line": 206,
+      "table": "subprojects",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/projectService.ts",
+      "line": 219,
+      "table": "subprojects",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/projectService.ts",
+      "line": 289,
+      "table": "subprojects",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/projectService.ts",
+      "line": 290,
+      "table": "subprojects",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/raidService.ts",
+      "line": 104,
+      "table": "raid_mitigating_actions",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/storyActionStepService.ts",
+      "line": 116,
+      "table": "story_dor_items",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/userService.ts",
+      "line": 17,
+      "table": "users",
+      "column": "full_name",
+      "kind": "orderBy"
+    },
+    {
+      "file": "apps/backend/src/services/userService.ts",
+      "line": 42,
+      "table": "sessions",
+      "column": "user_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/userService.ts",
+      "line": 43,
+      "table": "users",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/userService.ts",
+      "line": 65,
+      "table": "users",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/userService.ts",
+      "line": 66,
+      "table": "users",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "apps/backend/src/services/userService.ts",
+      "line": 70,
+      "table": "sessions",
+      "column": "user_id",
+      "kind": "where-eq"
+    }
+  ]
+}

@@ -1,14 +1,23 @@
 import { and, eq, inArray, isNull, type SQL } from "drizzle-orm";
-import type { WorkItem, WorkItemsQuery, WorkSourceModule } from "@myapp/shared";
+import type {
+  ProjectWorkItemsQuery,
+  ProjectWorkItemsResponse,
+  WorkItem,
+  WorkItemsQuery,
+  WorkSourceModule,
+} from "@myapp/shared";
+import { matchesWorkStatus, resolveAssignee } from "@myapp/shared";
 import { db } from "../db/client";
 import {
   activities,
   kanoRequestSpecs,
   kanoRequests,
+  ostOpportunities,
   ostSolutions,
   projects,
   raidItems,
   raidMitigatingActions,
+  subprojects,
   usmPersonas,
   usmStepFeatures,
   usmSteps,
@@ -20,7 +29,7 @@ import { classifySchedule } from "./workItemRollups";
 import { scopeCondition, type ProjectScope } from "./visibilityService";
 
 /**
- * The one work-item selector behind Home, Workload and Insights.
+ * The one work-item selector behind Home and Workload.
  * A parent that has nested steps is represented by its steps (never both), so nothing is double counted.
  * Steps without their own date or person inherit the parent's. Parents without completion timestamps
  * (OST solutions) use updated_at as the completion instant once they are in a finished state.
@@ -38,6 +47,8 @@ type Raw = {
   itemKind: "activity" | "step";
   title: string;
   parentTitle: string | null;
+  /** Source-module parent record id, see workItemSchema.parentId. */
+  parentId?: string | null;
   projectId: string;
   subprojectId?: string | null;
   assigneeId: string | null;
@@ -53,10 +64,12 @@ export async function loadWorkItems(
   query: WorkItemsQuery = {},
   scope: ProjectScope = null,
   now: Date = new Date(),
+  opts: { includeArchived?: boolean } = {},
 ): Promise<LoadedWork> {
   const timeZone = env.APP_TIMEZONE;
   const today = localDate(now, timeZone);
-  const live = isNull(projects.archivedAt);
+  // Archived projects drop out of the dashboards, but their own detail page still lists its (read-only) work.
+  const live = opts.includeArchived ? undefined : isNull(projects.archivedAt);
   const projectFilter = (col: Parameters<typeof scopeCondition>[0]): SQL[] => {
     const f: SQL[] = [];
     const s = scopeCondition(col, scope);
@@ -68,9 +81,14 @@ export async function loadWorkItems(
   const moduleItemsWanted = !query.subprojectId;
 
   const actRows = await db
-    .select({ a: activities })
+    .select({
+      a: activities,
+      subCode: subprojects.code,
+      subName: subprojects.name,
+    })
     .from(activities)
     .innerJoin(projects, eq(projects.id, activities.projectId))
+    .leftJoin(subprojects, eq(subprojects.id, activities.subprojectId))
     .where(
       and(
         live,
@@ -79,12 +97,12 @@ export async function loadWorkItems(
       ),
     );
 
-  const raws: Raw[] = actRows.map(({ a }) => ({
+  const raws: Raw[] = actRows.map(({ a, subCode, subName }) => ({
     id: a.id,
     sourceModule: "project",
     itemKind: "activity",
     title: a.title,
-    parentTitle: null,
+    parentTitle: subCode ? `${subCode} ${subName ?? ""}`.trim() : null,
     projectId: a.projectId,
     subprojectId: a.subprojectId,
     assigneeId: a.assigneeId,
@@ -96,9 +114,10 @@ export async function loadWorkItems(
   if (moduleItemsWanted) {
     const [solutions, usmFeatures, requests, specs, raids, mitigations] = await Promise.all([
       db
-        .select({ s: ostSolutions })
+        .select({ s: ostSolutions, oppTitle: ostOpportunities.title })
         .from(ostSolutions)
         .innerJoin(projects, eq(projects.id, ostSolutions.projectId))
+        .leftJoin(ostOpportunities, eq(ostOpportunities.id, ostSolutions.opportunityId))
         .where(and(live, ...projectFilter(ostSolutions.projectId))),
       // User Story Mapping v2: every step feature is a work item (the persona and step are context only).
       db
@@ -132,14 +151,15 @@ export async function loadWorkItems(
         .where(and(live, ...projectFilter(raidItems.projectId))),
     ]);
 
-    for (const { s } of solutions) {
+    for (const { s, oppTitle } of solutions) {
       const done = s.validationStatus === "validated" || s.validationStatus === "invalidated";
       raws.push({
         id: s.id,
         sourceModule: "ost",
         itemKind: "activity",
         title: `${s.code} ${s.title}`,
-        parentTitle: null,
+        parentTitle: oppTitle ?? null,
+        parentId: s.opportunityId,
         projectId: s.projectId,
         assigneeId: s.ownerId,
         dueDate: s.targetDate,
@@ -155,6 +175,7 @@ export async function loadWorkItems(
         itemKind: "step",
         title: f.title,
         parentTitle: `${personaName} › ${stepTitle}`,
+        parentId: f.stepId,
         projectId: f.projectId,
         assigneeId: f.responsibleId,
         dueDate: f.targetDate,
@@ -190,6 +211,7 @@ export async function loadWorkItems(
         itemKind: "step",
         title: s.label,
         parentTitle: `${parent.code} ${parent.revisionRequest}`,
+        parentId: parent.id,
         projectId: parent.projectId,
         assigneeId: s.responsibleId ?? parent.responsibleId,
         dueDate: s.targetDate ?? parent.targetDate,
@@ -225,6 +247,7 @@ export async function loadWorkItems(
         itemKind: "step",
         title: m.description,
         parentTitle: `${parent.code} ${parent.description}`,
+        parentId: parent.id,
         projectId: parent.projectId,
         assigneeId: m.responsibleId ?? parent.ownerId,
         dueDate: m.targetDate ?? parent.targetDate,
@@ -234,15 +257,9 @@ export async function loadWorkItems(
     }
   }
 
-  const assigneeIds = [...new Set(raws.map((r) => r.assigneeId).filter((x): x is string => !!x))];
   const projectIds = [...new Set(raws.map((r) => r.projectId))];
   const [userRows, projectRows] = await Promise.all([
-    assigneeIds.length
-      ? db
-          .select({ id: users.id, fullName: users.fullName })
-          .from(users)
-          .where(inArray(users.id, assigneeIds))
-      : Promise.resolve([]),
+    db.select({ id: users.id, fullName: users.fullName, email: users.email }).from(users),
     projectIds.length
       ? db
           .select({ id: projects.id, name: projects.name })
@@ -250,25 +267,30 @@ export async function loadWorkItems(
           .where(inArray(projects.id, projectIds))
       : Promise.resolve([]),
   ]);
-  const userNames = new Map(userRows.map((u) => [u.id, u.fullName]));
 
   const items: WorkItem[] = raws
-    .filter((r) => !query.assigneeId || r.assigneeId === query.assigneeId)
-    .map((r) => ({
-      id: r.id,
-      sourceModule: r.sourceModule,
-      itemKind: r.itemKind,
-      title: r.title,
-      parentTitle: r.parentTitle,
-      projectId: r.projectId,
-      subprojectId: r.subprojectId ?? null,
-      assigneeId: r.assigneeId,
-      assigneeName: r.assigneeId ? (userNames.get(r.assigneeId) ?? null) : null,
-      dueDate: r.dueDate,
-      isCompleted: r.isCompleted,
-      completedAt: r.completedAt ? r.completedAt.toISOString() : null,
-      scheduleStatus: classifySchedule(r, today, timeZone),
-    }));
+    .map((r) => {
+      const resolved = resolveAssignee(r.assigneeId, userRows);
+      const assigneeId = resolved ? resolved.id : null;
+      const assigneeName = resolved ? resolved.fullName : null;
+      return {
+        id: r.id,
+        sourceModule: r.sourceModule,
+        itemKind: r.itemKind,
+        title: r.title,
+        parentTitle: r.parentTitle,
+        parentId: r.parentId ?? null,
+        projectId: r.projectId,
+        subprojectId: r.subprojectId ?? null,
+        assigneeId,
+        assigneeName,
+        dueDate: r.dueDate,
+        isCompleted: r.isCompleted,
+        completedAt: r.completedAt ? r.completedAt.toISOString() : null,
+        scheduleStatus: classifySchedule(r, today, timeZone),
+      };
+    })
+    .filter((i) => !query.assigneeId || i.assigneeId === query.assigneeId);
 
   return {
     items,
@@ -276,4 +298,31 @@ export async function loadWorkItems(
     timeZone,
     projectNames: new Map(projectRows.map((p) => [p.id, p.name])),
   };
+}
+
+/**
+ * One project's work for its detail page, from the same loader as Home and Workload so the three never disagree.
+ * No sprint, subproject or release is needed: Kano, OST, USM and RAID items have none of them. Open items come first,
+ * soonest due first, then finished items.
+ */
+export async function listProjectWorkItems(
+  projectId: string,
+  q: ProjectWorkItemsQuery = {},
+  scope: ProjectScope = null,
+  now: Date = new Date(),
+): Promise<ProjectWorkItemsResponse> {
+  const loaded = await loadWorkItems({ projectId, assigneeId: q.assigneeId }, scope, now, {
+    includeArchived: true,
+  });
+  const items = loaded.items
+    .filter((i) => !q.module || i.sourceModule === q.module)
+    .filter((i) => !q.status || matchesWorkStatus(i, q.status))
+    .sort(
+      (a, b) =>
+        Number(a.isCompleted) - Number(b.isCompleted) ||
+        (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999") ||
+        a.title.localeCompare(b.title) ||
+        a.id.localeCompare(b.id),
+    );
+  return { items, today: loaded.today };
 }

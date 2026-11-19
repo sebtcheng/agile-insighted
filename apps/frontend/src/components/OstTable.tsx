@@ -12,7 +12,7 @@ import {
   useDeleteSolution,
   useUpdateOpportunity,
 } from "../api/hooks";
-import type { OstCtx } from "../pages/OstPage";
+import type { OstCtx } from "./ostTypes";
 import { SolutionCheck } from "./SolutionCheck";
 import { OstActionBar } from "./OstActionBar";
 import { VALIDATION_COLOR } from "./SolutionModal";

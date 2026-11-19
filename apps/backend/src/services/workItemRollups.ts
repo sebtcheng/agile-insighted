@@ -5,9 +5,12 @@ import type {
   WorkSourceModule,
   WorkSummary,
   ScheduleStatus,
+  PersonCandidate,
 } from "@myapp/shared";
-import { SOURCE_MODULE_LABELS, WORK_SOURCE_MODULES } from "@myapp/shared";
+import { resolveAssignee, SOURCE_MODULE_LABELS, WORK_SOURCE_MODULES } from "@myapp/shared";
 import { localDate } from "./dateBuckets";
+
+export { resolveAssignee, type PersonCandidate };
 
 /** Pure classification and rollups for unified work items. All dates are YYYY-MM-DD in the app timezone. */
 
@@ -103,18 +106,29 @@ export function rollupByMember(items: WorkItem[]): WorkBreakdownRow[] {
 /** Per-member workload, including an Unassigned bucket and members with no items (from `people`). */
 export function memberRollups(
   items: WorkItem[],
-  people: Array<{ id: string; fullName: string }> = [],
+  people: Array<{ id: string; fullName: string; email?: string | null }> = [],
 ): WorkMemberRollup[] {
   const byUser = new Map<string | null, WorkItem[]>();
   for (const p of people) byUser.set(p.id, []);
+
   for (const i of items) {
-    const list = byUser.get(i.assigneeId) ?? [];
-    list.push(i);
-    byUser.set(i.assigneeId, list);
+    const resolved =
+      resolveAssignee(i.assigneeId, people) ?? resolveAssignee(i.assigneeName, people);
+    // Unmatched or empty assignees go to the Unassigned bucket (null), never silently dropped.
+    const targetUserId = resolved ? resolved.id : (i.assigneeId ?? null);
+
+    const list = byUser.get(targetUserId) ?? [];
+    list.push({
+      ...i,
+      assigneeId: targetUserId,
+      assigneeName: resolved ? resolved.fullName : i.assigneeName,
+    });
+    byUser.set(targetUserId, list);
   }
   const names = new Map(people.map((p) => [p.id, p.fullName]));
   for (const i of items)
-    if (i.assigneeId && i.assigneeName) names.set(i.assigneeId, i.assigneeName);
+    if (i.assigneeId && i.assigneeName && !names.has(i.assigneeId))
+      names.set(i.assigneeId, i.assigneeName);
   const out: WorkMemberRollup[] = [];
   for (const [userId, list] of byUser) {
     const byModule = Object.fromEntries(WORK_SOURCE_MODULES.map((m) => [m, 0])) as Record<

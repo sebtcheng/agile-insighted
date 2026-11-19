@@ -21,7 +21,6 @@ const PROJECT = {
   ownerName: "Alice Analyst",
   memberIds: ["00000000-0000-4000-8000-000000000003", "00000000-0000-4000-8000-000000000001"],
   members: [],
-  wipLimitPerPerson: 3,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
   archivedAt: null,
@@ -115,6 +114,7 @@ describe("project modals: Owner and Team members", () => {
     await flush();
     expect(inputByLabel("Owner")?.value).toBe("Paula Manager");
     expect(inputByLabel("Team members")).not.toBeNull();
+    expect(document.body.textContent).not.toContain("WIP limit");
     const name = inputByLabel("Name");
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
@@ -130,6 +130,7 @@ describe("project modals: Owner and Team members", () => {
       ownerId: "00000000-0000-4000-8000-000000000001",
       memberIds: [],
     });
+    expect(h.create.mock.calls[0]?.[0]).not.toHaveProperty("wipLimitPerPerson");
   });
 
   it("Edit project pre-populates the owner and members and submits them unchanged", async () => {
@@ -137,6 +138,7 @@ describe("project modals: Owner and Team members", () => {
     act(() => byText("td a", "eSF7")?.closest("tr")?.click());
     await flush();
     expect(inputByLabel("Owner")?.value).toBe("Alice Analyst");
+    expect(document.body.textContent).not.toContain("WIP limit");
     const pills = [...document.querySelectorAll(".mantine-MultiSelect-pill")].map((e) =>
       e.textContent?.trim(),
     );
@@ -151,5 +153,6 @@ describe("project modals: Owner and Team members", () => {
         memberIds: ["00000000-0000-4000-8000-000000000003", "00000000-0000-4000-8000-000000000001"],
       },
     });
+    expect(h.update.mock.calls[0]?.[0]).not.toHaveProperty("patch.wipLimitPerPerson");
   });
 });

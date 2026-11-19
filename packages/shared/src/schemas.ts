@@ -67,14 +67,12 @@ export type UserDto = z.infer<typeof userDtoSchema>;
 const memberIds = z.array(z.string().uuid()).max(200);
 export const createProjectSchema = z.object({
   name: text(120),
-  wipLimitPerPerson: z.number().int().min(1).max(50).default(3),
   ownerId: z.string().uuid().optional(),
   memberIds: memberIds.default([]),
 });
 export const updateProjectSchema = z
   .object({
     name: text(120),
-    wipLimitPerPerson: z.number().int().min(1).max(50),
     archived: z.boolean(),
     ownerId: z.string().uuid(),
     memberIds,
@@ -295,13 +293,20 @@ export type HomeResponse = {
     endDate: string;
     daysLeft: number;
   } | null;
-  wip: { inProgress: number; limit: number };
+  wip: { inProgress: number };
   thisWeek: HomeRow[];
   nextWeek: HomeRow[];
   thisMonth: HomeRow[];
+  /** Open work due after this month. */
+  later: HomeRow[];
   upcomingReleases: HomeRelease[];
   /** Non-project work (OST, Kano specs, story action steps, RAID actions), bucketed like the activity lists. */
-  moduleItems: { thisWeek: WorkItem[]; nextWeek: WorkItem[]; thisMonth: WorkItem[] };
+  moduleItems: {
+    thisWeek: WorkItem[];
+    nextWeek: WorkItem[];
+    thisMonth: WorkItem[];
+    later: WorkItem[];
+  };
   /** Status counts over all five modules for the current filters. */
   summary: WorkSummary;
   /** True when the row cap was hit, so some items are missing. A PM should narrow by assignee or subproject. */
@@ -319,62 +324,24 @@ export type UpdateSprintInput = z.infer<typeof updateSprintSchema>;
 export type CreateActivityInput = z.infer<typeof createActivitySchema>;
 export type UpdateActivityInput = z.infer<typeof updateActivitySchema>;
 
-// ---- Phase 3: portfolio, workload, search read models
-const booleanQuery = z.enum(["true", "false"]).transform((v) => v === "true");
-
-export const portfolioQuerySchema = z.object({
-  health: healthSchema.optional(),
-  leadId: id.optional(),
-  hasBlockers: booleanQuery.optional(),
-  /** "My subprojects": ones the signed-in user leads or has assigned work in. */
-  mine: booleanQuery.optional(),
-  sort: z
-    .enum(["code", "name", "health", "open", "blocked", "waiting", "overdue", "percentDone"])
-    .default("code"),
-  dir: z.enum(["asc", "desc"]).default("asc"),
-});
-export type PortfolioQuery = z.infer<typeof portfolioQuerySchema>;
-
-export type PortfolioRow = {
-  id: string;
-  code: string;
-  name: string;
-  leadId: string | null;
-  leadName: string | null;
-  health: Health;
-  healthNote: string | null;
-  activeSprint: { id: string; name: string } | null;
-  open: number;
-  blocked: number;
-  waitingOnDependency: number;
-  overdue: number;
-  total: number;
-  /** done / total non-archived, 0 to 100. */
-  percentDone: number;
-  nextRelease: { id: string; name: string; targetDate: string } | null;
-  openHighRaid: number;
-};
-export type PortfolioResponse = { items: PortfolioRow[] };
-
+// ---- Phase 3: workload, search read models
 export type WorkloadRow = {
   userId: string;
   fullName: string;
-  inProgress: number;
-  wipLimit: number;
-  overWipLimit: boolean;
   dueThisWeek: number;
-  blocked: number;
-  waitingOnDependency: number;
-  sprint: { id: string; name: string } | null;
-  sprintAssigned: number;
-  sprintCapacity: number | null;
-  overCapacity: boolean;
 };
 export type WorkloadResponse = {
   items: WorkloadRow[];
   /** Team-wide rollups across all five modules, including an Unassigned bucket. */
   members: WorkMemberRollup[];
 };
+
+/** GET /home: optional assignee and subproject filters. */
+export const homeQuerySchema = z.object({
+  assigneeId: z.string().uuid().optional(),
+  subprojectId: z.string().uuid().optional(),
+});
+export type HomeQueryInput = z.infer<typeof homeQuerySchema>;
 
 export const searchQuerySchema = z.object({
   q: z.string().trim().max(100).default(""),
@@ -401,7 +368,6 @@ export type ProjectDto = {
   ownerName?: string | null;
   members?: Array<{ id: string; fullName: string }>;
   memberIds?: string[];
-  wipLimitPerPerson: number;
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;

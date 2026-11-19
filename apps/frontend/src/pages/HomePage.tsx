@@ -13,8 +13,13 @@ import {
 import { useLocalStorage } from "@mantine/hooks";
 import { useSearchParams } from "react-router-dom";
 import type { HomeResponse, HomeRow, WorkItem } from "@myapp/shared";
-import { SummaryStrip, WorkItemRow } from "../components/WorkItems";
-import { useHome, useSubprojects, useUsers, useCurrentProject } from "../api/hooks";
+import {
+  SummaryStrip,
+  WorkItemsView,
+  WorkViewSwitch,
+  type WorkView,
+} from "../components/WorkItems";
+import { useHome, useProjects, useSubprojects, useUsers, useCurrentProject } from "../api/hooks";
 import { useAuth, useIsPm } from "../auth";
 import { ActivityRow } from "../components/ActivityRow";
 import { PageHeader, QueryState, fmtDate } from "../components/ui";
@@ -40,12 +45,16 @@ function Section({
   grouped,
   extra,
   moduleRows = [],
+  view,
+  projectNames,
 }: {
   title: string;
   rows: HomeRow[];
   moduleRows?: WorkItem[];
   grouped: boolean;
   extra?: React.ReactNode;
+  view: WorkView;
+  projectNames: Map<string, string>;
 }) {
   const isNextWeek = title === "Next Week";
   const risky = isNextWeek ? rows.filter((r) => r.atRisk) : [];
@@ -73,9 +82,7 @@ function Section({
           <Text size="xs" fw={700} tt="uppercase" c="dimmed" px="sm" pt="sm">
             Other modules
           </Text>
-          {moduleRows.map((i) => (
-            <WorkItemRow key={i.id} item={i} />
-          ))}
+          <WorkItemsView items={moduleRows} view={view} projectNames={projectNames} checkable />
         </div>
       ) : null}
       {rows.length === 0 && !extra && moduleRows.length === 0 ? (
@@ -89,19 +96,18 @@ function Section({
               {g.label}
             </Text>
             {g.rows.map((r) => (
-              <ActivityRow key={r.id} activity={r} />
+              <ActivityRow key={r.id} activity={r} checkable />
             ))}
           </div>
         ))
       ) : (
-        rows.map((r) => <ActivityRow key={r.id} activity={r} />)
+        rows.map((r) => <ActivityRow key={r.id} activity={r} checkable />)
       )}
     </Card>
   );
 }
 
 function Header({ data }: { data: HomeResponse }) {
-  const over = data.wip.limit > 0 && data.wip.inProgress > data.wip.limit;
   return (
     <Paper withBorder p="md" mb="md">
       <Group justify="space-between" align="flex-start" wrap="wrap">
@@ -123,14 +129,9 @@ function Header({ data }: { data: HomeResponse }) {
           <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
             Your work in progress
           </Text>
-          <Text fw={600} fz="lg" c={over ? "red" : undefined}>
-            {data.wip.inProgress} of {data.wip.limit}
+          <Text fw={600} fz="lg">
+            {data.wip.inProgress}
           </Text>
-          {over ? (
-            <Text size="sm" c="red">
-              Over the limit
-            </Text>
-          ) : null}
         </div>
       </Group>
       <Text size="xs" c="dimmed" tt="uppercase" fw={700} mt="md" mb={4}>
@@ -156,6 +157,12 @@ export function HomePage() {
   const { project } = useCurrentProject();
   const subs = useSubprojects(project?.id);
   const users = useUsers();
+  const [view, setView] = useLocalStorage<WorkView>({
+    key: `home.view.${user.id}`,
+    defaultValue: "list",
+  });
+  const projects = useProjects();
+  const projectNames = new Map((projects.data ?? []).map((p) => [p.id, p.name]));
   const query = useHome({ assigneeId: filters.assigneeId, subprojectId: filters.subprojectId });
 
   const update = (next: typeof filters) =>
@@ -218,6 +225,9 @@ export function HomePage() {
                 />
               </Group>
             ) : null}
+            <Group justify="flex-end">
+              <WorkViewSwitch value={view} onChange={setView} />
+            </Group>
             {data.truncated ? (
               <Alert color="yellow" title="Showing part of a long list">
                 There is more work than fits on this page. Filter by assignee or subproject to see
@@ -229,18 +239,24 @@ export function HomePage() {
               rows={data.thisWeek}
               moduleRows={data.moduleItems.thisWeek}
               grouped={grouped}
+              view={view}
+              projectNames={projectNames}
             />
             <Section
               title="Next Week"
               rows={data.nextWeek}
               moduleRows={data.moduleItems.nextWeek}
               grouped={grouped}
+              view={view}
+              projectNames={projectNames}
             />
             <Section
               title="This Month"
               rows={data.thisMonth}
               moduleRows={data.moduleItems.thisMonth}
               grouped={grouped}
+              view={view}
+              projectNames={projectNames}
               extra={
                 data.upcomingReleases.length > 0 ? (
                   <Stack
@@ -268,6 +284,16 @@ export function HomePage() {
                 ) : undefined
               }
             />
+            {data.later.length + data.moduleItems.later.length > 0 ? (
+              <Section
+                title="Later"
+                rows={data.later}
+                moduleRows={data.moduleItems.later}
+                grouped={grouped}
+                view={view}
+                projectNames={projectNames}
+              />
+            ) : null}
             <Text size="xs" c="dimmed">
               Weeks start on Monday ({data.timezone}). Items with no due date are not shown here.
             </Text>

@@ -49,55 +49,6 @@ export function applyActivityFilters(sp: URLSearchParams, f: ActivityFilters): U
   return next;
 }
 
-// ---- Portfolio filters
-export type PortfolioFilters = {
-  health?: "on_track" | "at_risk" | "off_track";
-  leadId?: string;
-  hasBlockers?: boolean;
-  mine?: boolean;
-  sort: "code" | "name" | "health" | "open" | "blocked" | "waiting" | "overdue" | "percentDone";
-  dir: "asc" | "desc";
-};
-
-const SORTS = [
-  "code",
-  "name",
-  "health",
-  "open",
-  "blocked",
-  "waiting",
-  "overdue",
-  "percentDone",
-] as const;
-
-export function parsePortfolioFilters(sp: URLSearchParams): PortfolioFilters {
-  const health = sp.get("health");
-  const sort = sp.get("sort");
-  return {
-    health:
-      health === "on_track" || health === "at_risk" || health === "off_track" ? health : undefined,
-    leadId: sp.get("leadId") || undefined,
-    hasBlockers: sp.get("hasBlockers") === "true" ? true : undefined,
-    mine: sp.get("mine") === "true" ? true : undefined,
-    sort: (SORTS as readonly string[]).includes(sort ?? "")
-      ? (sort as PortfolioFilters["sort"])
-      : "code",
-    dir: sp.get("dir") === "desc" ? "desc" : "asc",
-  };
-}
-
-export function applyPortfolioFilters(sp: URLSearchParams, f: PortfolioFilters): URLSearchParams {
-  const next = new URLSearchParams(sp);
-  for (const key of ["health", "leadId", "hasBlockers", "mine", "sort", "dir"]) next.delete(key);
-  if (f.health) next.set("health", f.health);
-  if (f.leadId) next.set("leadId", f.leadId);
-  if (f.hasBlockers) next.set("hasBlockers", "true");
-  if (f.mine) next.set("mine", "true");
-  if (f.sort !== "code") next.set("sort", f.sort);
-  if (f.dir !== "asc") next.set("dir", f.dir);
-  return next;
-}
-
 // ---- Home: PM filters and the group-by toggle
 export type HomeFilters = { assigneeId?: string; subprojectId?: string; group?: boolean };
 

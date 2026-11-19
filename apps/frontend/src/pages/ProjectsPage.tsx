@@ -3,7 +3,6 @@ import {
   Button,
   Group,
   MultiSelect,
-  NumberInput,
   Select,
   Stack,
   Table,
@@ -136,7 +135,6 @@ function EditProjectModal(props: { project: ProjectRow; onClose: () => void }) {
   const form = useForm({
     initialValues: {
       name: project.name,
-      wipLimitPerPerson: project.wipLimitPerPerson,
       ownerId: project.ownerId,
       memberIds: project.memberIds ?? [],
     },
@@ -159,12 +157,6 @@ function EditProjectModal(props: { project: ProjectRow; onClose: () => void }) {
     >
       <Stack>
         <TextInput label="Name" data-autofocus {...form.getInputProps("name")} />
-        <NumberInput
-          label="WIP limit per person"
-          min={1}
-          max={50}
-          {...form.getInputProps("wipLimitPerPerson")}
-        />
         <TeamFields
           owner={form.getInputProps("ownerId")}
           members={form.getInputProps("memberIds")}
@@ -200,7 +192,6 @@ export function ProjectsPage() {
   const form = useForm({
     initialValues: {
       name: "",
-      wipLimitPerPerson: 3,
       ownerId: me.id,
       memberIds: [] as string[],
     },
@@ -246,7 +237,6 @@ export function ProjectsPage() {
                 <Table.Tr>
                   <Table.Th>Project</Table.Th>
                   <Table.Th>Code</Table.Th>
-                  <Table.Th>WIP limit</Table.Th>
                   <Table.Th>Created</Table.Th>
                   {isPm ? <Table.Th /> : null}
                 </Table.Tr>
@@ -270,7 +260,6 @@ export function ProjectsPage() {
                       ) : null}
                     </Table.Td>
                     <Table.Td>{p.code}</Table.Td>
-                    <Table.Td>{p.wipLimitPerPerson}</Table.Td>
                     <Table.Td>{fmtDate(p.createdAt)}</Table.Td>
                     {isPm ? (
                       <Table.Td>
@@ -395,12 +384,6 @@ export function ProjectsPage() {
         >
           <Stack>
             <TextInput label="Name" data-autofocus {...form.getInputProps("name")} />
-            <NumberInput
-              label="WIP limit per person"
-              min={1}
-              max={50}
-              {...form.getInputProps("wipLimitPerPerson")}
-            />
             <TeamFields
               owner={form.getInputProps("ownerId")}
               members={form.getInputProps("memberIds")}

@@ -2,12 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   applyActivityFilters,
   applyHomeFilters,
-  applyPortfolioFilters,
   parseActivityFilters,
   parseHomeFilters,
-  parsePortfolioFilters,
   type ActivityFilters,
-  type PortfolioFilters,
 } from "./filters";
 
 const ID = "01a1ef79-0e1d-7a5f-be99-5ccf8a7654e4";
@@ -60,34 +57,6 @@ describe("activity filters round-trip through the URL", () => {
       status: "todo",
     }).toString();
     expect(a).toBe(b);
-  });
-});
-
-describe("portfolio filters round-trip", () => {
-  it("defaults to code ascending and omits defaults from the URL", () => {
-    const f = parsePortfolioFilters(new URLSearchParams());
-    expect(f).toMatchObject({ sort: "code", dir: "asc" });
-    expect(applyPortfolioFilters(new URLSearchParams(), f).toString()).toBe("");
-  });
-
-  it("round-trips every filter and sort", () => {
-    const full: PortfolioFilters = {
-      health: "at_risk",
-      leadId: ID,
-      hasBlockers: true,
-      mine: true,
-      sort: "overdue",
-      dir: "desc",
-    };
-    const sp = applyPortfolioFilters(new URLSearchParams(), full);
-    expect(parsePortfolioFilters(new URLSearchParams(sp.toString()))).toEqual(full);
-  });
-
-  it("falls back to defaults for an unknown sort", () => {
-    expect(parsePortfolioFilters(new URLSearchParams("sort=rank&dir=sideways"))).toMatchObject({
-      sort: "code",
-      dir: "asc",
-    });
   });
 });
 

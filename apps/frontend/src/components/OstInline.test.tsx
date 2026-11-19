@@ -10,7 +10,8 @@ const patch = vi.hoisted(() => vi.fn());
 vi.mock("../api/client", () => ({
   api: { patch, get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
 }));
-import { OutcomeCard, type OstCtx } from "../pages/OstPage";
+import { OutcomeCard } from "../pages/OstPage";
+import type { OstCtx } from "./ostTypes";
 import { OstActionBar } from "./OstActionBar";
 import { OstTable } from "./OstTable";
 

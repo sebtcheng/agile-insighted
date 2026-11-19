@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { Fragment, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   ActionIcon,
+  Alert,
   Badge,
   Button,
   Card,
   Group,
+  Progress,
   Select,
   Stack,
   Text,
@@ -38,23 +40,38 @@ function StepCard({
   total,
   today,
   canReorder,
+  dropCue,
   onOpen,
   onMove,
+  onDragStartStep,
+  onDragEndStep,
 }: {
   step: UsmStepDto;
   index: number;
   total: number;
   today: string;
   canReorder: boolean;
+  /** "before" / "after": where a dragged card would land relative to this one. */
+  dropCue: "before" | "after" | null;
   onOpen: () => void;
   onMove: (to: number) => void;
+  onDragStartStep: () => void;
+  onDragEndStep: () => void;
 }) {
   const sum = usmStepSummary(step.features, today);
+  const pct = sum.total === 0 ? 0 : Math.round((sum.completed / sum.total) * 100);
+  const state =
+    sum.total > 0 && sum.completed === sum.total
+      ? { label: "Complete", color: "green" }
+      : sum.completed > 0
+        ? { label: "In progress", color: "blue" }
+        : { label: sum.total === 0 ? "No features" : "Not started", color: "gray" };
   return (
     <Card
-      className="item-card usm-card"
-      p="md"
+      className="item-card usm-card usm-step"
+      p={0}
       data-step={step.id}
+      data-drop={dropCue ?? undefined}
       role="button"
       tabIndex={0}
       aria-label={`Step ${index + 1}: ${step.title}`}
@@ -67,57 +84,90 @@ function StepCard({
         }
       }}
     >
-      <Group justify="space-between" wrap="nowrap" align="flex-start">
-        <Group gap="sm" wrap="nowrap" align="flex-start" style={{ minWidth: 0 }}>
-          <Badge size="sm" variant="light" className="raid-mono">
+      {canReorder ? (
+        <div
+          className="usm-grip"
+          draggable
+          aria-hidden="true"
+          title="Drag to reorder"
+          data-grip={step.id}
+          onClick={(e) => e.stopPropagation()}
+          onDragStart={(e) => {
+            e.stopPropagation();
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", step.id);
+            const card = e.currentTarget.closest(".usm-step");
+            if (card) e.dataTransfer.setDragImage(card, 24, 16);
+            onDragStartStep();
+          }}
+          onDragEnd={onDragEndStep}
+        >
+          <span className="usm-grip-dots">⋮⋮⋮</span>
+        </div>
+      ) : null}
+      <Stack gap="xs" p="md" className="usm-step-body">
+        <Group justify="space-between" wrap="nowrap" align="flex-start">
+          <Text className="usm-step-number" aria-hidden="true">
             {index + 1}
-          </Badge>
-          <div style={{ minWidth: 0 }}>
-            <Text size="sm" fw={600} className="raid-card-title">
-              {step.title}
-            </Text>
-            <Group gap="xs" mt={4}>
-              <Text size="xs" className="raid-sub">
-                {sum.completed}/{sum.total} features completed
-              </Text>
-              {sum.overdue > 0 ? (
-                <Badge size="xs" color="red" variant="light">
-                  {sum.overdue} overdue
-                </Badge>
-              ) : null}
+          </Text>
+          {canReorder ? (
+            <Group gap={4} wrap="nowrap" onClick={(e) => e.stopPropagation()}>
+              <ActionIcon
+                variant="subtle"
+                className="usm-action"
+                aria-label={`Move step ${index + 1} left`}
+                disabled={index === 0}
+                onClick={() => onMove(index - 1)}
+              >
+                ←
+              </ActionIcon>
+              <ActionIcon
+                variant="subtle"
+                className="usm-action"
+                aria-label={`Move step ${index + 1} right`}
+                disabled={index === total - 1}
+                onClick={() => onMove(index + 1)}
+              >
+                →
+              </ActionIcon>
             </Group>
-          </div>
+          ) : null}
         </Group>
-        {canReorder ? (
-          <Group gap={4} wrap="nowrap" onClick={(e) => e.stopPropagation()}>
-            <ActionIcon
-              variant="subtle"
-              className="usm-action"
-              aria-label={`Move step ${index + 1} earlier`}
-              disabled={index === 0}
-              onClick={() => onMove(index - 1)}
-            >
-              ↑
-            </ActionIcon>
-            <ActionIcon
-              variant="subtle"
-              className="usm-action"
-              aria-label={`Move step ${index + 1} later`}
-              disabled={index === total - 1}
-              onClick={() => onMove(index + 1)}
-            >
-              ↓
-            </ActionIcon>
-          </Group>
+        <Text size="sm" fw={600} className="raid-card-title">
+          {step.title}
+        </Text>
+        {step.description?.trim() ? (
+          <Text size="xs" c="dimmed" lineClamp={2} className="usm-step-desc">
+            {step.description}
+          </Text>
         ) : null}
-      </Group>
+        <Progress
+          value={pct}
+          size="sm"
+          color={state.color}
+          aria-label={`Step ${index + 1} feature completion`}
+        />
+        <Group gap="xs">
+          <Text size="xs" className="raid-sub">
+            {sum.completed}/{sum.total} features completed
+          </Text>
+          <Badge size="xs" variant="light" color={state.color} data-state={state.label}>
+            {state.label}
+          </Badge>
+          {sum.overdue > 0 ? (
+            <Badge size="xs" color="red" variant="light">
+              {sum.overdue} overdue
+            </Badge>
+          ) : null}
+        </Group>
+      </Stack>
     </Card>
   );
 }
 
 function InsertButton({ at, onInsert }: { at: number; onInsert: (at: number) => void }) {
   return (
-    <Group justify="center">
+    <div className="usm-insert">
       <ActionIcon
         variant="subtle"
         size="sm"
@@ -127,7 +177,77 @@ function InsertButton({ at, onInsert }: { at: number; onInsert: (at: number) => 
       >
         +
       </ActionIcon>
-    </Group>
+    </div>
+  );
+}
+
+/** Steps left to right: a + slot before the first card, between every pair, and after the last. */
+function StepTrack({
+  steps,
+  today,
+  canEdit,
+  onOpen,
+  onMove,
+  onInsert,
+}: {
+  steps: UsmStepDto[];
+  today: string;
+  canEdit: boolean;
+  onOpen: (id: string) => void;
+  onMove: (from: number, to: number) => void;
+  onInsert: (at: number) => void;
+}) {
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const end = () => {
+    setDragFrom(null);
+    setOverIndex(null);
+  };
+  const cueFor = (i: number): "before" | "after" | null =>
+    dragFrom === null || overIndex !== i || dragFrom === i
+      ? null
+      : dragFrom > i
+        ? "before"
+        : "after";
+  return (
+    <div className="usm-track" role="list" aria-label="Journey steps">
+      {steps.map((s, i) => (
+        <Fragment key={s.id}>
+          {canEdit ? <InsertButton at={i} onInsert={onInsert} /> : null}
+          <div
+            role="listitem"
+            className="usm-slot"
+            onDragOver={(e) => {
+              if (dragFrom === null) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (overIndex !== i) setOverIndex(i);
+            }}
+            onDrop={(e) => {
+              if (dragFrom === null) return;
+              e.preventDefault();
+              const from = dragFrom;
+              end();
+              if (from !== i) onMove(from, i);
+            }}
+          >
+            <StepCard
+              step={s}
+              index={i}
+              total={steps.length}
+              today={today}
+              canReorder={canEdit}
+              dropCue={cueFor(i)}
+              onOpen={() => onOpen(s.id)}
+              onMove={(to) => onMove(i, to)}
+              onDragStartStep={() => setDragFrom(i)}
+              onDragEndStep={end}
+            />
+          </div>
+        </Fragment>
+      ))}
+      {canEdit ? <InsertButton at={steps.length} onInsert={onInsert} /> : null}
+    </div>
   );
 }
 
@@ -189,9 +309,19 @@ function AddStepModal({
 function AddUser({ projectId, onAdded }: { projectId: string; onAdded: (id: string) => void }) {
   const create = useCreateUsmPersona();
   const [name, setName] = useState("");
-  const submit = () => {
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // A real form: the button click and Enter both land here, so neither can be a silent no-op.
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (create.isPending) return;
     const next = name.trim();
-    if (!next) return;
+    if (!next) {
+      setError("Enter a user or role");
+      inputRef.current?.focus();
+      return;
+    }
+    setError(null);
     create.mutate(
       { projectId, name: next },
       {
@@ -199,28 +329,33 @@ function AddUser({ projectId, onAdded }: { projectId: string; onAdded: (id: stri
           setName("");
           onAdded(p.id);
         },
-        onError: (e) => toast.error(e.message),
+        onError: (err) => {
+          setError(err.message);
+          inputRef.current?.focus();
+        },
       },
     );
   };
   return (
-    <Group gap="xs" wrap="nowrap">
-      <TextInput
-        aria-label="New user name"
-        placeholder="User or role"
-        maxLength={80}
-        value={name}
-        onChange={(e) => setName(e.currentTarget.value)}
-        onKeyDown={(e) => {
-          if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
-          e.preventDefault();
-          submit();
-        }}
-      />
-      <Button variant="default" onClick={submit} loading={create.isPending}>
-        Add user
-      </Button>
-    </Group>
+    <form onSubmit={submit} noValidate>
+      <Group gap="xs" wrap="nowrap" align="flex-start">
+        <TextInput
+          ref={inputRef}
+          aria-label="New user name"
+          placeholder="User or role"
+          maxLength={80}
+          value={name}
+          error={error}
+          onChange={(e) => {
+            setName(e.currentTarget.value);
+            if (error) setError(null);
+          }}
+        />
+        <Button type="submit" variant="default" loading={create.isPending}>
+          Add user
+        </Button>
+      </Group>
+    </form>
   );
 }
 
@@ -235,6 +370,7 @@ export function StoryMapPage() {
   const steps = useUsmSteps(project?.id, persona?.id);
   const reorder = useReorderUsmSteps();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [reorderError, setReorderError] = useState<string | null>(null);
   const [addOpen, addModal] = useDisclosure(false);
   const [insertAt, setInsertAt] = useState<number | undefined>();
   const readOnly = !project || !!project.archivedAt;
@@ -257,9 +393,11 @@ export function StoryMapPage() {
     const [moved] = ids.splice(from, 1);
     if (!moved) return;
     ids.splice(to, 0, moved);
+    setReorderError(null);
+    // The hook reorders the cards at once (numbers 1..N follow) and restores them if the server refuses.
     reorder.mutate(
       { projectId: project.id, personaId: persona.id, stepIds: ids },
-      { onError: (e) => toast.error(e.message) },
+      { onError: (e) => setReorderError(e.message) },
     );
   };
   // The modal reads the live step, so ticking a feature updates the card behind it without a reset.
@@ -268,7 +406,7 @@ export function StoryMapPage() {
   return (
     <>
       <PageHeader
-        title="User Story Mapping"
+        title="User Story Mapping (USM)"
         subtitle="Pick a user, lay out their steps from start to finish, and list the features each step needs."
         actions={
           isPm && !readOnly && persona ? (
@@ -326,21 +464,20 @@ export function StoryMapPage() {
                 }
               >
                 {(data) => (
-                  <Stack gap={4}>
-                    {data.map((s, i) => (
-                      <Stack key={s.id} gap={4}>
-                        {isPm && !readOnly ? <InsertButton at={i} onInsert={startAdd} /> : null}
-                        <StepCard
-                          step={s}
-                          index={i}
-                          total={data.length}
-                          today={today}
-                          canReorder={isPm && !readOnly}
-                          onOpen={() => setOpenId(s.id)}
-                          onMove={(to) => move(data, i, to)}
-                        />
-                      </Stack>
-                    ))}
+                  <Stack gap="xs">
+                    {reorderError ? (
+                      <Alert color="red" title="Could not reorder the steps" role="alert">
+                        {reorderError}
+                      </Alert>
+                    ) : null}
+                    <StepTrack
+                      steps={data}
+                      today={today}
+                      canEdit={isPm && !readOnly}
+                      onOpen={setOpenId}
+                      onMove={(from, to) => move(data, from, to)}
+                      onInsert={startAdd}
+                    />
                   </Stack>
                 )}
               </QueryState>

@@ -15,7 +15,6 @@ import { useSearchParams } from "react-router-dom";
 import {
   MIN_SOLUTIONS_PER_TARGET,
   type OpportunityDto,
-  type OstTreeDto,
   type OutcomeDto,
   type SolutionDto,
 } from "@myapp/shared";
@@ -40,31 +39,23 @@ import { SolutionModal } from "../components/SolutionModal";
 import { SolutionCheck } from "../components/SolutionCheck";
 import { OstActionBar } from "../components/OstActionBar";
 import { OstTable } from "../components/OstTable";
+import type { OstCtx, OstDialog } from "../components/ostTypes";
 import { PageHeader, QueryState, fmtDate, toast } from "../components/ui";
 import { RequirementModal, stepsToDrafts } from "../components/RequirementModal";
 import { ViewModeToggle } from "../components/ViewModeToggle";
 import { useViewMode } from "../lib/viewMode";
 import { outcomeSolutions, solutionProgress } from "../lib/ostOptimistic";
+import { formToSolutionInput, solutionToForm } from "../lib/ostSolutionForm";
 import { CompletionMeter } from "../components/CompletionMeter";
 import { SideModal } from "../components/SideModal";
 
-type Dialog =
-  | { kind: "outcome"; existing?: OutcomeDto }
-  | { kind: "opportunity"; outcomeId: string; existing?: OpportunityDto }
-  | { kind: "solution"; opportunityId: string; existing?: SolutionDto }
-  | null;
+type Dialog = OstDialog;
 
 function targetLine(o: OutcomeDto): string | null {
   return o.targetDate ? `Target date: ${fmtDate(o.targetDate)}` : null;
 }
 
-export type OstCtx = {
-  tree: OstTreeDto;
-  isPm: boolean;
-  readOnly: boolean;
-  setDialog: (d: Dialog) => void;
-  openSolution: (id: string) => void;
-};
+export type { OstCtx };
 
 /** A solution is the action under a requirement: tick it when done. */
 function SolutionRow({ s, ctx }: { s: SolutionDto; ctx: OstCtx }) {
@@ -360,7 +351,7 @@ export function OstPage() {
   return (
     <>
       <PageHeader
-        title="Opportunity Solution Tree"
+        title="Opportunity Solution Tree (OST)"
         subtitle="Start from an outcome, map the requirements, and compare the solutions you could take as actions."
         actions={
           isPm && !readOnly ? (
@@ -483,14 +474,11 @@ export function OstPage() {
           title={dialog.existing ? "Edit solution" : "Add solution"}
           fields={solFields}
           pending={createSol.isPending || updateSol.isPending}
-          initial={
-            dialog.existing
-              ? { title: dialog.existing.title, ownerId: dialog.existing.ownerId ?? "" }
-              : undefined
-          }
+          initial={dialog.existing ? solutionToForm(dialog.existing) : undefined}
           onClose={close}
           onSubmit={(v) => {
-            const input = { title: v.title ?? "", ownerId: v.ownerId || null };
+            // The form shows a Target date field, so the body must carry it (it was silently dropped before).
+            const input = formToSolutionInput(v);
             if (dialog.existing) updateSol.mutate({ id: dialog.existing.id, patch: input }, done);
             else createSol.mutate({ opportunityId: dialog.opportunityId, input }, done);
           }}

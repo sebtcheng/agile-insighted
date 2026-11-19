@@ -1,5 +1,6 @@
 import {
   Badge,
+  Checkbox,
   Group,
   NumberInput,
   Progress,
@@ -36,9 +37,12 @@ export type RowActivity = ActivityDto & { isOverdue?: boolean; atRisk?: boolean 
 export function ActivityRow({
   activity,
   showAssignee = true,
+  checkable = false,
 }: {
   activity: RowActivity;
   showAssignee?: boolean;
+  /** Adds the leftmost completion checkbox (same governed update as the status select). */
+  checkable?: boolean;
 }) {
   const user = useAuth();
   const isPm = useIsPm();
@@ -57,6 +61,19 @@ export function ActivityRow({
   return (
     <Stack gap={6} p="sm" style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}>
       <Group justify="space-between" wrap="nowrap" align="flex-start">
+        {checkable ? (
+          <Checkbox
+            size="xs"
+            mt={4}
+            checked={done}
+            disabled={!editable || gov.isPending}
+            aria-label={`${done ? "Reopen" : "Complete"} ${activity.title}`}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) =>
+              void change({ status: e.currentTarget.checked ? "done" : "in_progress" })
+            }
+          />
+        ) : null}
         <UnstyledButton
           onClick={() => open(activity.id)}
           style={{ flex: 1, minWidth: 0 }}

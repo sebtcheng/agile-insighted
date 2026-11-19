@@ -121,7 +121,7 @@ export async function createProject(creatorId: string, input: CreateProjectInput
   const id = await db.transaction(async (tx) => {
     const [row] = await tx
       .insert(projects)
-      .values({ name: input.name, code, ownerId, wipLimitPerPerson: input.wipLimitPerPerson })
+      .values({ name: input.name, code, ownerId })
       .returning({ id: projects.id });
     if (!row) throw new Error("insert returned no row");
     await syncMembers(tx, row.id, input.memberIds);
@@ -134,7 +134,6 @@ export async function updateProject(id: string, patch: UpdateProjectInput) {
   await assertPeople([...(patch.ownerId ? [patch.ownerId] : []), ...(patch.memberIds ?? [])]);
   const set: Partial<typeof projects.$inferInsert> = {};
   if (patch.name !== undefined) set.name = patch.name;
-  if (patch.wipLimitPerPerson !== undefined) set.wipLimitPerPerson = patch.wipLimitPerPerson;
   if (patch.archived !== undefined) set.archivedAt = patch.archived ? new Date() : null;
   if (patch.ownerId !== undefined) set.ownerId = patch.ownerId;
   await db.transaction(async (tx) => {
