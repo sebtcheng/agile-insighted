@@ -1,0 +1,67 @@
+name: Deploy InsightEd Agile Trail Production
+
+on:
+  push:
+    branches:
+      - production
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-agile-insighted-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to InsightEd Agile Trail Production VM
+    runs-on: self-hosted
+    timeout-minutes: 20
+
+    steps:
+      - name: Deploy InsightEd Agile Trail Production Environment
+        run: |
+          set -e
+          echo "===================================================="
+          echo "🚀 Deploying InsightEd Agile Trail to Production (Self-Hosted)..."
+          echo "===================================================="
+          cd /var/www/html/InsightED-ROSDO/agile-insighted
+
+          export GIT_SSH_COMMAND="ssh -i /home/Administrator1/.ssh/id_ed25519_trail -o StrictHostKeyChecking=no"
+
+          # 1. Pull latest production branch
+          git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+          git fetch origin
+          git checkout -B production -f origin/production
+          echo "Current commit:"
+          git log -1 --format="%h - %s (%an, %cd)"
+
+          # 2. Install dependencies & Run Migrations & Build
+          echo "--> Ensuring clean permissions..."
+          sudo chown -R Administrator1:Administrator1 /var/www/html/InsightED-ROSDO/agile-insighted
+          echo "--> Installing dependencies..."
+          npm install --legacy-peer-deps --prefer-offline --no-audit --no-fund
+
+          echo "--> Running database migrations..."
+          npm run db:migrate -w @myapp/backend
+
+          echo "--> Building backend..."
+          npm run build -w @myapp/backend
+
+          echo "--> Building frontend..."
+          export VITE_BASE_PATH="/trail/"
+          export NODE_OPTIONS="--max-old-space-size=4096"
+          npm run build -w @myapp/frontend
+          sudo chmod -R a+rX apps/frontend/dist
+
+          # 3. Restart PM2 service
+          echo "--> Restarting PM2 service..."
+          mkdir -p logs
+          export PORT=5018
+          export PM2_APP_NAME="trail-production-api"
+          pm2 reload trail-production-api --update-env || pm2 restart trail-production-api --update-env || pm2 start apps/backend/ecosystem.config.cjs --name trail-production-api --update-env
+          pm2 save
+
+          # 4. Verify health
+          echo "--> Verifying backend health on port 5018..."
+          sleep 4
+          curl -s -i http://127.0.0.1:5018/healthz || curl -s -i http://127.0.0.1:5018/ || true
+          echo "✅ InsightEd Agile Trail Production deployment completed successfully!"

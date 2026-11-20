@@ -43,7 +43,7 @@ createRoot(root).render(
         <MantineProvider theme={theme} defaultColorScheme="light">
           <Notifications position="top-right" />
           <QueryClientProvider client={queryClient}>
-            <BrowserRouter>
+            <BrowserRouter basename={import.meta.env.BASE_URL}>
               <App />
             </BrowserRouter>
           </QueryClientProvider>

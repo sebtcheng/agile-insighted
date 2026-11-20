@@ -30,7 +30,8 @@ async function request<T>(
   body?: unknown,
   params?: Params,
 ): Promise<T> {
-  const res = await fetch(`/api${path}${toQuery(params)}`, {
+  const baseUrl = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+  const res = await fetch(`${baseUrl}/api${path}${toQuery(params)}`, {
     method,
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),

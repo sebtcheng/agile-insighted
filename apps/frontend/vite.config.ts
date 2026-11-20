@@ -4,6 +4,7 @@ import { devLogSink } from "./src/devtools/vite-plugin-dev-log-sink";
 
 // The API runs on :4000 in development; the proxy keeps cookies same-origin so SameSite=Lax just works.
 export default defineConfig({
+  base: process.env.VITE_BASE_PATH || process.env.VITE_BASE_URL || "/trail/",
   plugins: [react(), devLogSink()],
   server: {
     port: Number(process.env.VITE_PORT ?? 5173),
