@@ -142,13 +142,13 @@ export function LoginPage() {
       </header>
 
       <main className="ls-main">
-        <section aria-label="About InsightED AGILE">
+        <section aria-label="About T.R.A.I.L">
           <div className="ls-eyebrow ls-in" style={delay(120)}>
             Department of Education
           </div>
           <span className="ls-bar ls-in" style={delay(160)} aria-hidden="true" />
           <h1 className="ls-title ls-in" style={delay(200)}>
-            InsightED AGILE
+            T.R.A.I.L
           </h1>
           <p className="ls-lede ls-in" style={delay(260)}>
             Plan sprints, track work and manage risks for your projects in one place.
@@ -202,7 +202,7 @@ export function LoginPage() {
             >
               <div>
                 <h2 className="ls-heading">Sign in</h2>
-                <p className="ls-sub">Use your InsightED AGILE account.</p>
+                <p className="ls-sub">Use your T.R.A.I.L account.</p>
               </div>
               {login.isError ? (
                 <div className="ls-alert" role="alert">

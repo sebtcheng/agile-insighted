@@ -10,6 +10,8 @@ import {
   useUsers,
 } from "../api/hooks";
 import { SideModal } from "./SideModal";
+import { approvalGateProps } from "./PmApprovalBadge";
+import { SprintSelect, sprintDraftValue } from "./SprintSelect";
 import { toast } from "./ui";
 
 /** Row layout and controls mirror the Kano revision specs checklist (KanoSpecs.tsx). */
@@ -24,12 +26,15 @@ function FeatureRow({
   feature,
   index,
   canEdit,
+  canDelete,
   canTick,
   onEnter,
 }: {
   feature: UsmFeatureDto;
   index: number;
   canEdit: boolean;
+  /** Removing a feature is the PM's. */
+  canDelete: boolean;
   canTick: boolean;
   /** Enter in the text field: the parent opens a new feature row below. */
   onEnter: () => void;
@@ -37,6 +42,7 @@ function FeatureRow({
   const update = useUpdateUsmFeature();
   const remove = useDeleteUsmFeature();
   const people = usePeople(feature.responsibleId);
+  const gate = approvalGateProps(feature.pmApproval);
   const [title, setTitle] = useState(feature.title);
   const save = (patch: Parameters<typeof update.mutate>[0]["patch"]) =>
     update.mutate({ id: feature.id, patch }, { onError: (e) => toast.error(e.message) });
@@ -50,7 +56,9 @@ function FeatureRow({
       <Checkbox
         aria-label={`Feature ${index + 1} done`}
         checked={feature.isCompleted}
-        disabled={!canTick}
+        disabled={!canTick || gate.disabled}
+        aria-disabled={gate["aria-disabled"]}
+        title={gate.title}
         onChange={(e) => save({ isCompleted: e.currentTarget.checked })}
       />
       <TextInput
@@ -68,13 +76,11 @@ function FeatureRow({
           if (title.trim()) onEnter();
         }}
       />
-      <TextInput
-        type="date"
-        aria-label={`Feature ${index + 1} target date`}
-        style={{ width: 150 }}
+      <SprintSelect
+        aria-label={`Feature ${index + 1} sprint`}
         disabled={!canEdit}
-        value={feature.targetDate ?? ""}
-        onChange={(e) => save({ targetDate: e.currentTarget.value || null })}
+        value={sprintDraftValue(feature.sprintKey, feature.targetDate)}
+        onChange={(sprintKey) => save({ sprintKey: sprintKey || null })}
       />
       <Select
         aria-label={`Feature ${index + 1} person responsible`}
@@ -87,7 +93,7 @@ function FeatureRow({
         value={feature.responsibleId}
         onChange={(v) => save({ responsibleId: v })}
       />
-      {canEdit ? (
+      {canDelete ? (
         <ActionIcon
           variant="subtle"
           color="red"
@@ -118,7 +124,7 @@ function NewFeatureRow({
   const create = useCreateUsmFeature();
   const people = usePeople(null);
   const [title, setTitle] = useState("");
-  const [targetDate, setTargetDate] = useState("");
+  const [sprintKey, setSprintKey] = useState("");
   const [responsibleId, setResponsibleId] = useState<string | null>(null);
   const sent = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -129,7 +135,7 @@ function NewFeatureRow({
     if (!text) return onDone(false);
     sent.current = true;
     create.mutate(
-      { projectId, stepId, title: text, targetDate: targetDate || null, responsibleId },
+      { projectId, stepId, title: text, sprintKey: sprintKey || null, responsibleId },
       {
         onSuccess: () => onDone(openNext),
         onError: (e) => {
@@ -164,13 +170,7 @@ function NewFeatureRow({
           commit(true);
         }}
       />
-      <TextInput
-        type="date"
-        aria-label="New feature target date"
-        style={{ width: 150 }}
-        value={targetDate}
-        onChange={(e) => setTargetDate(e.currentTarget.value)}
-      />
+      <SprintSelect aria-label="New feature sprint" value={sprintKey} onChange={setSprintKey} />
       <Select
         aria-label="New feature person responsible"
         clearable
@@ -206,18 +206,29 @@ export function UsmStepModal({
   opened,
   onClose,
   canEdit,
+  canDelete = canEdit,
   canTick,
 }: {
   step: UsmStepDto | undefined;
   opened: boolean;
   onClose: () => void;
+  /** Add and edit: the PM and team members on an open project. */
   canEdit: boolean;
+  /** Delete a step or feature: the PM only. Defaults to canEdit. */
+  canDelete?: boolean;
   canTick: boolean;
 }) {
   return (
     <SideModal opened={opened} onClose={onClose} title={step ? step.title : "Step"} size="xl">
       {step ? (
-        <StepBody key={step.id} step={step} onClose={onClose} canEdit={canEdit} canTick={canTick} />
+        <StepBody
+          key={step.id}
+          step={step}
+          onClose={onClose}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          canTick={canTick}
+        />
       ) : null}
     </SideModal>
   );
@@ -227,11 +238,13 @@ function StepBody({
   step,
   onClose,
   canEdit,
+  canDelete,
   canTick,
 }: {
   step: UsmStepDto;
   onClose: () => void;
   canEdit: boolean;
+  canDelete: boolean;
   canTick: boolean;
 }) {
   const updateStep = useUpdateUsmStep();
@@ -265,20 +278,22 @@ function StepBody({
         onChange={(e) => setDescription(e.currentTarget.value)}
       />
       {canEdit ? (
-        <Group justify="space-between">
-          <Button
-            variant="default"
-            color="red"
-            loading={deleteStep.isPending}
-            onClick={() =>
-              deleteStep.mutate(step.id, {
-                onSuccess: onClose,
-                onError: (e) => toast.error(e.message),
-              })
-            }
-          >
-            Delete step
-          </Button>
+        <Group justify={canDelete ? "space-between" : "flex-end"}>
+          {canDelete ? (
+            <Button
+              variant="default"
+              color="red"
+              loading={deleteStep.isPending}
+              onClick={() =>
+                deleteStep.mutate(step.id, {
+                  onSuccess: onClose,
+                  onError: (e) => toast.error(e.message),
+                })
+              }
+            >
+              Delete step
+            </Button>
+          ) : null}
           <Button
             disabled={!dirty || !title.trim()}
             loading={updateStep.isPending}
@@ -314,6 +329,7 @@ function StepBody({
             feature={f}
             index={i}
             canEdit={canEdit}
+            canDelete={canDelete}
             canTick={canTick}
             onEnter={() => {
               if (!adding) openNewRow();

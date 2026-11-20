@@ -19,6 +19,7 @@ const action = (id: string, isCompleted: boolean) => ({
   description: `Action text ${id}`,
   isCompleted,
   targetDate: "2026-12-31",
+  pmApproval: "APPROVED",
   responsibleId: "u1",
   responsibleName: "Ben Cruz",
   sortOrder: 0,
@@ -35,7 +36,6 @@ const item = (done: boolean[]): RaidItemDto =>
     likelihood: 2,
     ownerName: "Ana Reyes",
     status: "open",
-    targetDate: null,
     isOverdue: false,
     mitigatingActions: done.map((d, i) => action(`a${i}`, d)),
   }) as unknown as RaidItemDto;
@@ -61,7 +61,7 @@ afterEach(() => {
   while (cleanups.length) cleanups.pop()?.();
 });
 
-function mount(i: RaidItemDto, onEdit = vi.fn()) {
+function mount(i: RaidItemDto, onEdit = vi.fn(), canDelete = true) {
   const el = document.createElement("div");
   document.body.appendChild(el);
   const root = createRoot(el);
@@ -73,7 +73,7 @@ function mount(i: RaidItemDto, onEdit = vi.fn()) {
         createElement(
           MantineProvider,
           null,
-          createElement(RaidCards, { items: [i], canEdit: true, onEdit }),
+          createElement(RaidCards, { items: [i], canEdit: true, canDelete, onEdit }),
         ),
       ),
     );
@@ -163,18 +163,17 @@ describe("RaidCards mitigation summary", () => {
     expect(el.querySelector(".raid-action-check")).toBeNull();
   });
 
-  it("puts target, status, Edit and Delete in the footer", () => {
+  it("puts status, Edit and Delete in the footer", () => {
     const { el } = mount(item([]));
     const foot = el.querySelector(".raid-card-foot")!;
-    expect(foot.textContent).toContain("Target");
+    expect(foot.textContent).not.toContain("Target");
     expect(foot.textContent).toContain("Status");
     expect(foot.querySelector("input[aria-label='Status for RAID-01']")).not.toBeNull();
     const labels = [...foot.querySelectorAll("button")].map((b) => b.textContent);
     expect(labels).toEqual(expect.arrayContaining(["Edit", "Delete"]));
     expect(el.querySelector(".raid-card-mitigations")!.closest(".raid-card-foot")).toBeNull();
-    // Target and Status sit in the divider row (border-top) with Edit and Delete.
+    // Status sits in the divider row (border-top) with Edit and Delete.
     const divider = foot.querySelector(".raid-card-actions")!;
-    expect(divider.textContent).toContain("Target");
     expect(divider.querySelector("input[aria-label='Status for RAID-01']")).not.toBeNull();
     expect([...divider.querySelectorAll("button")].map((b) => b.textContent)).toEqual(
       expect.arrayContaining(["Edit", "Delete"]),
@@ -198,5 +197,14 @@ describe("RaidCards mitigation summary", () => {
     const edit = [...el.querySelectorAll("button")].find((b) => b.textContent === "Edit")!;
     act(() => edit.click());
     expect(onEdit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("RaidCards as a team member", () => {
+  it("offers Edit but not Delete", () => {
+    const { el } = mount(item([]), vi.fn(), false);
+    const labels = [...el.querySelectorAll("button")].map((b) => b.textContent);
+    expect(labels).toContain("Edit");
+    expect(labels).not.toContain("Delete");
   });
 });

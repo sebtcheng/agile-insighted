@@ -62,6 +62,9 @@ export const kanoRequestSpecs = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
     // Per-spec tagging. Same shapes as kano_requests.target_date / responsible_id (the request-level date is deprecated).
     targetDate: date("target_date", { mode: "string" }),
+    // Weekly sprint (`YYYY-Snn`); target_date is kept equal to its Sunday end date. Null for legacy rows.
+    sprintKey: text("sprint_key"),
+    pmApproval: text("pm_approval").$type<"PENDING" | "APPROVED">().notNull().default("PENDING"),
     responsibleId: uuid("responsible_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

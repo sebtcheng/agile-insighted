@@ -3,7 +3,7 @@ import { resolveAssignee, type WorkItem } from "@myapp/shared";
 import { eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { kanoRequestSpecs, raidMitigatingActions } from "../db/schema";
-import { createFixture, type Fixture } from "../test/helpers";
+import { approveRow, createFixture, type Fixture } from "../test/helpers";
 import { getHome } from "./homeService";
 import { setKanoSpecCompleted } from "./kanoService";
 import { updateSolution } from "./ostService";
@@ -149,7 +149,10 @@ describe("completion toggles from Home, Workload and Projects use each module's 
     const story = find(items, "user_story")!;
     const completedBefore = before.member?.completed ?? 0;
 
-    // Tick the open ones through the module services (the endpoints the checkbox calls).
+    // Tick the open ones through the module services (the endpoints the checkbox calls), once a PM approved them.
+    await approveRow("kano_request_specs", kano.id);
+    await approveRow("ost_solutions", ost.id);
+    await approveRow("usm_step_features", story.id);
     await setKanoSpecCompleted(kano.parentId!, kano.id, true);
     await updateSolution(ost.id, { validationStatus: "validated" });
     await usm.updateFeature(story.id, { isCompleted: true });
@@ -182,6 +185,7 @@ describe("completion toggles from Home, Workload and Projects use each module's 
     await setKanoSpecCompleted(kano.parentId!, kano.id, false);
     await updateSolution(ost.id, { validationStatus: "planned" });
     await usm.updateFeature(story.id, { isCompleted: false });
+    await approveRow("raid_mitigating_actions", raid.id);
     await setMitigatingActionCompleted(raid.parentId!, raid.id, true);
   });
 });

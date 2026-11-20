@@ -37,6 +37,73 @@ beforeAll(async () => {
   visibleActivityId = (await rawActivity(f.project.id, f.pm.id, { assigneeId: f.m1.id })).id;
   hiddenActivityId = (await rawActivity(f.otherProject.id, f.pm.id, { assigneeId: f.m1.id })).id;
 });
+it("shows every team member the same org-wide Workload as a PM", async () => {
+  type Wl = {
+    items: Array<{ userId: string; dueThisWeek: number }>;
+    members: Array<{ userId: string | null; total: number; completed: number }>;
+  };
+  const asPm = json<Wl>(await pm.get("/api/workload"));
+  const asMember = json<Wl>(await m1.get("/api/workload"));
+  // The roster includes the PM and people on other projects, and the counts match what the PM sees.
+  expect(asMember.items.map((r) => r.userId)).toEqual(asPm.items.map((r) => r.userId));
+  expect(asMember.items.some((r) => r.userId === f.pm.id)).toBe(true);
+  expect(asMember.items.some((r) => r.userId === f.m2.id)).toBe(true);
+  expect(asMember.members.map((m) => [m.userId, m.total, m.completed])).toEqual(
+    asPm.members.map((m) => [m.userId, m.total, m.completed]),
+  );
+  // Seeing the roster does not open any other project's data.
+  const acts = json<{ items: Array<{ id: string }> }>(await m1.get("/api/activities")).items;
+  expect(acts.map((a) => a.id)).not.toContain(hiddenActivityId);
+  expect((await m1.get("/api/admin-log")).status).toBe(403);
+});
+
+it("lets any role create a project, which then belongs to them", async () => {
+  const res = await m1.post("/api/projects").send({ name: `Member project ${f.tag}` });
+  expect(res.status).toBe(201);
+  const created = json<ProjectDto>(res);
+  extraProjectIds.push(created.id);
+  const mine = json<{ items: ProjectDto[] }>(await m1.get("/api/projects")).items.map((p) => p.id);
+  expect(mine).toContain(created.id);
+  // Created for someone else, the creator is still added as a member so it stays visible to them.
+  const other = json<ProjectDto>(
+    await m1
+      .post("/api/projects")
+      .send({ name: `Owned by PM ${f.tag}`, ownerId: f.pm.id, memberIds: [] }),
+  );
+  extraProjectIds.push(other.id);
+  const again = json<{ items: ProjectDto[] }>(await m1.get("/api/projects")).items.map((p) => p.id);
+  expect(again).toContain(other.id);
+});
+
+it("lists each project with its owner and team, and lets any role edit but not archive", async () => {
+  const mk = json<ProjectDto>(
+    await m1
+      .post("/api/projects")
+      .send({ name: `Team view ${f.tag}`, ownerId: f.pm.id, memberIds: [f.m2.id] }),
+  );
+  extraProjectIds.push(mk.id);
+  const list = json<{ items: ProjectDto[] }>(await m1.get("/api/projects")).items;
+  const row = list.find((p) => p.id === mk.id)!;
+  expect(row.ownerName).toBe(f.pm.fullName);
+  expect(row.members?.map((m) => m.id).sort()).toEqual([f.m1.id, f.m2.id].sort());
+  // A project with an owner but nobody else still lists cleanly.
+  const solo = json<ProjectDto>(await m1.post("/api/projects").send({ name: `Solo ${f.tag}` }));
+  extraProjectIds.push(solo.id);
+  const soloRow = json<{ items: ProjectDto[] }>(await m1.get("/api/projects")).items.find(
+    (p) => p.id === solo.id,
+  )!;
+  expect(soloRow.members).toEqual([]);
+
+  const edited = await m1
+    .patch(`/api/projects/${mk.id}`)
+    .send({ name: "Renamed by member", memberIds: [f.m1.id] });
+  expect(edited.status).toBe(200);
+  expect(json<ProjectDto>(edited).name).toBe("Renamed by member");
+  expect((await m1.patch(`/api/projects/${mk.id}`).send({ archived: true })).status).toBe(403);
+  expect((await m1.delete(`/api/projects/${mk.id}`)).status).toBe(403);
+  expect((await request(app).patch(`/api/projects/${mk.id}`).send({ name: "x" })).status).toBe(401);
+});
+
 afterAll(async () => {
   if (extraProjectIds.length)
     await db.delete(projects).where(inArray(projects.id, extraProjectIds));

@@ -54,7 +54,7 @@ export async function getWorkload(
     ).length,
   }));
 
-  return { items, members };
+  return { items, members, projectNames: Object.fromEntries(loaded.projectNames) };
 }
 
 /** A person's open items grouped by subproject, for the expandable row. Nothing here scores output. */

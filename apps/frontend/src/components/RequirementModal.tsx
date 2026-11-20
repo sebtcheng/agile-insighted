@@ -1,8 +1,14 @@
 import { useRef } from "react";
 import { ActionIcon, Button, Checkbox, Group, Select, Stack, Text, TextInput } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { MAX_REQUIREMENT_SOLUTIONS, type RequirementSolutionInput } from "@myapp/shared";
+import {
+  MAX_REQUIREMENT_SOLUTIONS,
+  type PmApproval,
+  type RequirementSolutionInput,
+} from "@myapp/shared";
 import { SideModal } from "./SideModal";
+import { approvalGateProps } from "./PmApprovalBadge";
+import { SprintSelect, sprintDraftValue } from "./SprintSelect";
 
 /** Editable solution / action-step row. `id` is set for rows that already exist on the server. */
 export type StepDraft = {
@@ -11,13 +17,15 @@ export type StepDraft = {
   completed: boolean;
   /** User id of the staff member responsible; "" until chosen. */
   ownerId: string;
-  /** ISO yyyy-mm-dd; "" until picked. */
-  targetDate: string;
+  /** Sprint key `YYYY-Snn`; "" until picked. */
+  sprintKey: string;
+  /** Read-only here: only the Project Manager changes it (Admin Log). Missing means PENDING. */
+  pmApproval?: PmApproval;
 };
 
 export type StaffOption = { value: string; label: string };
 
-const emptyStep = (): StepDraft => ({ title: "", completed: false, ownerId: "", targetDate: "" });
+const emptyStep = (): StepDraft => ({ title: "", completed: false, ownerId: "", sprintKey: "" });
 
 export const stepsToDrafts = (
   solutions: Array<{
@@ -25,6 +33,8 @@ export const stepsToDrafts = (
     title: string;
     ownerId: string | null;
     targetDate: string | null;
+    sprintKey?: string | null;
+    pmApproval?: PmApproval;
     validationStatus: string;
   }>,
 ): StepDraft[] =>
@@ -33,7 +43,8 @@ export const stepsToDrafts = (
     title: s.title,
     completed: s.validationStatus === "validated",
     ownerId: s.ownerId ?? "",
-    targetDate: s.targetDate ?? "",
+    sprintKey: sprintDraftValue(s.sprintKey, s.targetDate),
+    pmApproval: s.pmApproval,
   }));
 
 export const draftsToSolutions = (
@@ -47,7 +58,7 @@ export const draftsToSolutions = (
       title: s.title,
       completed: s.completed,
       ownerId: s.ownerId || null,
-      targetDate: s.targetDate || null,
+      sprintKey: s.sprintKey || null,
     }));
 
 /** Checklist editor: tick, describe, assign and date each step. The whole list is saved with the requirement. */
@@ -86,6 +97,7 @@ export function StepsField({
           <Checkbox
             aria-label={`Step ${i + 1} done`}
             checked={s.completed}
+            {...approvalGateProps(s.pmApproval)}
             onChange={(e) => patch(i, { completed: e.currentTarget.checked })}
           />
           <TextInput
@@ -112,12 +124,10 @@ export function StepsField({
             value={s.ownerId || null}
             onChange={(v) => patch(i, { ownerId: v ?? "" })}
           />
-          <TextInput
-            type="date"
-            aria-label={`Step ${i + 1} target date`}
-            w={150}
-            value={s.targetDate}
-            onChange={(e) => patch(i, { targetDate: e.currentTarget.value })}
+          <SprintSelect
+            aria-label={`Step ${i + 1} sprint`}
+            value={s.sprintKey}
+            onChange={(sprintKey) => patch(i, { sprintKey })}
           />
           <ActionIcon
             variant="subtle"

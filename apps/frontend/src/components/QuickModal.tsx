@@ -1,11 +1,12 @@
 import { Button, Group, Select, Stack, Textarea, TextInput } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { SideModal } from "./SideModal";
+import { SprintSelect } from "./SprintSelect";
 
 export type QuickField = {
   key: string;
   label: string;
-  kind?: "text" | "textarea" | "select" | "number" | "date";
+  kind?: "text" | "textarea" | "select" | "number" | "date" | "sprint";
   options?: Array<{ value: string; label: string }>;
   required?: boolean;
   description?: string;
@@ -56,6 +57,15 @@ export function QuickModal({
                 data={f.options ?? []}
                 clearable={!f.required}
                 {...form.getInputProps(f.key)}
+              />
+            ) : f.kind === "sprint" ? (
+              <SprintSelect
+                key={f.key}
+                label={f.label}
+                aria-label={f.label}
+                value={form.values[f.key] ?? ""}
+                onChange={(v) => form.setFieldValue(f.key, v)}
+                width="100%"
               />
             ) : f.kind === "textarea" ? (
               <Textarea

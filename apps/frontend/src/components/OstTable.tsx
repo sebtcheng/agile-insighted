@@ -16,13 +16,15 @@ import type { OstCtx } from "./ostTypes";
 import { SolutionCheck } from "./SolutionCheck";
 import { OstActionBar } from "./OstActionBar";
 import { VALIDATION_COLOR } from "./SolutionModal";
-import { fmtDate, toast } from "./ui";
+import { toast } from "./ui";
 
 const DASH = "—";
 
 function OutcomeRow({ o, ctx }: { o: OutcomeDto; ctx: OstCtx }) {
   const remove = useDeleteOutcome();
-  const canEdit = ctx.isPm && !ctx.readOnly;
+  // Add and edit are open to team members; deleting, ticking (validating) and converting stay with the PM.
+  const canEdit = !ctx.readOnly;
+  const pmOnly = ctx.isPm && !ctx.readOnly;
   return (
     <Table.Tr>
       <Table.Td>
@@ -42,11 +44,7 @@ function OutcomeRow({ o, ctx }: { o: OutcomeDto; ctx: OstCtx }) {
         ) : null}
       </Table.Td>
       <Table.Td>{DASH}</Table.Td>
-      <Table.Td>
-        <Text size="sm" ff="var(--font-mono)">
-          {o.targetDate ? fmtDate(o.targetDate) : DASH}
-        </Text>
-      </Table.Td>
+      <Table.Td>{DASH}</Table.Td>
       <Table.Td>{DASH}</Table.Td>
       <Table.Td>
         {canEdit ? (
@@ -59,11 +57,15 @@ function OutcomeRow({ o, ctx }: { o: OutcomeDto; ctx: OstCtx }) {
               },
             ]}
             onEdit={() => ctx.setDialog({ kind: "outcome", existing: o })}
-            onDelete={() => {
-              if (window.confirm(`Delete this outcome and everything under it?`)) {
-                remove.mutate(o.id, { onError: (e) => toast.error(e.message) });
-              }
-            }}
+            onDelete={
+              !pmOnly
+                ? undefined
+                : () => {
+                    if (window.confirm(`Delete this outcome and everything under it?`)) {
+                      remove.mutate(o.id, { onError: (e) => toast.error(e.message) });
+                    }
+                  }
+            }
           />
         ) : null}
       </Table.Td>
@@ -74,7 +76,9 @@ function OutcomeRow({ o, ctx }: { o: OutcomeDto; ctx: OstCtx }) {
 function OpportunityRow({ o, ctx }: { o: OpportunityDto; ctx: OstCtx }) {
   const update = useUpdateOpportunity();
   const remove = useDeleteOpportunity();
-  const canEdit = ctx.isPm && !ctx.readOnly;
+  // Add and edit are open to team members; deleting, ticking (validating) and converting stay with the PM.
+  const canEdit = !ctx.readOnly;
+  const pmOnly = ctx.isPm && !ctx.readOnly;
   const count = ctx.tree.solutions.filter((s) => s.opportunityId === o.id).length;
   const thin = o.isTargeted && count < MIN_SOLUTIONS_PER_TARGET;
   return (
@@ -130,11 +134,15 @@ function OpportunityRow({ o, ctx }: { o: OpportunityDto; ctx: OstCtx }) {
             onEdit={() =>
               ctx.setDialog({ kind: "opportunity", outcomeId: o.outcomeId, existing: o })
             }
-            onDelete={() => {
-              if (window.confirm(`Delete "${o.title}" with its solutions?`)) {
-                remove.mutate(o.id, { onError: (e) => toast.error(e.message) });
-              }
-            }}
+            onDelete={
+              !pmOnly
+                ? undefined
+                : () => {
+                    if (window.confirm(`Delete "${o.title}" with its solutions?`)) {
+                      remove.mutate(o.id, { onError: (e) => toast.error(e.message) });
+                    }
+                  }
+            }
           />
         ) : null}
       </Table.Td>
@@ -144,7 +152,9 @@ function OpportunityRow({ o, ctx }: { o: OpportunityDto; ctx: OstCtx }) {
 
 function SolutionTableRow({ s, ctx }: { s: SolutionDto; ctx: OstCtx }) {
   const remove = useDeleteSolution();
-  const canEdit = ctx.isPm && !ctx.readOnly;
+  // Add and edit are open to team members; deleting, ticking (validating) and converting stay with the PM.
+  const canEdit = !ctx.readOnly;
+  const pmOnly = ctx.isPm && !ctx.readOnly;
   return (
     <Table.Tr>
       <Table.Td>
@@ -162,7 +172,7 @@ function SolutionTableRow({ s, ctx }: { s: SolutionDto; ctx: OstCtx }) {
       </Table.Td>
       <Table.Td>{DASH}</Table.Td>
       <Table.Td>
-        <SolutionCheck solution={s} editable={canEdit} />
+        <SolutionCheck solution={s} editable={pmOnly} />
       </Table.Td>
       <Table.Td>{s.ownerName ?? DASH}</Table.Td>
       <Table.Td>
@@ -186,7 +196,7 @@ function SolutionTableRow({ s, ctx }: { s: SolutionDto; ctx: OstCtx }) {
         <OstActionBar
           scope={s.code}
           workflow={
-            canEdit && !s.convertedStoryId
+            pmOnly && !s.convertedStoryId
               ? [
                   {
                     label: "Convert to story",
@@ -203,7 +213,7 @@ function SolutionTableRow({ s, ctx }: { s: SolutionDto; ctx: OstCtx }) {
               : undefined
           }
           onDelete={
-            canEdit
+            pmOnly
               ? () => {
                   if (window.confirm(`Delete ${s.code}?`)) {
                     remove.mutate(s.id, { onError: (e) => toast.error(e.message) });

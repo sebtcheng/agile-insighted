@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, max, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   MAX_USM_FEATURES_PER_STEP,
+  sprintFieldsFor,
   type CreateUsmFeatureInput,
   type CreateUsmPersonaInput,
   type CreateUsmStepInput,
@@ -16,6 +17,8 @@ import {
 import { db, type DbOrTx } from "../db/client";
 import { projects, usmPersonas, usmStepFeatures, usmSteps, users } from "../db/schema";
 import { conflict, notFound, unprocessable } from "../errors";
+import { assertCompletionAllowed } from "./approvalGate";
+import { sprintColumns, sprintColumnsOrUndefined } from "./sprintWrite";
 import type { Actor } from "../permissions";
 import { assertResponsibleUsers } from "./storyActionStepService";
 
@@ -57,6 +60,8 @@ function toFeatureDto(f: typeof usmStepFeatures.$inferSelect, name: string | nul
     responsibleId: f.responsibleId,
     responsibleName: name,
     targetDate: f.targetDate,
+    ...sprintFieldsFor(f.sprintKey, f.targetDate),
+    pmApproval: f.pmApproval,
     sortOrder: f.sortOrder,
   };
 }
@@ -316,6 +321,8 @@ export async function createFeature(input: CreateUsmFeatureInput): Promise<UsmFe
       throw unprocessable(`A step holds at most ${MAX_USM_FEATURES_PER_STEP} features`);
     }
     const done = input.isCompleted ?? false;
+    // A new feature is PENDING, so it cannot be created already completed.
+    assertCompletionAllowed("PENDING", { wasCompleted: false, willComplete: done });
     const [row] = await tx
       .insert(usmStepFeatures)
       .values({
@@ -325,7 +332,7 @@ export async function createFeature(input: CreateUsmFeatureInput): Promise<UsmFe
         isCompleted: done,
         completedAt: done ? new Date() : null,
         responsibleId: input.responsibleId ?? null,
-        targetDate: input.targetDate ?? null,
+        ...sprintColumns(input),
         sortOrder: (c?.m ?? -1) + 1,
       })
       .returning({ id: usmStepFeatures.id });
@@ -349,11 +356,17 @@ export async function updateFeature(
     if (patch.responsibleId !== undefined) {
       await assertResponsibleUsers(tx, [patch.responsibleId], [cur.responsibleId]);
     }
-    const { isCompleted, ...rest } = patch;
+    const { isCompleted, sprintKey, ...rest } = patch;
+    assertCompletionAllowed(cur.pmApproval, {
+      wasCompleted: cur.isCompleted,
+      willComplete: isCompleted === true,
+    });
+    const sprintCols = sprintColumnsOrUndefined({ sprintKey, targetDate: rest.targetDate });
     await tx
       .update(usmStepFeatures)
       .set({
         ...rest,
+        ...sprintCols,
         ...(isCompleted === undefined
           ? {}
           : {

@@ -2,6 +2,7 @@ import { Badge, Checkbox } from "@mantine/core";
 import type { SolutionDto } from "@myapp/shared";
 import { useToggleSolution } from "../api/hooks";
 import { isSolutionDone } from "../lib/ostOptimistic";
+import { approvalGateProps } from "./PmApprovalBadge";
 import { toast } from "./ui";
 
 /**
@@ -17,12 +18,15 @@ export function SolutionCheck({
 }) {
   const toggle = useToggleSolution();
   const done = isSolutionDone(solution);
+  const gate = approvalGateProps(solution.pmApproval);
   return (
     <Checkbox
       size="xs"
       className="ost-action-check"
       checked={done}
-      disabled={!editable}
+      disabled={!editable || gate.disabled}
+      aria-disabled={gate["aria-disabled"]}
+      title={gate.title}
       aria-label={`${solution.code} ${solution.title}`}
       label={
         <>

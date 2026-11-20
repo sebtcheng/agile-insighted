@@ -1,7 +1,9 @@
 import { useRef } from "react";
 import { ActionIcon, Button, Checkbox, Group, Select, Stack, Text, TextInput } from "@mantine/core";
-import { MAX_MITIGATING_ACTIONS, type RaidItemDto } from "@myapp/shared";
+import { MAX_MITIGATING_ACTIONS, type PmApproval, type RaidItemDto } from "@myapp/shared";
 import { useToggleMitigatingAction } from "../api/hooks";
+import { approvalGateProps } from "./PmApprovalBadge";
+import { SprintSelect } from "./SprintSelect";
 import { fmtDate, toast } from "./ui";
 
 /** Editable row in the drawer. `id` is set for rows that already exist on the server. */
@@ -9,8 +11,10 @@ export type MitigatingActionDraft = {
   id?: string;
   description: string;
   isCompleted: boolean;
-  /** ISO yyyy-mm-dd; "" until the user picks a date. */
-  targetDate: string;
+  /** Sprint key `YYYY-Snn` (its Sunday end date becomes the deadline); "" until the user picks a sprint. */
+  sprintKey: string;
+  /** Read-only here: only the Project Manager changes it (Admin Log). Missing means PENDING. */
+  pmApproval?: PmApproval;
   /** User id of the staff member responsible; "" until chosen. */
   responsibleId: string;
 };
@@ -34,7 +38,7 @@ export function MitigatingActionsField({
     if (value.length >= MAX_MITIGATING_ACTIONS) return;
     onChange([
       ...value.slice(0, i + 1),
-      { description: "", isCompleted: false, targetDate: "", responsibleId: "" },
+      { description: "", isCompleted: false, sprintKey: "", responsibleId: "" },
       ...value.slice(i + 1),
     ]);
     // Focus the new row once React has rendered it.
@@ -57,6 +61,7 @@ export function MitigatingActionsField({
           <Checkbox
             aria-label={`Action ${i + 1} done`}
             checked={a.isCompleted}
+            {...approvalGateProps(a.pmApproval)}
             onChange={(e) => patch(i, { isCompleted: e.currentTarget.checked })}
           />
           <TextInput
@@ -73,13 +78,12 @@ export function MitigatingActionsField({
               if (a.description.trim()) addBelow(i);
             }}
           />
-          <TextInput
-            type="date"
-            aria-label={`Action ${i + 1} target date`}
-            w={150}
+          <SprintSelect
+            aria-label={`Action ${i + 1} sprint`}
             required
-            value={a.targetDate}
-            onChange={(e) => patch(i, { targetDate: e.currentTarget.value })}
+            clearable={false}
+            value={a.sprintKey}
+            onChange={(sprintKey) => patch(i, { sprintKey })}
           />
           <Select
             aria-label={`Action ${i + 1} staff responsible`}
@@ -110,7 +114,7 @@ export function MitigatingActionsField({
           onClick={() =>
             onChange([
               ...value,
-              { description: "", isCompleted: false, targetDate: "", responsibleId: "" },
+              { description: "", isCompleted: false, sprintKey: "", responsibleId: "" },
             ])
           }
         >
@@ -150,7 +154,9 @@ export function MitigationChecklist({
             size="xs"
             className="raid-action-check"
             checked={a.isCompleted}
-            disabled={!editable || toggle.isPending}
+            disabled={!editable || toggle.isPending || approvalGateProps(a.pmApproval).disabled}
+            aria-disabled={approvalGateProps(a.pmApproval)["aria-disabled"]}
+            title={approvalGateProps(a.pmApproval).title}
             label={
               <>
                 <span className="raid-action-text">{a.description}</span>
@@ -161,7 +167,7 @@ export function MitigationChecklist({
                         className="raid-action-due"
                         data-overdue={!a.isCompleted && a.targetDate < todayIso() ? "" : undefined}
                       >
-                        due {fmtDate(a.targetDate)}
+                        {a.sprintLabel ?? `due ${fmtDate(a.targetDate)}`}
                       </span>
                     ) : null}
                     {a.targetDate && a.responsibleName ? " · " : null}

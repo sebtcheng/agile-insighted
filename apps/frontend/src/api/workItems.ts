@@ -4,7 +4,7 @@ import { api } from "./client";
 import { withWorkItemCompleted, workItemToggleRequest } from "../lib/workItemToggle";
 
 /** Every cache that shows or is derived from work items, refreshed after any completion tick. */
-const WORK_ITEM_KEYS = [
+export const WORK_ITEM_KEYS = [
   "home",
   "workload",
   "workload-items",

@@ -1,5 +1,6 @@
 import {
   Anchor,
+  Badge,
   Button,
   Group,
   MultiSelect,
@@ -204,8 +205,9 @@ export function ProjectsPage() {
   if (subprojectId && first)
     return <Navigate to={`/projects/${first.id}?subprojectId=${subprojectId}`} replace />;
 
-  const rowProps = (onOpen: () => void) =>
-    isPm
+  // Project rows open the edit form for everyone; subproject rows stay PM-only.
+  const rowProps = (onOpen: () => void, enabled = isPm) =>
+    enabled
       ? {
           tabIndex: 0,
           style: { cursor: "pointer" },
@@ -225,10 +227,7 @@ export function ProjectsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Projects"
-        actions={isPm ? <Button onClick={open}>New project</Button> : undefined}
-      />
+      <PageHeader title="Projects" actions={<Button onClick={open}>New project</Button>} />
       <QueryState query={tree} isEmpty={(d) => d.length === 0} empty="No projects yet.">
         {(items) => (
           <Table.ScrollContainer minWidth={520}>
@@ -237,13 +236,15 @@ export function ProjectsPage() {
                 <Table.Tr>
                   <Table.Th>Project</Table.Th>
                   <Table.Th>Code</Table.Th>
+                  <Table.Th>Owner</Table.Th>
+                  <Table.Th>Team members</Table.Th>
                   <Table.Th>Created</Table.Th>
-                  {isPm ? <Table.Th /> : null}
+                  <Table.Th />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
                 {items.flatMap((p) => [
-                  <Table.Tr key={p.id} {...rowProps(() => setEditing(p))}>
+                  <Table.Tr key={p.id} {...rowProps(() => setEditing(p), true)}>
                     <Table.Td>
                       <Anchor
                         component={Link}
@@ -260,15 +261,29 @@ export function ProjectsPage() {
                       ) : null}
                     </Table.Td>
                     <Table.Td>{p.code}</Table.Td>
+                    <Table.Td data-col="owner">{p.ownerName ?? "—"}</Table.Td>
+                    <Table.Td data-col="members">
+                      {p.members && p.members.length > 0 ? (
+                        <Group gap={4} wrap="wrap">
+                          {p.members.map((m) => (
+                            <Badge key={m.id} variant="light" color="gray">
+                              {m.fullName}
+                            </Badge>
+                          ))}
+                        </Group>
+                      ) : (
+                        "—"
+                      )}
+                    </Table.Td>
                     <Table.Td>{fmtDate(p.createdAt)}</Table.Td>
-                    {isPm ? (
-                      <Table.Td>
-                        <Group
-                          gap="xs"
-                          justify="flex-end"
-                          wrap="nowrap"
-                          onClick={(e) => e.stopPropagation()}
-                        >
+                    <Table.Td>
+                      <Group
+                        gap="xs"
+                        justify="flex-end"
+                        wrap="nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {isPm ? (
                           <Button
                             size="compact-sm"
                             variant="default"
@@ -276,9 +291,11 @@ export function ProjectsPage() {
                           >
                             Add subproject
                           </Button>
-                          <Button size="compact-sm" variant="default" onClick={() => setEditing(p)}>
-                            Edit
-                          </Button>
+                        ) : null}
+                        <Button size="compact-sm" variant="default" onClick={() => setEditing(p)}>
+                          Edit
+                        </Button>
+                        {isPm ? (
                           <Button
                             size="compact-sm"
                             variant="default"
@@ -294,9 +311,9 @@ export function ProjectsPage() {
                           >
                             Delete
                           </Button>
-                        </Group>
-                      </Table.Td>
-                    ) : null}
+                        ) : null}
+                      </Group>
+                    </Table.Td>
                   </Table.Tr>,
                   ...p.subprojects.map((s) => (
                     <Table.Tr
@@ -307,6 +324,7 @@ export function ProjectsPage() {
                         <Text size="sm">{s.name}</Text>
                       </Table.Td>
                       <Table.Td>{s.code}</Table.Td>
+                      <Table.Td />
                       <Table.Td />
                       <Table.Td />
                       {isPm ? (
@@ -341,7 +359,9 @@ export function ProjectsPage() {
                             </Button>
                           </Group>
                         </Table.Td>
-                      ) : null}
+                      ) : (
+                        <Table.Td />
+                      )}
                     </Table.Tr>
                   )),
                 ])}

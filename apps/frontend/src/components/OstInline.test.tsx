@@ -26,7 +26,6 @@ const baseTree = (): OstTreeDto => ({
       projectName: "Student Engagement Analytics",
       title: "Reduce dropouts",
       description: null,
-      targetDate: null,
     },
   ],
   opportunities: [
@@ -47,6 +46,9 @@ const baseTree = (): OstTreeDto => ({
       ownerId: null,
       ownerName: "Ana Reyes",
       targetDate: null,
+      sprintKey: null,
+      sprintLabel: null,
+      pmApproval: "APPROVED" as const,
       convertedStoryId: null,
       convertedStoryCode: null,
     },
@@ -59,6 +61,9 @@ const baseTree = (): OstTreeDto => ({
       ownerId: null,
       ownerName: null,
       targetDate: null,
+      sprintKey: null,
+      sprintLabel: null,
+      pmApproval: "APPROVED" as const,
       convertedStoryId: null,
       convertedStoryCode: null,
     },
@@ -110,12 +115,13 @@ const flush = async () => {
     await act(async () => void (await new Promise((r) => setTimeout(r, 5))));
 };
 
+let asPm = true;
 function Page({ view }: { view: "card" | "table" }) {
   const q = useQuery({ queryKey: KEY, queryFn: () => Promise.resolve(structuredClone(server)) });
   if (!q.data) return null;
   const ctx: OstCtx = {
     tree: q.data,
-    isPm: true,
+    isPm: asPm,
     readOnly: false,
     setDialog: () => {},
     openSolution: () => {},
@@ -308,12 +314,7 @@ describe("OstTable column inventory", () => {
   it("renders a dedicated header per column, with a labelled Actions column", async () => {
     server = {
       ...server,
-      outcomes: [
-        {
-          ...server.outcomes[0]!,
-          targetDate: "2027-01-18",
-        },
-      ],
+      outcomes: [{ ...server.outcomes[0]! }],
     };
     const { host } = await mount("table");
     const heads = [...host.querySelectorAll("thead th")].map((th) => th.textContent);
@@ -328,10 +329,10 @@ describe("OstTable column inventory", () => {
       "Actions",
     ]);
     const [outcome, opportunity, solution] = cells(host);
-    // Outcome: project name, target date, no owner.
+    // Outcome: project name, no owner, no target date.
     expect(outcome?.[2]).toBe("Student Engagement Analytics");
     expect(outcome?.[4]).toBe("—");
-    expect(outcome?.[5]).toMatch(/2027/);
+    expect(outcome?.[5]).toBe("—");
     // Requirement: solution coverage in Progress, workflow badge only in Status.
     expect(opportunity?.[2]).toBe("—");
     expect(opportunity?.[5]).toBe("2/3 solutions");
@@ -349,5 +350,22 @@ describe("OstTable column inventory", () => {
     act(() => boxes(host)[1]?.click());
     await flush();
     expect(patch).toHaveBeenCalled();
+  });
+});
+
+describe.each(["card", "table"] as const)("OST as a team member in the %s view", (view) => {
+  afterEach(() => {
+    asPm = true;
+  });
+
+  it("can add and edit but not delete, convert or tick", async () => {
+    asPm = false;
+    const { host } = await mount(view);
+    const labels = [...host.querySelectorAll("button")].map((b) => b.textContent?.trim());
+    expect(labels).toContain("Add solution");
+    expect(labels).toContain("Edit");
+    expect(labels).not.toContain("Delete");
+    expect(labels).not.toContain("Convert to story");
+    expect(boxes(host).every((b) => b.disabled)).toBe(true);
   });
 });

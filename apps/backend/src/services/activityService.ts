@@ -21,6 +21,7 @@ import {
 } from "../db/schema";
 import { AppError, conflict, forbidden, notFound, unprocessable } from "../errors";
 import { can, canEditActivityFields, type Actor } from "../permissions";
+import { assertCompletionAllowed } from "./approvalGate";
 import { activityChecklist, recordOverride, waitingOnDependency } from "./governanceService";
 
 type ActivityRow = typeof activities.$inferSelect;
@@ -144,6 +145,7 @@ export function rowToDto(
 ): ActivityDto {
   return {
     id: a.id,
+    pmApproval: a.pmApproval,
     projectId: a.projectId,
     subprojectId: a.subprojectId,
     subprojectCode: subCode,
@@ -312,6 +314,7 @@ export async function create(
     await assertLinks(t, projectId, input.userStoryId);
 
     const done = input.status === "done";
+    assertCompletionAllowed("PENDING", { wasCompleted: false, willComplete: done });
     const dodOverride = done
       ? await enforceDod(t, ctx.actor, null, projectId, input.overrideReason)
       : null;
@@ -436,6 +439,11 @@ export async function update(
       next.status === "done" && current.status !== "done"
         ? await enforceDod(t, ctx.actor, activityId, current.projectId, patch.overrideReason)
         : null;
+    // PM approval gate: an activity can only move to done once a Project Manager approved it.
+    assertCompletionAllowed(current.pmApproval, {
+      wasCompleted: current.status === "done",
+      willComplete: next.status === "done",
+    });
 
     // One in, one out.
     if (next.sprintId && next.sprintId !== current.sprintId) {

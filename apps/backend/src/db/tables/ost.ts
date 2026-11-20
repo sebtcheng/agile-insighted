@@ -25,7 +25,6 @@ export const ostOutcomes = pgTable(
     ...moduleBase(),
     title: text("title").notNull(),
     description: text("description"),
-    targetDate: date("target_date", { mode: "string" }),
   },
   (t) => [
     index("ost_outcomes_project_id_idx").on(t.projectId),
@@ -73,6 +72,9 @@ export const ostSolutions = pgTable(
     validationStatus: validationStatus("validation_status").notNull().default("planned"),
     ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
     targetDate: date("target_date", { mode: "string" }),
+    // Weekly sprint (`YYYY-Snn`); target_date is kept equal to its Sunday end date. Null for legacy rows.
+    sprintKey: text("sprint_key"),
+    pmApproval: text("pm_approval").$type<"PENDING" | "APPROVED">().notNull().default("PENDING"),
     convertedStoryId: uuid("converted_story_id").references((): AnyPgColumn => userStories.id, {
       onDelete: "set null",
     }),

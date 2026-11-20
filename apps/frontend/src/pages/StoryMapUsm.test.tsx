@@ -5,13 +5,18 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { listSprintOptions } from "@myapp/shared";
 
 vi.mock("../api/client", () => ({
   api: { patch: vi.fn(), post: vi.fn(), delete: vi.fn(), get: vi.fn(), put: vi.fn() },
   errorMessage: (e: unknown) => String(e),
   ApiClientError: class extends Error {},
 }));
-vi.mock("../auth", () => ({ useIsPm: () => true, useAuth: () => ({ role: "pm" }) }));
+const auth = vi.hoisted(() => ({ role: "pm" }));
+vi.mock("../auth", () => ({
+  useIsPm: () => auth.role === "pm",
+  useAuth: () => ({ role: auth.role }),
+}));
 import { api } from "../api/client";
 import { StoryMapPage } from "./StoryMapPage";
 
@@ -28,6 +33,10 @@ const feature = (over: Record<string, unknown>) => ({
   responsibleId: "u-tm",
   responsibleName: "Tomas Member",
   targetDate: "2000-01-01",
+  // Legacy row: only a date is stored, so the UI maps it to its containing sprint.
+  sprintKey: null as string | null,
+  sprintLabel: null as string | null,
+  pmApproval: "APPROVED" as const,
   sortOrder: 0,
   ...over,
 });
@@ -133,6 +142,15 @@ const click = async (el: Element | null | undefined) => {
   });
   await flush();
 };
+const pickSprint = async (aria: string, label: string) => {
+  await click(byLabel(aria));
+  const listId = byLabel(aria)!.getAttribute("aria-controls")!;
+  const option = [
+    ...document.querySelectorAll<HTMLElement>(`[id="${listId}"] [role="option"]`),
+  ].find((o) => o.textContent === label);
+  expect(option, `sprint option "${label}"`).toBeTruthy();
+  await click(option);
+};
 const setValue = async (el: HTMLInputElement | null, v: string) => {
   expect(el).toBeTruthy();
   await act(() => {
@@ -219,14 +237,18 @@ describe("User Story Mapping page", () => {
       isCompleted: true,
     });
 
-    await setValue(byLabel("Feature 1 target date"), "2026-12-24");
+    expect(document.querySelector('input[type="date"]')).toBeNull();
+    // Legacy date 2000-01-01 (Sat) maps to the sprint ending Sun 2000-01-02.
+    expect(byLabel("Feature 1 sprint")?.value).toBe("Sprint 1 — Ends Sun, Jan 2, 2000");
+    const sprint = listSprintOptions()[1]!;
+    await pickSprint("Feature 1 sprint", sprint.label);
     expect(vi.mocked(api.patch)).toHaveBeenCalledWith("/story-map/features/f1", {
-      targetDate: "2026-12-24",
+      sprintKey: sprint.key,
     });
 
     await click(buttonByText("Add feature"));
     await setValue(byLabel("New feature"), "Forgot password link");
-    await setValue(byLabel("New feature target date"), "2026-12-30");
+    await pickSprint("New feature sprint", sprint.label);
     expect(buttonByText("Save")).toBeUndefined();
     await pressEnter(byLabel("New feature"));
     expect(posted("/story-map/features")).toEqual([
@@ -234,7 +256,7 @@ describe("User Story Mapping page", () => {
         projectId: "p1",
         stepId: "s1",
         title: "Forgot password link",
-        targetDate: "2026-12-30",
+        sprintKey: sprint.key,
         responsibleId: null,
       },
     ]);
@@ -493,12 +515,40 @@ describe("Feature checklist Enter key", () => {
         projectId: "p1",
         stepId: "s1",
         title: "Reset password",
-        targetDate: null,
+        sprintKey: null,
         responsibleId: null,
       },
     ]);
     expect(byLabel("New feature")?.value).toBe("");
     await pressEnter(byLabel("New feature"));
     expect(posted("/story-map/features")).toHaveLength(1);
+  });
+});
+
+describe("User Story Mapping as a team member", () => {
+  afterEach(() => {
+    auth.role = "pm";
+  });
+
+  it("can add users, add and insert steps, and add features, but not delete", async () => {
+    auth.role = "team_member";
+    await mount();
+    expect(buttonByText("Add user")).toBeTruthy();
+    expect(buttonByText("Add step")).toBeTruthy();
+    expect(byAria("Insert step at position 1")).toBeTruthy();
+    await click(document.querySelector("[data-step='s1']"));
+    expect(buttonByText("Add feature")).toBeTruthy();
+    expect(byLabel("Feature 1")!.disabled).toBe(false);
+    expect(byLabel("Feature 1 sprint")!.disabled).toBe(false);
+    expect(buttonByText("Save step")).toBeTruthy();
+    expect(buttonByText("Delete step")).toBeUndefined();
+    expect(byAria("Remove feature 1")).toBeNull();
+  });
+
+  it("leaves ticking to the approval gate (seeded feature is approved)", async () => {
+    auth.role = "team_member";
+    await mount();
+    await click(document.querySelector("[data-step='s1']"));
+    expect(byLabel("Feature 1 done")!.disabled).toBe(false); // seeded APPROVED
   });
 });

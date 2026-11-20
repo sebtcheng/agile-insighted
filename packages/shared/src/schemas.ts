@@ -1,4 +1,5 @@
 ﻿import { z } from "zod";
+import { sprintKeySchema } from "./sprint";
 import type { WorkItem, WorkMemberRollup, WorkSummary } from "./workItems";
 import {
   type ActivityEventType,
@@ -21,7 +22,9 @@ import {
   workTypeSchema,
   raidStatusSchema,
   raidTypeSchema,
+  pmApprovalSchema,
   type RaidStatus,
+  type PmApproval,
   type RaidType,
 } from "./enums";
 
@@ -46,6 +49,7 @@ export const createUserSchema = z.object({
 export const updateUserSchema = z
   .object({
     fullName: text(120),
+    email: z.string().trim().toLowerCase().email().max(254),
     role: userRoleSchema,
     isActive: z.boolean(),
     password: z.string().min(MIN_PASSWORD_LENGTH).max(200),
@@ -251,6 +255,7 @@ export const setChecklistCheckSchema = z.object({ checked: z.boolean() });
 // ---- read models
 export const activityDtoSchema = z.object({
   id,
+  pmApproval: pmApprovalSchema,
   projectId: id,
   subprojectId: id.nullable(),
   subprojectCode: z.string().nullable(),
@@ -334,6 +339,8 @@ export type WorkloadResponse = {
   items: WorkloadRow[];
   /** Team-wide rollups across all five modules, including an Unassigned bucket. */
   members: WorkMemberRollup[];
+  /** Names of every project that appears in the rollups, including ones the viewer is not a member of. */
+  projectNames?: Record<string, string>;
 };
 
 /** GET /home: optional assignee and subproject filters. */
@@ -501,13 +508,20 @@ export const startSimulationSchema = z.object({ userId: z.string().uuid() });
 const level = z.number().int().min(1).max(3);
 export const MAX_MITIGATING_ACTIONS = 20;
 /** One checklist entry. `id` present = existing row to update; absent = new row. Array order is the display order. */
-export const raidMitigatingActionInputSchema = z.object({
-  id: id.optional(),
-  description: text(500),
-  isCompleted: z.boolean().default(false),
-  targetDate: isoDate,
-  responsibleId: id,
-});
+export const raidMitigatingActionInputSchema = z
+  .object({
+    id: id.optional(),
+    description: text(500),
+    isCompleted: z.boolean().default(false),
+    // A deadline is required: pick a sprint (preferred) or send a legacy targetDate.
+    targetDate: isoDate.optional(),
+    sprintKey: sprintKeySchema.optional(),
+    responsibleId: id,
+  })
+  .refine((a) => a.sprintKey !== undefined || a.targetDate !== undefined, {
+    message: "Sprint is required",
+    path: ["sprintKey"],
+  });
 const mitigatingActionsInput = z.array(raidMitigatingActionInputSchema).max(MAX_MITIGATING_ACTIONS);
 export const toggleMitigatingActionSchema = z.object({ isCompleted: z.boolean() });
 export const createRaidSchema = z.object({
@@ -518,7 +532,6 @@ export const createRaidSchema = z.object({
   likelihood: level.nullable().optional(),
   mitigatingActions: mitigatingActionsInput.optional(),
   ownerId: id.nullable().optional(),
-  targetDate: isoDate.nullable().optional(),
 });
 export const updateRaidSchema = z
   .object({
@@ -531,7 +544,6 @@ export const updateRaidSchema = z
     mitigatingActions: mitigatingActionsInput.optional(),
     ownerId: id.nullable(),
     status: raidStatusSchema,
-    targetDate: isoDate.nullable(),
   })
   .partial();
 export const raidListQuerySchema = z.object({
@@ -549,6 +561,9 @@ export type RaidMitigatingActionDto = {
   completedAt: string | null;
   /** ISO date; null only for rows created before deadlines existed. */
   targetDate: string | null;
+  sprintKey: string | null;
+  sprintLabel: string | null;
+  pmApproval: PmApproval;
   /** Staff responsible; null only for rows whose parent item had no owner when the column was added. */
   responsibleId: string | null;
   responsibleName: string | null;
@@ -573,7 +588,6 @@ export type RaidItemDto = {
   raisedById: string;
   raisedByName: string;
   status: RaidStatus;
-  targetDate: string | null;
   closedAt: string | null;
   createdAt: string;
   isOverdue: boolean;

@@ -22,6 +22,7 @@ import { z } from "zod";
 import { env } from "../env";
 import { badRequest, conflict, forbidden, unauthorized } from "../errors";
 import { logger } from "../logger";
+import { can } from "../permissions";
 import {
   actorOf,
   asyncHandler,
@@ -43,6 +44,7 @@ import * as authService from "../services/authService";
 import { getHome } from "../services/homeService";
 import { scopeGuard } from "../scopeGuard";
 import { getVisibleProjectIds } from "../services/visibilityService";
+import { adminLog } from "./adminLog";
 import { governance } from "./governance";
 import { modules } from "./modules";
 import { readModels } from "./readModels";
@@ -169,7 +171,13 @@ api.patch(
   "/users/:id",
   requireAction("user.manage"),
   asyncHandler(async (req, res) => {
-    res.json(await userService.updateUser(idParam(req), parse(updateUserSchema, req.body)));
+    res.json(
+      await userService.updateUser(
+        idParam(req),
+        parse(updateUserSchema, req.body),
+        actorOf(res).id,
+      ),
+    );
   }),
 );
 api.delete(
@@ -203,11 +211,15 @@ api.get(
 );
 api.post(
   "/projects",
-  requireAction("project.write"),
+  requireAction("project.create"),
   asyncHandler(async (req, res) => {
-    res
-      .status(201)
-      .json(await projects.createProject(actorOf(res).id, parse(createProjectSchema, req.body)));
+    const actor = actorOf(res);
+    res.status(201).json(
+      await projects.createProject(actor.id, parse(createProjectSchema, req.body), {
+        // A non-PM only sees projects they own or belong to, so they always end up a member of their own.
+        ensureCreatorMember: actor.role !== "pm",
+      }),
+    );
   }),
 );
 api.get(
@@ -218,9 +230,12 @@ api.get(
 );
 api.patch(
   "/projects/:id",
-  requireAction("project.write"),
+  requireAction("project.edit"),
   asyncHandler(async (req, res) => {
-    res.json(await projects.updateProject(idParam(req), parse(updateProjectSchema, req.body)));
+    const patch = parse(updateProjectSchema, req.body);
+    // Archiving or restoring a project stays with the PM.
+    if (patch.archived !== undefined && !can(actorOf(res), "project.write")) throw forbidden();
+    res.json(await projects.updateProject(idParam(req), patch));
   }),
 );
 
@@ -396,6 +411,7 @@ api.use(governance);
 
 // ---- Phase 3: workload, search
 api.use(readModels);
+api.use(adminLog);
 
 // ---- Phases 5 to 8: RAID, Story Map, Kano, OST
 api.use(modules);

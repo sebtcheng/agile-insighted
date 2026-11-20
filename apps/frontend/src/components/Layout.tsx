@@ -56,6 +56,7 @@ const ICONS = {
   usm: <path d="M3 4h5v16H3zM10 4h5v10h-5zM17 4h4v6h-4z" />,
   kano: <path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.2l-5.5 3 1-6.2L3 9.6l6.2-.9z" />,
   raid: <path d="M12 3l10 18H2zM12 10v5M12 18h.01" />,
+  adminLog: <path d="M9 5h10M9 12h10M9 19h10M4 5h.01M4 12h.01M4 19h.01" />,
   settings: (
     <>
       <circle cx="12" cy="12" r="3" />
@@ -103,7 +104,7 @@ export function Layout() {
               color="#fff"
             />
             <Text fw={700} className="shell-brand">
-              InsightED AGILE
+              T.R.A.I.L
             </Text>
           </Group>
           <Group wrap="nowrap" gap="md">

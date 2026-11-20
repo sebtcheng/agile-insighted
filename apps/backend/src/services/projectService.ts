@@ -114,9 +114,17 @@ async function nextProjectCode(): Promise<string> {
 }
 
 /** `creatorId` is the default owner when the input names none. */
-export async function createProject(creatorId: string, input: CreateProjectInput) {
+export async function createProject(
+  creatorId: string,
+  input: CreateProjectInput,
+  opts: { ensureCreatorMember?: boolean } = {},
+) {
   const ownerId = input.ownerId ?? creatorId;
-  await assertPeople([ownerId, ...input.memberIds]);
+  const memberIds =
+    opts.ensureCreatorMember && ownerId !== creatorId && !input.memberIds.includes(creatorId)
+      ? [...input.memberIds, creatorId]
+      : input.memberIds;
+  await assertPeople([ownerId, ...memberIds]);
   const code = await nextProjectCode();
   const id = await db.transaction(async (tx) => {
     const [row] = await tx
@@ -124,7 +132,7 @@ export async function createProject(creatorId: string, input: CreateProjectInput
       .values({ name: input.name, code, ownerId })
       .returning({ id: projects.id });
     if (!row) throw new Error("insert returned no row");
-    await syncMembers(tx, row.id, input.memberIds);
+    await syncMembers(tx, row.id, memberIds);
     return row.id;
   });
   return getProject(id);

@@ -55,6 +55,7 @@ type Raw = {
   dueDate: string | null;
   isCompleted: boolean;
   completedAt: Date | null;
+  pmApproval?: "PENDING" | "APPROVED";
 };
 
 const finishedOr = (done: boolean, at: Date | null, fallback: Date): Date | null =>
@@ -109,6 +110,7 @@ export async function loadWorkItems(
     dueDate: a.dueDate,
     isCompleted: a.status === "done",
     completedAt: a.status === "done" ? a.completedAt : null,
+    pmApproval: a.pmApproval,
   }));
 
   if (moduleItemsWanted) {
@@ -165,6 +167,7 @@ export async function loadWorkItems(
         dueDate: s.targetDate,
         isCompleted: done,
         completedAt: finishedOr(done, null, s.updatedAt),
+        pmApproval: s.pmApproval,
       });
     }
 
@@ -181,6 +184,7 @@ export async function loadWorkItems(
         dueDate: f.targetDate,
         isCompleted: f.isCompleted,
         completedAt: f.completedAt,
+        pmApproval: f.pmApproval,
       });
     }
 
@@ -217,6 +221,7 @@ export async function loadWorkItems(
         dueDate: s.targetDate ?? parent.targetDate,
         isCompleted: s.isCompleted,
         completedAt: s.completedAt,
+        pmApproval: s.pmApproval,
       });
     }
 
@@ -233,7 +238,8 @@ export async function loadWorkItems(
         parentTitle: null,
         projectId: r.projectId,
         assigneeId: r.ownerId,
-        dueDate: r.targetDate,
+        // RAID items no longer carry a date of their own; only their mitigating actions have sprints.
+        dueDate: null,
         isCompleted: done,
         completedAt: finishedOr(done, r.closedAt, r.updatedAt),
       });
@@ -250,9 +256,10 @@ export async function loadWorkItems(
         parentId: parent.id,
         projectId: parent.projectId,
         assigneeId: m.responsibleId ?? parent.ownerId,
-        dueDate: m.targetDate ?? parent.targetDate,
+        dueDate: m.targetDate,
         isCompleted: m.isCompleted,
         completedAt: m.completedAt,
+        pmApproval: m.pmApproval,
       });
     }
   }
@@ -288,6 +295,7 @@ export async function loadWorkItems(
         isCompleted: r.isCompleted,
         completedAt: r.completedAt ? r.completedAt.toISOString() : null,
         scheduleStatus: classifySchedule(r, today, timeZone),
+        pmApproval: r.pmApproval ?? "PENDING",
       };
     })
     .filter((i) => !query.assigneeId || i.assigneeId === query.assigneeId);

@@ -10,11 +10,14 @@ import {
   type KanoSpecInput,
   type UpdateKanoInput,
 } from "@myapp/shared";
+import { sprintFieldsFor } from "@myapp/shared";
 import { db, type DbOrTx } from "../db/client";
 import { kanoRequestSpecs, kanoRequests, projects, users } from "../db/schema";
 import { conflict, notFound, unprocessable } from "../errors";
 import type { Actor } from "../permissions";
 import { createKanoRequest } from "./moduleService";
+import { assertCompletionAllowed } from "./approvalGate";
+import { sprintColumns } from "./sprintWrite";
 import { nextSeq } from "./seq";
 import { scopeCondition, type ProjectScope } from "./visibilityService";
 
@@ -40,6 +43,8 @@ function toSpecDto({ s: a, responsibleName }: SpecRow): KanoSpecDto {
     completedAt: a.completedAt ? a.completedAt.toISOString() : null,
     sortOrder: a.sortOrder,
     targetDate: a.targetDate,
+    ...sprintFieldsFor(a.sprintKey, a.targetDate),
+    pmApproval: a.pmApproval,
     responsibleId: a.responsibleId,
     responsibleName,
   };
@@ -85,6 +90,13 @@ async function syncSpecs(tx: DbOrTx, requestId: string, input: KanoSpecInput[]) 
     if (a.responsibleId)
       await assertResponsible(tx, a.responsibleId, a.id ? byId.get(a.id)?.responsibleId : null);
   }
+  for (const a of input) {
+    const prev = a.id ? byId.get(a.id) : undefined;
+    assertCompletionAllowed(prev?.pmApproval ?? "PENDING", {
+      wasCompleted: prev?.isCompleted ?? false,
+      willComplete: a.isCompleted ?? false,
+    });
+  }
   const removed = existing.filter((e) => !keep.has(e.id)).map((e) => e.id);
   if (removed.length > 0) {
     await tx.delete(kanoRequestSpecs).where(inArray(kanoRequestSpecs.id, removed));
@@ -103,7 +115,7 @@ async function syncSpecs(tx: DbOrTx, requestId: string, input: KanoSpecInput[]) 
           isCompleted: done,
           completedAt: done ? (a.id && byId.get(a.id)?.completedAt) || now : null,
           sortOrder: i,
-          targetDate: a.targetDate ?? null,
+          ...sprintColumns(a),
           responsibleId: a.responsibleId ?? null,
         };
       }),
@@ -116,6 +128,7 @@ async function syncSpecs(tx: DbOrTx, requestId: string, input: KanoSpecInput[]) 
         completedAt: sql`excluded.completed_at`,
         sortOrder: sql`excluded.sort_order`,
         targetDate: sql`excluded.target_date`,
+        sprintKey: sql`excluded.sprint_key`,
         responsibleId: sql`excluded.responsible_id`,
       },
     });
@@ -291,6 +304,16 @@ export async function setKanoSpecCompleted(
       .limit(1);
     if (!req) throw notFound("Request");
     await assertWritable(tx, req.projectId);
+    const [cur] = await tx
+      .select({ pmApproval: kanoRequestSpecs.pmApproval, isCompleted: kanoRequestSpecs.isCompleted })
+      .from(kanoRequestSpecs)
+      .where(and(eq(kanoRequestSpecs.id, specId), eq(kanoRequestSpecs.kanoRequestId, requestId)))
+      .limit(1);
+    if (!cur) throw notFound("Spec");
+    assertCompletionAllowed(cur.pmApproval, {
+      wasCompleted: cur.isCompleted,
+      willComplete: isCompleted,
+    });
     const [row] = await tx
       .update(kanoRequestSpecs)
       .set({

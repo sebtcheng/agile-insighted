@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pmApprovalSchema } from "./enums";
 
 /**
  * Unified work items: one normalised shape for activities and nested action steps from Projects, OST,
@@ -40,6 +41,8 @@ export const workItemSchema = z.object({
   isCompleted: z.boolean(),
   completedAt: z.string().nullable(),
   scheduleStatus: scheduleStatusSchema,
+  /** PM sign-off; missing on legacy data means PENDING. Completion is only allowed when APPROVED. */
+  pmApproval: pmApprovalSchema.optional(),
 });
 export type WorkItem = z.infer<typeof workItemSchema>;
 

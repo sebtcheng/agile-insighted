@@ -26,7 +26,9 @@ const spec = (over: Record<string, unknown>) => ({
   isCompleted: false,
   completedAt: null,
   sortOrder: 0,
-  targetDate: "2026-12-01",
+  targetDate: "2026-12-06",
+  sprintKey: "2026-S49",
+  sprintLabel: "Sprint 49 — Ends Sun, Dec 6, 2026",
   responsibleId: "u-tm",
   responsibleName: "Tomas Member",
   ...over,
@@ -43,6 +45,8 @@ const request = {
       id: "s2",
       label: "Plain",
       targetDate: null,
+      sprintKey: null,
+      sprintLabel: null,
       responsibleId: null,
       responsibleName: null,
     }),
@@ -125,7 +129,7 @@ const setValue = (el: HTMLInputElement, v: string) =>
     return Promise.resolve();
   });
 
-describe("Kano per-spec target date and person responsible", () => {
+describe("Kano per-spec sprint and person responsible", () => {
   it("drops the request-level Target date but keeps the other fields", async () => {
     await mount(createElement(EditModal, { request, onClose: vi.fn() }));
     const labels = [...document.querySelectorAll("label")].map((l) => l.textContent ?? "");
@@ -140,11 +144,18 @@ describe("Kano per-spec target date and person responsible", () => {
 
   it("pre-populates each spec row, edits, adds and removes, and saves the full payload", async () => {
     await mount(createElement(EditModal, { request, onClose: vi.fn() }));
-    expect(byLabel("Spec 1 target date")?.value).toBe("2026-12-01");
+    expect(document.querySelector('input[type="date"]')).toBeNull();
+    expect(byLabel("Spec 1 sprint")?.value).toBe("Sprint 49 — Ends Sun, Dec 6, 2026");
     expect(byLabel("Spec 1 person responsible")?.value).toBe("Tomas Member");
-    expect(byLabel("Spec 2 target date")?.value).toBe("");
+    expect(byLabel("Spec 2 sprint")?.value).toBe("");
 
-    await setValue(byLabel("Spec 2 target date")!, "2027-03-04");
+    await click(byLabel("Spec 2 sprint"));
+    const sprintListId = byLabel("Spec 2 sprint")!.getAttribute("aria-controls")!;
+    const sprintOption = [
+      ...document.querySelectorAll<HTMLElement>(`[id="${sprintListId}"] [role="option"]`),
+    ].find((o) => o.textContent === "Sprint 49 — Ends Sun, Dec 6, 2026");
+    expect(sprintOption, "sprint option with number and Sunday end date").toBeTruthy();
+    await click(sprintOption);
     await click(byLabel("Spec 2 person responsible"));
     const listId = byLabel("Spec 2 person responsible")!.getAttribute("aria-controls")!;
     const option = [
@@ -154,7 +165,7 @@ describe("Kano per-spec target date and person responsible", () => {
     await click(option);
 
     await click([...document.querySelectorAll("button")].find((b) => b.textContent === "Add spec"));
-    expect(byLabel("Spec 3 target date")?.value).toBe("");
+    expect(byLabel("Spec 3 sprint")?.value).toBe("");
     expect(byLabel("Spec 3 person responsible")?.value).toBe("");
     await setValue(byLabel("Spec 3")!, "New spec");
     await click(document.querySelector('[aria-label="Remove spec 1"]'));
@@ -169,14 +180,14 @@ describe("Kano per-spec target date and person responsible", () => {
     expect(body.specs).toEqual([
       expect.objectContaining({
         id: "s2",
-        targetDate: "2027-03-04",
+        sprintKey: "2026-S49",
         responsibleId: "u-pm",
       }),
       {
         id: undefined,
         label: "New spec",
         isCompleted: false,
-        targetDate: null,
+        sprintKey: null,
         responsibleId: null,
       },
     ]);
@@ -187,10 +198,26 @@ describe("Kano per-spec target date and person responsible", () => {
     await mount(createElement(KanoSpecChecklist, { request, editable: false }));
     const text = document.body.textContent ?? "";
     expect(text).toContain("Tomas Member");
-    expect(text).toMatch(/Dec.*2026|2026/);
+    expect(text).toContain("Sprint 49 — Ends Sun, Dec 6, 2026");
     const rows = [...document.querySelectorAll(".mantine-Checkbox-label")].map(
       (l) => l.textContent ?? "",
     );
     expect(rows[1]).toBe("Plain");
+  });
+});
+
+describe("Kano edit as a team member", () => {
+  it("can edit specs but cannot categorize or delete", async () => {
+    await mount(createElement(EditModal, { request, onClose: vi.fn(), isPm: false }));
+    expect(byLabel("Spec 1")).toBeTruthy();
+    const label = [...document.querySelectorAll("label")].find((l) =>
+      l.textContent?.startsWith("Kano category"),
+    )!;
+    expect((document.getElementById(label.htmlFor) as HTMLInputElement | null)?.disabled).toBe(
+      true,
+    );
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent === "Delete")).toBe(
+      false,
+    );
   });
 });

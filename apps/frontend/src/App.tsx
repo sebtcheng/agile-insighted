@@ -1,5 +1,7 @@
+import type { ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { AuthGate } from "./auth";
+import { AuthGate, useIsPm } from "./auth";
+import { AdminLogPage } from "./pages/AdminLogPage";
 import { Layout } from "./components/Layout";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
@@ -12,6 +14,11 @@ import { StoryMapPage } from "./pages/StoryMapPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SprintPage } from "./pages/SprintPage";
 import { WorkloadPage } from "./pages/WorkloadPage";
+
+/** Sends anyone who is not a Project Manager home, before the page (and its API calls) ever mounts. */
+export function RequirePm({ children }: { children: ReactNode }) {
+  return useIsPm() ? <>{children}</> : <Navigate to="/" replace />;
+}
 
 export function App() {
   return (
@@ -30,6 +37,14 @@ export function App() {
         <Route path="projects/:projectId" element={<ProjectPage />} />
         <Route path="projects/:projectId/sprints/:sprintId" element={<SprintPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route
+          path="admin-log"
+          element={
+            <RequirePm>
+              <AdminLogPage />
+            </RequirePm>
+          }
+        />
         <Route path="ost" element={<OstPage />} />
         <Route path="usm" element={<StoryMapPage />} />
         <Route path="kano" element={<KanoPage />} />

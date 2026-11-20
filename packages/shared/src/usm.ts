@@ -1,4 +1,6 @@
 import { z } from "zod";
+import type { PmApproval } from "./enums";
+import { sprintKeySchema } from "./sprint";
 
 /**
  * User Story Mapping, simplified: Project -> User (persona) -> ordered journey step cards -> step feature checklist.
@@ -47,6 +49,7 @@ export const createUsmFeatureSchema = z.object({
   title: text(300),
   responsibleId: id.nullable().optional(),
   targetDate: isoDate.nullable().optional(),
+  sprintKey: sprintKeySchema.nullable().optional(),
   isCompleted: z.boolean().optional(),
 });
 export const updateUsmFeatureSchema = z
@@ -54,6 +57,7 @@ export const updateUsmFeatureSchema = z
     title: text(300),
     responsibleId: id.nullable(),
     targetDate: isoDate.nullable(),
+    sprintKey: sprintKeySchema.nullable(),
     sortOrder: z.number().int().min(0).max(100000),
     isCompleted: z.boolean(),
   })
@@ -84,6 +88,9 @@ export type UsmFeatureDto = {
   responsibleId: string | null;
   responsibleName: string | null;
   targetDate: string | null;
+  sprintKey: string | null;
+  sprintLabel: string | null;
+  pmApproval: PmApproval;
   sortOrder: number;
 };
 export type UsmStepDto = {

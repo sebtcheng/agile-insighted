@@ -125,7 +125,7 @@ describe("LoginPage", () => {
 
   it("shows the title, status pill, institutional dock and help callout", () => {
     const el = render();
-    expect(el.querySelector(".ls-title")?.textContent).toBe("InsightED AGILE");
+    expect(el.querySelector(".ls-title")?.textContent).toBe("T.R.A.I.L");
     expect(el.querySelector(".ls-pill")?.textContent).toBe("Portal ready");
     const chips = [...el.querySelectorAll(".ls-dock .ls-chip")].map((c) => c.textContent);
     expect(chips).toEqual(["DepEd", "Bagong Pilipinas", "HROD", "InsightED"]);
