@@ -12,7 +12,7 @@ import * as gov from "../services/governanceService";
 import { updateSprint } from "../services/projectService";
 import { db, pool } from "./client";
 import { seedModules } from "./seedModules";
-import { codeCounters, projects, sprints, subprojects, users } from "./schema";
+import { activities, codeCounters, projects, sprints, subprojects, users } from "./schema";
 
 const SUBPROJECTS: Array<[code: string, name: string, health: Health, note: string | null]> = [
   ["PRJ-01", "Student Engagement Analytics", "on_track", null],
@@ -379,6 +379,8 @@ export async function seedDatabase(opts: SeedOptions): Promise<{ projectId: stri
         // Alternate between completed this week (shows on Home) and completed earlier.
         const completedOn = i % 2 === 0 ? addDays(monday, i % 3) : addDays(progressAt, 4);
         const doneDate = completedOn > today ? today : completedOn;
+        // Seeded finished work counts as PM approved.
+        await db.update(activities).set({ pmApproval: "APPROVED" }).where(eq(activities.id, id));
         await activityService.update({ actor: pmActor, now: at(doneDate, 6) }, id, {
           status: "done",
           percentComplete: 100,

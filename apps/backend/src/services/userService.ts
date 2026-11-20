@@ -53,22 +53,35 @@ export async function deleteUser(id: string, actorId: string): Promise<void> {
   }
 }
 
-export async function updateUser(id: string, patch: UpdateUserInput): Promise<UserDto> {
+export async function updateUser(
+  id: string,
+  patch: UpdateUserInput,
+  actorId?: string,
+): Promise<UserDto> {
+  if (patch.role !== undefined && id === actorId) {
+    throw forbidden("You cannot change your own role");
+  }
   const set: Partial<typeof users.$inferInsert> = {};
   if (patch.fullName !== undefined) set.fullName = patch.fullName;
+  if (patch.email !== undefined) set.email = patch.email.toLowerCase();
   if (patch.role !== undefined) set.role = patch.role;
   if (patch.isActive !== undefined) set.isActive = patch.isActive;
   if (patch.password !== undefined) set.passwordHash = await hashPassword(patch.password);
-  return db.transaction(async (tx) => {
-    const [row] =
-      Object.keys(set).length > 0
-        ? await tx.update(users).set(set).where(eq(users.id, id)).returning(columns)
-        : await tx.select(columns).from(users).where(eq(users.id, id)).limit(1);
-    if (!row) throw notFound("User");
-    // Deactivating or resetting a password ends that user's sessions.
-    if (patch.isActive === false || patch.password !== undefined) {
-      await tx.delete(sessions).where(eq(sessions.userId, id));
-    }
-    return row;
-  });
+  try {
+    return await db.transaction(async (tx) => {
+      const [row] =
+        Object.keys(set).length > 0
+          ? await tx.update(users).set(set).where(eq(users.id, id)).returning(columns)
+          : await tx.select(columns).from(users).where(eq(users.id, id)).limit(1);
+      if (!row) throw notFound("User");
+      // Deactivating or resetting a password ends that user's sessions.
+      if (patch.isActive === false || patch.password !== undefined) {
+        await tx.delete(sessions).where(eq(sessions.userId, id));
+      }
+      return row;
+    });
+  } catch (err) {
+    if (pgErrorOf(err)?.code === "23505") throw conflict("That email is already in use");
+    throw err;
+  }
 }

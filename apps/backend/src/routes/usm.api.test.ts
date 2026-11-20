@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { UsmFeatureDto, UsmPersonaDto, UsmStepDto } from "@myapp/shared";
 import { createApp } from "../app";
 import { loadWorkItems } from "../services/workItemService";
-import { createFixture, type Fixture } from "../test/helpers";
+import { approveAll, createFixture, type Fixture } from "../test/helpers";
 
 type Agent = ReturnType<typeof request.agent>;
 const json = <T>(res: { body: unknown }): T => res.body as T;
@@ -147,6 +147,11 @@ describe("USM step features", () => {
       isCompleted: false,
       completedAt: null,
     });
+    // Completion is refused until a PM approves the feature.
+    const refused = await pm.patch(`${BASE}/features/${created.id}`).send({ isCompleted: true });
+    expect(refused.status).toBe(403);
+    expect(json<{ error: { code: string } }>(refused).error.code).toBe("pm_approval_required");
+    await approveAll(f.project.id);
     const done = json<UsmFeatureDto>(
       await pm.patch(`${BASE}/features/${created.id}`).send({ isCompleted: true }),
     );
@@ -167,6 +172,7 @@ describe("USM step features", () => {
     const feat = json<UsmFeatureDto>(
       await pm.post(`${BASE}/features`).send({ projectId: f.project.id, stepId: s.id, title: "F" }),
     );
+    await approveAll(f.project.id);
     expect(
       (await member.patch(`${BASE}/features/${feat.id}`).send({ isCompleted: true })).status,
     ).toBe(200);
@@ -184,7 +190,9 @@ describe("USM step features", () => {
           .send({ projectId: f.project.id, stepId: s.id, title, responsibleId: f.m1.id, ...extra }),
       );
     await mk("Late", { targetDate: "2000-01-01" });
-    await mk("Finished", { targetDate: DUE, isCompleted: true });
+    const fin = await mk("Finished", { targetDate: DUE });
+    await approveAll(f.project.id);
+    await pm.patch(`${BASE}/features/${fin.id}`).send({ isCompleted: true });
     const { items } = await loadWorkItems({ projectId: f.project.id });
     const usm = items.filter(
       (i) => i.sourceModule === "user_story" && i.parentTitle?.startsWith("Rollup"),

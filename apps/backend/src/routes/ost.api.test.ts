@@ -2,7 +2,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { OstTreeDto, StoryMapDto } from "@myapp/shared";
 import { createApp } from "../app";
-import { createFixture, type Fixture } from "../test/helpers";
+import { approveAll, createFixture, type Fixture } from "../test/helpers";
 
 type Agent = ReturnType<typeof request.agent>;
 type Id = { id: string };
@@ -142,7 +142,7 @@ describe("OST API", () => {
       await pm.post(`/api/ost/outcomes/${outcomeId}/opportunities`).send({
         title: "Needs a checklist",
         solutions: [
-          { title: "Draft the spec", completed: true, ownerId: f.m1.id, targetDate: "2026-12-01" },
+          { title: "Draft the spec", completed: false, ownerId: f.m1.id, targetDate: "2026-12-01" },
           { title: "Review it", completed: false },
         ],
       }),
@@ -153,10 +153,11 @@ describe("OST API", () => {
     };
     const first = await mine();
     expect(first.map((s) => [s.title, s.validationStatus, s.ownerName, s.targetDate])).toEqual([
-      ["Draft the spec", "validated", f.m1.fullName, "2026-12-01"],
+      ["Draft the spec", "planned", f.m1.fullName, "2026-12-01"],
       ["Review it", "planned", null, null],
     ]);
     const [a, b] = first;
+    await approveAll(f.project.id);
     // Edit one, untick another, add a third and drop nothing; then remove one by omission.
     const res = await pm.patch(`/api/ost/opportunities/${created.id}`).send({
       solutions: [
@@ -167,14 +168,14 @@ describe("OST API", () => {
           ownerId: f.pm.id,
           targetDate: "2026-12-05",
         },
-        { title: "Ship it", completed: true, targetDate: "2026-12-20" },
+        { title: "Ship it", completed: false, targetDate: "2026-12-20" },
       ],
     });
     expect(res.status).toBe(200);
     const next = await mine();
     expect(next.map((s) => [s.title, s.validationStatus, s.ownerName, s.targetDate])).toEqual([
       ["Draft the spec v2", "planned", f.pm.fullName, "2026-12-05"],
-      ["Ship it", "validated", null, "2026-12-20"],
+      ["Ship it", "planned", null, "2026-12-20"],
     ]);
     expect(next.some((s) => s.id === b?.id)).toBe(false);
     // Omitting `solutions` leaves the checklist alone.
@@ -213,6 +214,11 @@ describe("OST API", () => {
       (await member.patch(`/api/ost/solutions/${sol.id}`).send({ validationStatus: "validated" }))
         .status,
     ).toBe(403);
+    const pending = await pm
+      .patch(`/api/ost/solutions/${sol.id}`)
+      .send({ validationStatus: "validated" });
+    expect(pending.status).toBe(403);
+    await approveAll(f.project.id);
     const ok = await pm
       .patch(`/api/ost/solutions/${sol.id}`)
       .send({ validationStatus: "validated" });
@@ -243,6 +249,7 @@ describe("OST API", () => {
 
   it("converts a validated solution into a backlog story and links it", async () => {
     const sol = await newSolution("Validated one");
+    await approveAll(f.project.id);
     await pm.patch(`/api/ost/solutions/${sol.id}`).send({ validationStatus: "validated" });
     const res = await pm.post(`/api/ost/solutions/${sol.id}/convert`).send({});
     expect(res.status).toBe(201);

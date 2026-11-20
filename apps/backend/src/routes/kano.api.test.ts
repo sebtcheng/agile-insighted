@@ -2,7 +2,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { KanoDto } from "@myapp/shared";
 import { createApp } from "../app";
-import { createFixture, type Fixture } from "../test/helpers";
+import { approveAll, createFixture, type Fixture } from "../test/helpers";
 
 type Agent = ReturnType<typeof request.agent>;
 const json = <T>(res: { body: unknown }): T => res.body as T;
@@ -62,7 +62,17 @@ describe("Kano API", () => {
     }
   });
 
-  it("only the PM can categorize or delete", async () => {
+  it("lets a team member edit a request, but only the PM can categorize or delete", async () => {
+    const mine = await submit();
+    const edited = await member
+      .patch(`/api/kano/${mine.id}`)
+      .send({ revisionRequest: "Edited by member" });
+    expect(edited.status).toBe(200);
+    expect(json<KanoDto>(edited).revisionRequest).toBe("Edited by member");
+    expect((await member.patch(`/api/kano/${mine.id}`).send({ kanoCategory: null })).status).toBe(
+      403,
+    );
+
     const r = await submit();
     for (const res of [
       await member.patch(`/api/kano/${r.id}`).send({ kanoCategory: "must_be" }),
@@ -202,6 +212,7 @@ describe("Kano API", () => {
     it("is complete only when every spec is checked (100% rule)", async () => {
       const r = await submit({ specs: [{ label: "a" }, { label: "b" }, { label: "c" }] });
       const [a, b, c] = r.specs;
+      await approveAll(f.project.id);
       const toggle = async (id: string | undefined, isCompleted: boolean) =>
         json<KanoDto>(await pm.patch(`/api/kano/${r.id}/specs/${id}`).send({ isCompleted }));
       let cur = await toggle(a?.id, true);
@@ -222,6 +233,7 @@ describe("Kano API", () => {
     it("syncs the list on update: keeps, edits, adds and removes", async () => {
       const r = await submit({ specs: [{ label: "keep" }, { label: "drop" }] });
       const keep = r.specs[0];
+      await approveAll(f.project.id);
       const updated = json<KanoDto>(
         await pm.patch(`/api/kano/${r.id}`).send({
           specs: [{ id: keep?.id, label: "kept", isCompleted: true }, { label: "new" }],
@@ -300,13 +312,12 @@ describe("Kano API", () => {
         .patch(`/api/kano/${r.id}/specs/${other.specs[0]?.id}`)
         .send({ isCompleted: true });
       expect(cross.status).toBe(404);
-      expect(
-        (
-          await member
-            .patch(`/api/kano/${r.id}/specs/${r.specs[0]?.id}`)
-            .send({ isCompleted: true })
-        ).status,
-      ).toBe(403);
+      const memberTick = () =>
+        member.patch(`/api/kano/${r.id}/specs/${r.specs[0]?.id}`).send({ isCompleted: true });
+      // A team member is blocked by the PM approval gate, then allowed once approved.
+      expect((await memberTick()).status).toBe(403);
+      await approveAll(f.project.id);
+      expect((await memberTick()).status).toBe(200);
     });
   });
 });

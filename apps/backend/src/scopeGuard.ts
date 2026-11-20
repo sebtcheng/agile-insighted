@@ -134,6 +134,9 @@ export const scopeGuard: RequestHandler = (req, res, next) => {
       const resolver = seg1 ? BY_PREFIX[seg1] : undefined;
       if (resolver && isUuid(seg2)) checks.push(resolver(seg2));
     }
+    // A project named in the request body (create routes) must be visible as well.
+    const bodyProject: unknown = (req.body as { projectId?: unknown } | undefined)?.projectId;
+    if (isUuid(bodyProject)) checks.push(Promise.resolve(bodyProject));
     for (const [key, resolver] of Object.entries(BY_QUERY)) {
       const v: unknown = req.query[key];
       if (isUuid(v)) checks.push(resolver(v));

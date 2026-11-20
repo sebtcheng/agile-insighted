@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { KANO_CATEGORIES } from "./enums";
+import { KANO_CATEGORIES, type PmApproval } from "./enums";
+import { sprintKeySchema } from "./sprint";
 
 const id = z.string().uuid();
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -16,6 +17,7 @@ export const kanoSpecInputSchema = z.object({
   label: text(500),
   isCompleted: z.boolean().default(false),
   targetDate: isoDate.nullable().optional(),
+  sprintKey: sprintKeySchema.nullable().optional(),
   responsibleId: id.nullable().optional(),
 });
 const kanoSpecsInput = z.array(kanoSpecInputSchema).max(MAX_KANO_SPECS);
@@ -56,6 +58,9 @@ export type KanoSpecDto = {
   completedAt: string | null;
   sortOrder: number;
   targetDate: string | null;
+  sprintKey: string | null;
+  sprintLabel: string | null;
+  pmApproval: PmApproval;
   responsibleId: string | null;
   responsibleName: string | null;
 };

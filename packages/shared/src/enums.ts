@@ -54,6 +54,14 @@ export type ChecklistKind = z.infer<typeof checklistKindSchema>;
 export type Gate = z.infer<typeof gateSchema>;
 
 export const userRoleSchema = z.enum(USER_ROLES);
+/** Project Manager sign-off on a task/action. Completion is only allowed once it is APPROVED. */
+export const PM_APPROVALS = ["PENDING", "APPROVED"] as const;
+export const pmApprovalSchema = z.enum(PM_APPROVALS);
+export type PmApproval = z.infer<typeof pmApprovalSchema>;
+export const PM_APPROVAL_REQUIRED_MESSAGE =
+  "Task must be approved by a Project Manager before it can be completed.";
+/** Legacy or missing values count as PENDING. */
+export const isPmApproved = (v: string | null | undefined): boolean => v === "APPROVED";
 export const sprintStatusSchema = z.enum(SPRINT_STATUSES);
 export const activityStatusSchema = z.enum(ACTIVITY_STATUSES);
 export const activityPrioritySchema = z.enum(ACTIVITY_PRIORITIES);

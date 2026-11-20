@@ -3,5 +3,7 @@ export * from "./schemas";
 export * from "./kano";
 export * from "./ost";
 export * from "./stories";
+export * from "./adminLog";
+export * from "./sprint";
 export * from "./usm";
 export * from "./workItems";

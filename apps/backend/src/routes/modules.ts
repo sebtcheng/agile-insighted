@@ -87,14 +87,14 @@ modules.post(
 );
 modules.patch(
   "/raid/:id",
-  requireAction("raid.manage"),
+  requireAction("raid.edit"),
   asyncHandler(async (req, res) => {
     res.json(await raid.updateRaid(idParam(req), parse(updateRaidSchema, req.body)));
   }),
 );
 modules.patch(
   "/raid/:id/mitigating-actions/:actionId",
-  requireAction("raid.manage"),
+  requireAction("raid.edit"),
   asyncHandler(async (req, res) => {
     const { isCompleted } = parse(toggleMitigatingActionSchema, req.body);
     res.json(
@@ -228,7 +228,7 @@ modules.get(
 );
 modules.post(
   "/story-map/personas",
-  requireAction("story.manage"),
+  requireAction("usm.edit"),
   asyncHandler(async (req, res) => {
     res
       .status(201)
@@ -237,7 +237,7 @@ modules.post(
 );
 modules.patch(
   "/story-map/personas/:id",
-  requireAction("story.manage"),
+  requireAction("usm.edit"),
   asyncHandler(async (req, res) => {
     res.json(await usm.updatePersona(idParam(req), parse(updateUsmPersonaSchema, req.body)));
   }),
@@ -259,21 +259,21 @@ modules.get(
 );
 modules.post(
   "/story-map/steps",
-  requireAction("story.manage"),
+  requireAction("usm.edit"),
   asyncHandler(async (req, res) => {
     res.status(201).json(await usm.createStep(actorOf(res), parse(createUsmStepSchema, req.body)));
   }),
 );
 modules.patch(
   "/story-map/steps/reorder",
-  requireAction("story.manage"),
+  requireAction("usm.edit"),
   asyncHandler(async (req, res) => {
     res.json({ items: await usm.reorderSteps(parse(reorderUsmStepsSchema, req.body)) });
   }),
 );
 modules.patch(
   "/story-map/steps/:id",
-  requireAction("story.manage"),
+  requireAction("usm.edit"),
   asyncHandler(async (req, res) => {
     res.json(await usm.updateStep(idParam(req), parse(updateUsmStepSchema, req.body)));
   }),
@@ -288,7 +288,7 @@ modules.delete(
 );
 modules.post(
   "/story-map/features",
-  requireAction("story.manage"),
+  requireAction("usm.edit"),
   asyncHandler(async (req, res) => {
     // projectId in the body must equal the step's project; the service rejects a mismatch with 422.
     res.status(201).json(await usm.createFeature(parse(createUsmFeatureSchema, req.body)));
@@ -299,9 +299,9 @@ modules.patch(
   requireAction("checklist_check.write"),
   asyncHandler(async (req, res) => {
     const patch = parse(updateUsmFeatureSchema, req.body);
-    // Team members may only tick or untick; editing text, person, date or order is the PM's.
+    // Anyone who can edit User Story Mapping may change a feature; ticking is open to every member.
     const onlyTick = Object.keys(patch).every((k) => k === "isCompleted");
-    if (!onlyTick && !can(actorOf(res), "story.manage")) throw forbidden();
+    if (!onlyTick && !can(actorOf(res), "usm.edit")) throw forbidden();
     res.json(await usm.updateFeature(idParam(req), patch));
   }),
 );
@@ -353,14 +353,17 @@ modules.post(
 );
 modules.patch(
   "/kano/:id",
-  requireAction("kano.manage"),
+  requireAction("kano.edit"),
   asyncHandler(async (req, res) => {
-    res.json(await kano.updateKano(idParam(req), parse(updateKanoSchema, req.body)));
+    const patch = parse(updateKanoSchema, req.body);
+    // Evaluating (categorising) a request stays with the PM.
+    if (patch.kanoCategory !== undefined && !can(actorOf(res), "kano.manage")) throw forbidden();
+    res.json(await kano.updateKano(idParam(req), patch));
   }),
 );
 modules.patch(
   "/kano/:id/specs/:specId",
-  requireAction("kano.manage"),
+  requireAction("kano.edit"),
   asyncHandler(async (req, res) => {
     const { isCompleted } = parse(toggleKanoSpecSchema, req.body);
     res.json(await kano.setKanoSpecCompleted(idParam(req), idParam(req, "specId"), isCompleted));
@@ -390,7 +393,7 @@ modules.get(
 );
 modules.post(
   "/projects/:id/ost/outcomes",
-  requireAction("ost.manage"),
+  requireAction("ost.edit"),
   asyncHandler(async (req, res) => {
     res
       .status(201)
@@ -401,7 +404,7 @@ modules.post(
 );
 modules.patch(
   "/ost/outcomes/:id",
-  requireAction("ost.manage"),
+  requireAction("ost.edit"),
   asyncHandler(async (req, res) => {
     res.json(await ost.updateOutcome(idParam(req), parse(updateOutcomeSchema, req.body)));
   }),
@@ -416,7 +419,7 @@ modules.delete(
 );
 modules.post(
   "/ost/outcomes/:id/opportunities",
-  requireAction("ost.manage"),
+  requireAction("ost.edit"),
   asyncHandler(async (req, res) => {
     res
       .status(201)
@@ -431,7 +434,7 @@ modules.post(
 );
 modules.patch(
   "/ost/opportunities/:id",
-  requireAction("ost.manage"),
+  requireAction("ost.edit"),
   asyncHandler(async (req, res) => {
     res.json(
       await ost.updateOpportunity(
@@ -452,7 +455,7 @@ modules.delete(
 );
 modules.post(
   "/ost/opportunities/:id/solutions",
-  requireAction("ost.manage"),
+  requireAction("ost.edit"),
   asyncHandler(async (req, res) => {
     res
       .status(201)
@@ -463,9 +466,12 @@ modules.post(
 );
 modules.patch(
   "/ost/solutions/:id",
-  requireAction("ost.manage"),
+  requireAction("ost.edit"),
   asyncHandler(async (req, res) => {
-    res.json(await ost.updateSolution(idParam(req), parse(updateSolutionSchema, req.body)));
+    const patch = parse(updateSolutionSchema, req.body);
+    // Marking a solution validated or invalidated stays with the PM, on top of the PM approval gate.
+    if (patch.validationStatus !== undefined && !can(actorOf(res), "ost.manage")) throw forbidden();
+    res.json(await ost.updateSolution(idParam(req), patch));
   }),
 );
 modules.delete(

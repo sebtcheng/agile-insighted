@@ -361,6 +361,8 @@ function AddUser({ projectId, onAdded }: { projectId: string; onAdded: (id: stri
 
 export function StoryMapPage() {
   const isPm = useIsPm();
+  // Team members add and edit User Story Mapping in their projects (the server scopes them); deleting is the PM's.
+  const canAdd = true;
   const [params, setParams] = useSearchParams();
   const allProjects = useProjects();
   const { project } = useCurrentProject(params.get("project"));
@@ -409,7 +411,7 @@ export function StoryMapPage() {
         title="User Story Mapping (USM)"
         subtitle="Pick a user, lay out their steps from start to finish, and list the features each step needs."
         actions={
-          isPm && !readOnly && persona ? (
+          canAdd && !readOnly && persona ? (
             <Button onClick={() => startAdd(undefined)}>Add step</Button>
           ) : null
         }
@@ -426,7 +428,7 @@ export function StoryMapPage() {
           value={project?.id ?? null}
           onChange={(v) => setParam("project", v)}
         />
-        {project && isPm && !readOnly ? (
+        {project && canAdd && !readOnly ? (
           <AddUser projectId={project.id} onAdded={(id) => setParam("user", id)} />
         ) : null}
       </Group>
@@ -436,7 +438,7 @@ export function StoryMapPage() {
         <QueryState
           query={personas}
           isEmpty={(d) => d.length === 0}
-          empty={isPm ? "No users yet. Add one to start mapping their journey." : "No users yet."}
+          empty="No users yet. Add one to start mapping their journey."
         >
           {(list) => (
             <Stack gap="md">
@@ -457,11 +459,7 @@ export function StoryMapPage() {
               <QueryState
                 query={steps}
                 isEmpty={(d) => d.length === 0}
-                empty={
-                  isPm
-                    ? "No steps yet. Add the first step this user takes."
-                    : "No steps for this user yet."
-                }
+                empty={"No steps yet. Add the first step this user takes."}
               >
                 {(data) => (
                   <Stack gap="xs">
@@ -473,7 +471,7 @@ export function StoryMapPage() {
                     <StepTrack
                       steps={data}
                       today={today}
-                      canEdit={isPm && !readOnly}
+                      canEdit={canAdd && !readOnly}
                       onOpen={setOpenId}
                       onMove={(from, to) => move(data, from, to)}
                       onInsert={startAdd}
@@ -489,7 +487,8 @@ export function StoryMapPage() {
         step={openStep}
         opened={!!openStep}
         onClose={() => setOpenId(null)}
-        canEdit={isPm && !readOnly}
+        canEdit={canAdd && !readOnly}
+        canDelete={isPm && !readOnly}
         canTick={!readOnly}
       />
       {project && persona ? (

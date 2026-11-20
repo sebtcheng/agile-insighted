@@ -19,6 +19,7 @@ import { useToggleWorkItem } from "../api/hooks";
 import { useAuth, useIsPm } from "../auth";
 import { isCheckable } from "../lib/workItemToggle";
 import { useOpenActivity } from "./ActivityRow";
+import { PmApprovalBadge, approvalGateProps } from "./PmApprovalBadge";
 import { fmtDate, toast } from "./ui";
 import { useGovernedUpdate } from "./useGovernedUpdate";
 
@@ -62,7 +63,9 @@ export function WorkItemCheck({ item }: { item: WorkItem }) {
   const openActivity = useOpenActivity();
   const isProject = item.sourceModule === "project";
   const canEdit = !isProject || isPm || item.assigneeId === user.id;
-  const disabled = !isCheckable(item) || !canEdit || toggle.isPending || gov.isPending;
+  const gate = approvalGateProps(item.pmApproval);
+  const disabled =
+    !isCheckable(item) || !canEdit || toggle.isPending || gov.isPending || gate.disabled;
   const onChange = (checked: boolean) => {
     if (isProject) {
       void gov.run({ status: checked ? "done" : "in_progress" }).then((res) => {
@@ -77,11 +80,13 @@ export function WorkItemCheck({ item }: { item: WorkItem }) {
       style={{ display: "inline-flex" }}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
+      title={gate.title}
     >
       <Checkbox
         size="xs"
         checked={item.isCompleted}
         disabled={disabled}
+        aria-disabled={gate["aria-disabled"]}
         aria-label={`${item.isCompleted ? "Reopen" : "Complete"} ${item.title}`}
         onClick={(e) => e.stopPropagation()}
         onChange={(e) => onChange(e.currentTarget.checked)}
@@ -150,6 +155,7 @@ export function WorkItemRow({
           {SOURCE_MODULE_LABELS[item.sourceModule]}
         </Badge>
         <ScheduleBadge status={item.scheduleStatus} />
+        <PmApprovalBadge value={item.pmApproval} />
         <Text size="xs" c="dimmed" miw={90}>
           {item.dueDate || !detailed ? fmtDate(item.dueDate) : "No due date"}
         </Text>
@@ -182,6 +188,7 @@ export function WorkItemsTable({
           <Table.Th>Assignee</Table.Th>
           <Table.Th>Status</Table.Th>
           <Table.Th>Due date</Table.Th>
+          <Table.Th>PM Approval</Table.Th>
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
@@ -223,6 +230,9 @@ export function WorkItemsTable({
                 <ScheduleBadge status={i.scheduleStatus} />
               </Table.Td>
               <Table.Td>{i.dueDate ? fmtDate(i.dueDate) : "No due date"}</Table.Td>
+              <Table.Td>
+                <PmApprovalBadge value={i.pmApproval} />
+              </Table.Td>
             </Table.Tr>
           );
         })}
@@ -261,7 +271,10 @@ export function WorkItemsCards({
                 {SOURCE_MODULE_LABELS[i.sourceModule]}
               </Badge>
             </Group>
-            <ScheduleBadge status={i.scheduleStatus} />
+            <Group gap={6} wrap="nowrap">
+              <PmApprovalBadge value={i.pmApproval} />
+              <ScheduleBadge status={i.scheduleStatus} />
+            </Group>
           </Group>
           <Text
             size="sm"

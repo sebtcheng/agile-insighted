@@ -28,7 +28,6 @@ export async function createOutcome(
   k: Kind & {
     title: string;
     description?: string;
-    targetDate?: string;
   },
   tx?: Tx,
 ) {
@@ -40,7 +39,6 @@ export async function createOutcome(
         createdById: k.createdById,
         title: k.title,
         description: k.description ?? null,
-        targetDate: k.targetDate ?? null,
       })
       .returning();
     if (!row) throw new Error("insert returned no row");
@@ -85,6 +83,7 @@ export async function createSolution(
     title: string;
     ownerId?: string | null;
     targetDate?: string | null;
+    sprintKey?: string | null;
     validationStatus?: (typeof ostSolutions.$inferInsert)["validationStatus"];
   },
   tx?: Tx,
@@ -101,6 +100,7 @@ export async function createSolution(
         title: k.title,
         ownerId: k.ownerId ?? null,
         targetDate: k.targetDate ?? null,
+        sprintKey: k.sprintKey ?? null,
         ...(k.validationStatus ? { validationStatus: k.validationStatus } : {}),
       })
       .returning();
@@ -227,7 +227,6 @@ export async function createRaidItem(
     likelihood?: number | null;
     ownerId?: string | null;
     status?: "open" | "in_progress" | "mitigated" | "closed";
-    targetDate?: string | null;
   },
   tx?: Tx,
 ) {
@@ -247,7 +246,6 @@ export async function createRaidItem(
         likelihood: k.likelihood ?? null,
         ownerId: k.ownerId ?? null,
         status,
-        targetDate: k.targetDate ?? null,
         closedAt: status === "closed" ? new Date() : null,
       })
       .returning();

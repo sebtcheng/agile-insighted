@@ -72,7 +72,7 @@ export function SubmitModal({
     },
   });
   return (
-    <SideModal opened={opened} onClose={onClose} title="Submit a request" size="lg">
+    <SideModal opened={opened} onClose={onClose} title="Submit a request" size={860}>
       <form
         onSubmit={form.onSubmit((v) =>
           create.mutate(
@@ -145,7 +145,16 @@ type EditValues = {
   responsibleId: string;
 };
 
-export function EditModal({ request, onClose }: { request: KanoDto; onClose: () => void }) {
+export function EditModal({
+  request,
+  onClose,
+  isPm = true,
+}: {
+  request: KanoDto;
+  onClose: () => void;
+  /** Categorising and deleting a request are the PM's; team members edit the rest. */
+  isPm?: boolean;
+}) {
   const projects = useProjects();
   const users = useUsers();
   const update = useUpdateKano();
@@ -170,7 +179,7 @@ export function EditModal({ request, onClose }: { request: KanoDto; onClose: () 
           revisionRequest: v.revisionRequest.trim(),
           specs: draftsToSpecs(v.specs),
           projectId: v.projectId,
-          kanoCategory: (v.kanoCategory || null) as KanoCategory | null,
+          ...(isPm ? { kanoCategory: (v.kanoCategory || null) as KanoCategory | null } : {}),
           responsibleId: v.responsibleId || null,
         },
       },
@@ -178,7 +187,7 @@ export function EditModal({ request, onClose }: { request: KanoDto; onClose: () 
     ),
   );
   return (
-    <SideModal opened onClose={onClose} title={request.code} size="xl">
+    <SideModal opened onClose={onClose} title={request.code} size={860}>
       <form onSubmit={save}>
         <Stack>
           <Textarea
@@ -205,6 +214,7 @@ export function EditModal({ request, onClose }: { request: KanoDto; onClose: () 
             <Select
               label="Kano category"
               clearable
+              disabled={!isPm}
               placeholder="Not evaluated"
               data={CATEGORY_OPTIONS}
               {...form.getInputProps("kanoCategory")}
@@ -224,20 +234,22 @@ export function EditModal({ request, onClose }: { request: KanoDto; onClose: () 
           </Group>
           <Group justify="space-between">
             <Group gap="xs">
-              <Button
-                variant="subtle"
-                color="red"
-                onClick={() => {
-                  if (window.confirm(`Delete ${request.code}? This cannot be undone.`)) {
-                    remove.mutate(request.id, {
-                      onSuccess: onClose,
-                      onError: (e) => toast.error(e.message),
-                    });
-                  }
-                }}
-              >
-                Delete
-              </Button>
+              {isPm ? (
+                <Button
+                  variant="subtle"
+                  color="red"
+                  onClick={() => {
+                    if (window.confirm(`Delete ${request.code}? This cannot be undone.`)) {
+                      remove.mutate(request.id, {
+                        onSuccess: onClose,
+                        onError: (e) => toast.error(e.message),
+                      });
+                    }
+                  }}
+                >
+                  Delete
+                </Button>
+              ) : null}
             </Group>
             <Group>
               <Button variant="default" onClick={onClose}>
@@ -401,7 +413,7 @@ export function KanoPage() {
       <QueryState query={query} isEmpty={(d) => d.length === 0} empty="No requests match.">
         {(items) =>
           viewMode === "card" ? (
-            <KanoCards items={items} canEdit={isPm && !readOnly} onEdit={setEditing} />
+            <KanoCards items={items} canEdit={!readOnly} onEdit={setEditing} />
           ) : (
             <Table.ScrollContainer minWidth={900}>
               <Table verticalSpacing="xs" highlightOnHover>
@@ -417,8 +429,8 @@ export function KanoPage() {
                   {items.map((r) => (
                     <Table.Tr
                       key={r.id}
-                      style={isPm && !readOnly ? { cursor: "pointer" } : undefined}
-                      onClick={isPm && !readOnly ? () => setEditing(r) : undefined}
+                      style={!readOnly ? { cursor: "pointer" } : undefined}
+                      onClick={!readOnly ? () => setEditing(r) : undefined}
                     >
                       <Table.Td>
                         <Text size="sm" fw={600}>
@@ -430,7 +442,7 @@ export function KanoPage() {
                       </Table.Td>
                       <Table.Td maw={380}>
                         <Text size="sm">{r.revisionRequest}</Text>
-                        <KanoSpecChecklist request={r} editable={isPm && !readOnly} />
+                        <KanoSpecChecklist request={r} editable={!readOnly} />
                       </Table.Td>
                       <Table.Td>
                         {r.kanoCategory ? (
@@ -444,7 +456,7 @@ export function KanoPage() {
                         )}
                       </Table.Td>
                       <Table.Td>
-                        {isPm && !readOnly ? (
+                        {!readOnly ? (
                           <Button
                             size="compact-xs"
                             variant="default"
@@ -469,7 +481,12 @@ export function KanoPage() {
         <SubmitModal opened={submitOpen} onClose={submit.close} projectId={project.id} />
       ) : null}
       {project && editing ? (
-        <EditModal key={editing.id} request={editing} onClose={() => setEditing(null)} />
+        <EditModal
+          key={editing.id}
+          request={editing}
+          isPm={isPm}
+          onClose={() => setEditing(null)}
+        />
       ) : null}
     </>
   );

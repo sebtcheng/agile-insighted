@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { VALIDATION_STATUSES } from "./enums";
+import { VALIDATION_STATUSES, type PmApproval } from "./enums";
+import { sprintKeySchema } from "./sprint";
 
 const id = z.string().uuid();
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -23,13 +24,11 @@ export const createOutcomeSchema = z.object({
   projectId: id.optional(),
   title: text(200),
   description: optionalText(2000),
-  targetDate: isoDate.nullable().optional(),
 });
 export const updateOutcomeSchema = z
   .object({
     title: text(200),
     description: optionalText(2000),
-    targetDate: isoDate.nullable(),
   })
   .partial();
 
@@ -44,6 +43,7 @@ export const requirementSolutionInputSchema = z.object({
   completed: z.boolean().default(false),
   ownerId: id.nullable().optional(),
   targetDate: isoDate.nullable().optional(),
+  sprintKey: sprintKeySchema.nullable().optional(),
 });
 const solutionsInput = z.array(requirementSolutionInputSchema).max(MAX_REQUIREMENT_SOLUTIONS);
 
@@ -64,12 +64,14 @@ export const createSolutionSchema = z.object({
   title: text(300),
   ownerId: id.nullable().optional(),
   targetDate: isoDate.nullable().optional(),
+  sprintKey: sprintKeySchema.nullable().optional(),
 });
 export const updateSolutionSchema = z
   .object({
     title: text(300),
     ownerId: id.nullable(),
     targetDate: isoDate.nullable(),
+    sprintKey: sprintKeySchema.nullable(),
     validationStatus: validationStatusSchema,
   })
   .partial();
@@ -97,7 +99,6 @@ export type OutcomeDto = {
   projectName: string;
   title: string;
   description: string | null;
-  targetDate: string | null;
 };
 export type OpportunityDto = {
   id: string;
@@ -114,6 +115,9 @@ export type SolutionDto = {
   ownerId: string | null;
   ownerName: string | null;
   targetDate: string | null;
+  sprintKey: string | null;
+  sprintLabel: string | null;
+  pmApproval: PmApproval;
   convertedStoryId: string | null;
   convertedStoryCode: string | null;
 };

@@ -9,6 +9,10 @@ export type Actor = { id: string; role: UserRole; fullName: string };
 export const PERMISSIONS = {
   "user.manage": ["pm"],
   "project.write": ["pm"],
+  // Anyone can start a project; they become its owner (or a member), so it is visible to them.
+  "project.create": ["pm", "team_member"],
+  // Team members edit a project's name, owner and team (within their visible projects); archive and delete stay PM-only.
+  "project.edit": ["pm", "team_member"],
   "subproject.write": ["pm"],
   "sprint.write": ["pm"],
   "activity.create": ["pm"],
@@ -37,6 +41,16 @@ export const PERMISSIONS = {
   // Phase 8: the PM shapes the tree and converts solutions; team members add assumptions and record test results.
   "ost.manage": ["pm"],
   "ost.contribute": ["pm", "team_member"],
+  // Team members add and edit User Story Mapping and OST items in their projects; deleting, validating and
+  // converting stay with the PM. PM approval is never settable through these routes.
+  "usm.edit": ["pm", "team_member"],
+  // Same for RAID and Kano: members add and edit (and tick approved actions); delete, status of the Kano
+  // evaluation (category) and approval stay with the PM.
+  "raid.edit": ["pm", "team_member"],
+  "kano.edit": ["pm", "team_member"],
+  "ost.edit": ["pm", "team_member"],
+  // Admin Log: the PM reviews, edits and approves every task across all projects.
+  "adminlog.manage": ["pm"],
 } as const satisfies Record<string, readonly UserRole[]>;
 
 export type Action = keyof typeof PERMISSIONS;

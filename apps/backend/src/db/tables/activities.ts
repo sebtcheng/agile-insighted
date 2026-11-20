@@ -39,6 +39,7 @@ export const activities = pgTable(
       .references(() => users.id, { onDelete: "restrict" }),
     title: text("title").notNull(),
     description: text("description"),
+    pmApproval: text("pm_approval").$type<"PENDING" | "APPROVED">().notNull().default("PENDING"),
     status: activityStatus("status").notNull().default("todo"),
     priority: activityPriority("priority").notNull().default("medium"),
     workType: workType("work_type").notNull().default("feature"),

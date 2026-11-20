@@ -1,7 +1,9 @@
 import { useRef } from "react";
 import { ActionIcon, Button, Checkbox, Group, Select, Stack, Text, TextInput } from "@mantine/core";
-import { MAX_KANO_SPECS, type KanoDto, type KanoSpecDto } from "@myapp/shared";
+import { MAX_KANO_SPECS, type KanoDto, type KanoSpecDto, type PmApproval } from "@myapp/shared";
 import { useToggleKanoSpec, useUsers } from "../api/hooks";
+import { approvalGateProps } from "./PmApprovalBadge";
+import { SprintSelect, sprintDraftValue } from "./SprintSelect";
 import { fmtDate, toast } from "./ui";
 
 /** Editable spec row in the form. `id` is set for rows that already exist on the server. */
@@ -9,8 +11,10 @@ export type KanoSpecDraft = {
   id?: string;
   label: string;
   isCompleted: boolean;
-  /** YYYY-MM-DD, or "" when unset. */
-  targetDate: string;
+  /** Sprint key `YYYY-Snn`, or "" when unassigned. */
+  sprintKey: string;
+  /** Read-only here: only the Project Manager changes it (Admin Log). Missing means PENDING. */
+  pmApproval?: PmApproval;
   /** User id, or "" when unassigned. */
   responsibleId: string;
 };
@@ -18,7 +22,7 @@ export type KanoSpecDraft = {
 export const emptySpec = (): KanoSpecDraft => ({
   label: "",
   isCompleted: false,
-  targetDate: "",
+  sprintKey: "",
   responsibleId: "",
 });
 
@@ -27,7 +31,8 @@ export const specsToDrafts = (specs: KanoSpecDto[]): KanoSpecDraft[] =>
     id: s.id,
     label: s.label,
     isCompleted: s.isCompleted,
-    targetDate: s.targetDate ?? "",
+    sprintKey: sprintDraftValue(s.sprintKey, s.targetDate),
+    pmApproval: s.pmApproval,
     responsibleId: s.responsibleId ?? "",
   }));
 
@@ -37,7 +42,7 @@ export const draftsToSpecs = (
   id?: string;
   label: string;
   isCompleted: boolean;
-  targetDate: string | null;
+  sprintKey: string | null;
   responsibleId: string | null;
 }> =>
   drafts
@@ -45,7 +50,7 @@ export const draftsToSpecs = (
       id: d.id,
       label: d.label.trim(),
       isCompleted: d.isCompleted,
-      targetDate: d.targetDate || null,
+      sprintKey: d.sprintKey || null,
       responsibleId: d.responsibleId || null,
     }))
     .filter((d) => d.label.length > 0);
@@ -85,6 +90,7 @@ export function KanoSpecsField({
           <Checkbox
             aria-label={`Spec ${i + 1} done`}
             checked={a.isCompleted}
+            {...approvalGateProps(a.pmApproval)}
             onChange={(e) => patch(i, { isCompleted: e.currentTarget.checked })}
           />
           <TextInput
@@ -101,12 +107,10 @@ export function KanoSpecsField({
               if (a.label.trim()) addBelow(i);
             }}
           />
-          <TextInput
-            type="date"
-            aria-label={`Spec ${i + 1} target date`}
-            style={{ width: 150 }}
-            value={a.targetDate}
-            onChange={(e) => patch(i, { targetDate: e.currentTarget.value })}
+          <SprintSelect
+            aria-label={`Spec ${i + 1} sprint`}
+            value={a.sprintKey}
+            onChange={(sprintKey) => patch(i, { sprintKey })}
           />
           <Select
             aria-label={`Spec ${i + 1} person responsible`}
@@ -167,13 +171,15 @@ export function KanoSpecChecklist({ request, editable }: { request: KanoDto; edi
             key={s.id}
             size="xs"
             checked={s.isCompleted}
-            disabled={!editable || toggle.isPending}
+            disabled={!editable || toggle.isPending || approvalGateProps(s.pmApproval).disabled}
+            aria-disabled={approvalGateProps(s.pmApproval)["aria-disabled"]}
+            title={approvalGateProps(s.pmApproval).title}
             label={
               <>
                 {s.label}
                 {s.targetDate ? (
                   <Text span size="xs" c="dimmed" ml="xs">
-                    {fmtDate(s.targetDate)}
+                    {s.sprintLabel ?? fmtDate(s.targetDate)}
                   </Text>
                 ) : null}
                 {s.responsibleName ? (

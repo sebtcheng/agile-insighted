@@ -40,7 +40,11 @@ export function WorkloadPage() {
   const expanded = params.get("person");
   const query = useWorkload();
   const projects = useProjects();
-  const projectNames = new Map((projects.data ?? []).map((p) => [p.id, p.name]));
+  // The roster is org-wide, so a person can have work in projects the viewer is not on: names come from the response.
+  const projectNames = new Map<string, string>([
+    ...(projects.data ?? []).map((p): [string, string] => [p.id, p.name]),
+    ...Object.entries(query.data?.projectNames ?? {}),
+  ]);
   const toggle = (id: string) => {
     const next = new URLSearchParams(params);
     if (expanded === id) next.delete("person");

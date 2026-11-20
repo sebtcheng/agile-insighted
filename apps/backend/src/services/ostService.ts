@@ -13,6 +13,7 @@ import type {
   UpdateOutcomeInput,
   UpdateSolutionInput,
 } from "@myapp/shared";
+import { sprintFieldsFor } from "@myapp/shared";
 import { db, type DbOrTx } from "../db/client";
 import {
   ostOpportunities,
@@ -25,6 +26,8 @@ import {
 import { AppError, conflict, forbidden, notFound, unprocessable } from "../errors";
 import { can, type Actor } from "../permissions";
 import { recordOverride } from "./governanceService";
+import { assertCompletionAllowed } from "./approvalGate";
+import { sprintColumns, sprintColumnsOrUndefined } from "./sprintWrite";
 import { scopeCondition, type ProjectScope } from "./visibilityService";
 import {
   createOpportunity as insertOpportunity,
@@ -88,7 +91,6 @@ export async function getTree(projectId?: string, scope: ProjectScope = null): P
     projectName,
     title: o.title,
     description: o.description,
-    targetDate: o.targetDate,
   }));
   const opportunities: OpportunityDto[] = opps.map((o) => ({
     id: o.id,
@@ -105,6 +107,8 @@ export async function getTree(projectId?: string, scope: ProjectScope = null): P
     ownerId: s.ownerId,
     ownerName,
     targetDate: s.targetDate,
+    ...sprintFieldsFor(s.sprintKey, s.targetDate),
+    pmApproval: s.pmApproval,
     convertedStoryId: s.convertedStoryId,
     convertedStoryCode: storyCode,
   }));
@@ -122,7 +126,6 @@ export async function createOutcome(actor: Actor, projectId: string, input: Crea
         createdById: actor.id,
         title: input.title,
         description: input.description ?? undefined,
-        targetDate: input.targetDate ?? undefined,
       },
       tx,
     );
@@ -196,6 +199,14 @@ async function syncSolutions(
   for (const s of input) {
     const prev = s.id ? byId.get(s.id) : undefined;
     const completed = s.completed ?? false;
+    // Validating (ticking) a solution is the PM's call; members add and edit but never change the done state.
+    if (actor.role !== "pm" && completed !== (prev?.validationStatus === "validated")) {
+      throw forbidden("Only a PM can mark a solution validated");
+    }
+    assertCompletionAllowed(prev?.pmApproval ?? "PENDING", {
+      wasCompleted: prev?.validationStatus === "validated",
+      willComplete: completed,
+    });
     const status = completed
       ? "validated"
       : prev && prev.validationStatus !== "validated"
@@ -207,7 +218,7 @@ async function syncSolutions(
         .set({
           title: s.title,
           ownerId: s.ownerId ?? null,
-          targetDate: s.targetDate ?? null,
+          ...sprintColumns(s),
           validationStatus: status,
         })
         .where(eq(ostSolutions.id, prev.id));
@@ -219,7 +230,7 @@ async function syncSolutions(
           opportunityId: opp.id,
           title: s.title,
           ownerId: s.ownerId ?? null,
-          targetDate: s.targetDate ?? null,
+          ...sprintColumns(s),
           validationStatus: status,
         },
         tx,
@@ -318,7 +329,7 @@ export async function createSolution(
         opportunityId,
         title: input.title,
         ownerId: input.ownerId ?? null,
-        targetDate: input.targetDate ?? null,
+        ...sprintColumns(input),
       },
       tx,
     );
@@ -328,13 +339,27 @@ export async function createSolution(
 export async function updateSolution(id: string, patch: UpdateSolutionInput) {
   if (Object.keys(patch).length === 0) throw unprocessable("Nothing to change");
   const [current] = await db
-    .select({ projectId: ostSolutions.projectId })
+    .select({
+      projectId: ostSolutions.projectId,
+      pmApproval: ostSolutions.pmApproval,
+      validationStatus: ostSolutions.validationStatus,
+    })
     .from(ostSolutions)
     .where(eq(ostSolutions.id, id))
     .limit(1);
   if (!current) throw notFound("Solution");
   await assertOpen(db, current.projectId);
-  const [row] = await db.update(ostSolutions).set(patch).where(eq(ostSolutions.id, id)).returning();
+  assertCompletionAllowed(current.pmApproval, {
+    wasCompleted: current.validationStatus === "validated",
+    willComplete: patch.validationStatus === "validated",
+  });
+  const { sprintKey, ...rest } = patch;
+  const sprintCols = sprintColumnsOrUndefined({ sprintKey, targetDate: rest.targetDate });
+  const [row] = await db
+    .update(ostSolutions)
+    .set({ ...rest, ...sprintCols })
+    .where(eq(ostSolutions.id, id))
+    .returning();
   if (!row) throw notFound("Solution");
   return row;
 }

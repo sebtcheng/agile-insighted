@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import {
   activities,
@@ -137,4 +137,30 @@ export async function setProjectArchived(projectId: string, archived: boolean) {
     .update(projects)
     .set({ archivedAt: archived ? new Date() : null })
     .where(eq(projects.id, projectId));
+}
+
+/** Marks one task row as PM approved (table is the DB table name), so a completion tick is allowed. */
+export async function approveRow(table: string, id: string): Promise<void> {
+  await db.execute(
+    sql`update ${sql.identifier(table)} set pm_approval = 'APPROVED' where id = ${id}`,
+  );
+}
+
+/** Approves every task of one project across Projects, USM, OST, Kano and RAID. */
+export async function approveAll(projectId: string): Promise<void> {
+  await db.execute(
+    sql`update activities set pm_approval = 'APPROVED' where project_id = ${projectId}`,
+  );
+  await db.execute(
+    sql`update usm_step_features set pm_approval = 'APPROVED' where project_id = ${projectId}`,
+  );
+  await db.execute(
+    sql`update ost_solutions set pm_approval = 'APPROVED' where project_id = ${projectId}`,
+  );
+  await db.execute(
+    sql`update kano_request_specs set pm_approval = 'APPROVED' where kano_request_id in (select id from kano_requests where project_id = ${projectId})`,
+  );
+  await db.execute(
+    sql`update raid_mitigating_actions set pm_approval = 'APPROVED' where raid_item_id in (select id from raid_items where project_id = ${projectId})`,
+  );
 }

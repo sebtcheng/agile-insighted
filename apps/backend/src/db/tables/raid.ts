@@ -41,7 +41,6 @@ export const raidItems = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
     status: raidStatus("status").notNull().default("open"),
-    targetDate: date("target_date", { mode: "string" }),
     closedAt: timestamp("closed_at", { withTimezone: true }),
   },
   (t) => [
@@ -50,9 +49,6 @@ export const raidItems = pgTable(
     index("raid_items_owner_idx").on(t.ownerId),
     index("raid_items_raised_by_idx").on(t.raisedById),
     index("raid_items_created_by_idx").on(t.createdById),
-    index("raid_items_open_target_idx")
-      .on(t.targetDate)
-      .where(sql`${t.status} <> 'closed'`),
     index("raid_items_type_status_idx").on(t.itemType, t.status),
     check("raid_items_seq_positive", sql`${t.seq} > 0`),
     check("raid_items_description_not_empty", sql`char_length(btrim(${t.description})) > 0`),
@@ -78,6 +74,9 @@ export const raidMitigatingActions = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
     // Nullable in the DB so rows created before this column existed stay valid; the API requires it on write.
     targetDate: date("target_date", { mode: "string" }),
+    // Weekly sprint (`YYYY-Snn`); target_date is kept equal to its Sunday end date. Null for legacy rows.
+    sprintKey: text("sprint_key"),
+    pmApproval: text("pm_approval").$type<"PENDING" | "APPROVED">().notNull().default("PENDING"),
     // Staff responsible. Nullable like raid_items.owner_id (set null on user delete); the API requires it on write.
     responsibleId: uuid("responsible_id").references(() => users.id, { onDelete: "set null" }),
     sortOrder: integer("sort_order").notNull().default(0),

@@ -12,14 +12,16 @@ export const readModels = Router();
 readModels.get(
   "/workload",
   asyncHandler(async (req, res) => {
-    res.json(await getWorkload({ scope: await getVisibleProjectIds(actorOf(res)) }));
+    // Workload is deliberately org-wide for every signed-in role: everyone sees the full roster and each person's
+    // cross-project, cross-module counts. Project scoping still applies to every other read and to all writes.
+    res.json(await getWorkload({ scope: null }));
   }),
 );
 
 readModels.get(
   "/workload/:id/items",
   asyncHandler(async (req, res) => {
-    res.json(await getPersonItems(idParam(req), await getVisibleProjectIds(actorOf(res))));
+    res.json(await getPersonItems(idParam(req), null));
   }),
 );
 

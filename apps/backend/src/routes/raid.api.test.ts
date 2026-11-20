@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { createApp } from "../app";
 import { db } from "../db/client";
 import { projects } from "../db/schema";
-import { createFixture, type Fixture } from "../test/helpers";
+import { approveAll, createFixture, type Fixture } from "../test/helpers";
 
 type Agent = ReturnType<typeof request.agent>;
 const json = <T>(res: { body: unknown }): T => res.body as T;
@@ -104,11 +104,13 @@ describe("RAID API", () => {
     expect(res.status).toBeLessThan(500);
   });
 
-  it("only the PM can edit, resolve or delete", async () => {
+  it("lets a team member edit an item, but only the PM can delete it", async () => {
     const item = json<RaidItemDto>(await member.post(base()).send(body));
-    expect((await member.patch(`/api/raid/${item.id}`).send({ status: "closed" })).status).toBe(
-      403,
-    );
+    const edited = await member
+      .patch(`/api/raid/${item.id}`)
+      .send({ description: "Edited by member" });
+    expect(edited.status).toBe(200);
+    expect(json<RaidItemDto>(edited).description).toBe("Edited by member");
     expect((await member.delete(`/api/raid/${item.id}`)).status).toBe(403);
 
     const closed = json<RaidItemDto>(
@@ -133,9 +135,12 @@ describe("RAID API", () => {
         itemType: "issue",
         description: "Build is red",
         impact: 2,
-        targetDate: "2020-01-01",
+        mitigatingActions: [
+          { description: "Fix the build", targetDate: "2020-01-01", responsibleId: f.m1.id },
+        ],
       }),
     );
+    // Overdue now comes from an open mitigating action whose sprint has ended.
     expect(issue.isOverdue).toBe(true);
     const onlyIssues = json<{ items: RaidItemDto[] }>(await pm.get(`${base()}?itemType=issue`));
     expect(onlyIssues.items.every((i) => i.itemType === "issue")).toBe(true);
@@ -154,7 +159,7 @@ describe("RAID API", () => {
     it("creates an item with an ordered checklist", async () => {
       const item = await create([
         { description: "Escalate to vendor", targetDate: D, responsibleId: f.m1.id },
-        { description: "Build a stub", targetDate: D, responsibleId: f.m1.id, isCompleted: true },
+        { description: "Build a stub", targetDate: D, responsibleId: f.m1.id },
       ]);
       expect(item.mitigatingActions.map((a) => a.description)).toEqual([
         "Escalate to vendor",
@@ -162,7 +167,15 @@ describe("RAID API", () => {
       ]);
       expect(item.mitigatingActions.map((a) => a.sortOrder)).toEqual([0, 1]);
       expect(item.mitigatingActions[0]?.isCompleted).toBe(false);
-      expect(item.mitigatingActions[1]?.completedAt).not.toBeNull();
+      // New actions start PENDING PM approval and cannot be created already completed.
+      expect(item.mitigatingActions.map((a) => a.pmApproval)).toEqual(["PENDING", "PENDING"]);
+      const refused = await member.post(base()).send({
+        ...body,
+        mitigatingActions: [
+          { description: "x", targetDate: D, responsibleId: f.m1.id, isCompleted: true },
+        ],
+      });
+      expect(refused.status).toBe(403);
     });
 
     it("syncs additions, edits, removals and reordering on update", async () => {
@@ -172,6 +185,7 @@ describe("RAID API", () => {
         { description: "C", targetDate: D, responsibleId: f.m1.id },
       ]);
       const [a, , c] = item.mitigatingActions;
+      await approveAll(f.project.id);
       const res = await pm.patch(`/api/raid/${item.id}`).send({
         mitigatingActions: [
           {
@@ -282,11 +296,17 @@ describe("RAID API", () => {
       );
     });
 
-    it("toggles one action through the dedicated endpoint, PM only", async () => {
+    it("toggles one action through the dedicated endpoint, once approved", async () => {
       const item = await create([{ description: "Do it", targetDate: D, responsibleId: f.m1.id }]);
       const action = item.mitigatingActions[0];
       const url = `/api/raid/${item.id}/mitigating-actions/${action?.id}`;
+      // PENDING PM approval blocks everyone, a member included.
       expect((await member.patch(url).send({ isCompleted: true })).status).toBe(403);
+      const pending = await pm.patch(url).send({ isCompleted: true });
+      expect(pending.status).toBe(403);
+      await approveAll(f.project.id);
+      expect((await member.patch(url).send({ isCompleted: true })).status).toBe(200);
+      expect((await member.patch(url).send({ isCompleted: false })).status).toBe(200);
       const done = await pm.patch(url).send({ isCompleted: true });
       expect(done.status).toBe(200);
       expect(

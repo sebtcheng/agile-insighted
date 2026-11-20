@@ -10,7 +10,6 @@ import {
   Table,
   Text,
   Textarea,
-  TextInput,
   UnstyledButton,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
@@ -35,12 +34,13 @@ import {
   useUsers,
 } from "../api/hooks";
 import { useIsPm } from "../auth";
-import { PageHeader, QueryState, fmtDate, toast } from "../components/ui";
+import { PageHeader, QueryState, toast } from "../components/ui";
 import {
   MitigatingActionsField,
   MitigationChecklist,
   type MitigatingActionDraft,
 } from "../components/MitigatingActions";
+import { sprintDraftValue } from "../components/SprintSelect";
 import { SideModal } from "../components/SideModal";
 import { ViewModeToggle } from "../components/ViewModeToggle";
 import { mitigationPercent } from "../lib/raidMitigation";
@@ -77,7 +77,6 @@ type FormValues = {
   mitigatingActions: MitigatingActionDraft[];
   ownerId: string;
   projectId: string;
-  targetDate: string;
 };
 
 function RaidForm({
@@ -108,18 +107,18 @@ function RaidForm({
         id: a.id,
         description: a.description,
         isCompleted: a.isCompleted,
-        targetDate: a.targetDate ?? "",
+        sprintKey: sprintDraftValue(a.sprintKey, a.targetDate),
+        pmApproval: a.pmApproval,
         responsibleId: a.responsibleId ?? "",
       })),
       ownerId: existing?.ownerId ?? "",
       projectId: existing?.projectId ?? projectId,
-      targetDate: existing?.targetDate ?? "",
     },
     validate: {
       description: (v) => (v.trim() ? null : "Describe the item"),
       mitigatingActions: (list) =>
-        list.some((a) => a.description.trim() !== "" && (!a.targetDate || !a.responsibleId))
-          ? "Every mitigating action needs a target date and a staff member responsible"
+        list.some((a) => a.description.trim() !== "" && (!a.sprintKey || !a.responsibleId))
+          ? "Every mitigating action needs a sprint and a staff member responsible"
           : null,
     },
   });
@@ -131,10 +130,15 @@ function RaidForm({
       impact: Number(v.impact),
       likelihood: v.likelihood ? Number(v.likelihood) : null,
       mitigatingActions: v.mitigatingActions
-        .map((a) => ({ ...a, description: a.description.trim() }))
+        .map((a) => ({
+          id: a.id,
+          description: a.description.trim(),
+          isCompleted: a.isCompleted,
+          sprintKey: a.sprintKey,
+          responsibleId: a.responsibleId,
+        }))
         .filter((a) => a.description !== ""),
       ownerId: v.ownerId || null,
-      targetDate: v.targetDate || null,
       projectId: v.projectId,
     };
     const opts = {
@@ -208,7 +212,6 @@ function RaidForm({
             {...form.getInputProps("ownerId")}
           />
         ) : null}
-        <TextInput label="Target date" type="date" {...form.getInputProps("targetDate")} />
         <Group justify="flex-end" className="side-modal-footer">
           <Button variant="default" onClick={onDone}>
             Cancel
@@ -260,7 +263,16 @@ function RaidStatusControl({ item, editable }: { item: RaidItemDto; editable: bo
   );
 }
 
-function RaidActions({ item, onEdit }: { item: RaidItemDto; onEdit: (i: RaidItemDto) => void }) {
+function RaidActions({
+  item,
+  onEdit,
+  canDelete = true,
+}: {
+  item: RaidItemDto;
+  onEdit: (i: RaidItemDto) => void;
+  /** Deleting is the PM's. */
+  canDelete?: boolean;
+}) {
   const remove = useDeleteRaid();
   return (
     <Group gap={8} wrap="nowrap" className="raid-actions" onClick={(e) => e.stopPropagation()}>
@@ -275,19 +287,21 @@ function RaidActions({ item, onEdit }: { item: RaidItemDto; onEdit: (i: RaidItem
       >
         Edit
       </Button>
-      <Button
-        size="compact-xs"
-        variant="subtle"
-        className="raid-action raid-delete"
-        onClick={(e) => {
-          e.stopPropagation();
-          if (window.confirm(`Delete ${item.code}? This cannot be undone.`)) {
-            remove.mutate(item.id, { onError: (err) => toast.error(err.message) });
-          }
-        }}
-      >
-        Delete
-      </Button>
+      {canDelete ? (
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          className="raid-action raid-delete"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (window.confirm(`Delete ${item.code}? This cannot be undone.`)) {
+              remove.mutate(item.id, { onError: (err) => toast.error(err.message) });
+            }
+          }}
+        >
+          Delete
+        </Button>
+      ) : null}
     </Group>
   );
 }
@@ -322,10 +336,13 @@ export function MitigationSummary({
 export function RaidCards({
   items,
   canEdit,
+  canDelete = canEdit,
   onEdit,
 }: {
   items: RaidItemDto[];
   canEdit: boolean;
+  /** Deleting is the PM's. */
+  canDelete?: boolean;
   onEdit: (i: RaidItemDto) => void;
 }) {
   return (
@@ -371,19 +388,16 @@ export function RaidCards({
               className="raid-card-actions"
             >
               <Group gap="md" align="flex-end" wrap="nowrap" className="raid-meta">
-                <div>
-                  <Text size="xs" className="raid-sub">
-                    Target
-                  </Text>
-                  <Text size="sm" c={i.isOverdue ? "red" : undefined} className="raid-mono">
-                    {fmtDate(i.targetDate)}
-                  </Text>
-                  {i.isOverdue ? (
-                    <Text size="xs" c="red">
+                {i.isOverdue ? (
+                  <div>
+                    <Text size="xs" className="raid-sub">
+                      Actions
+                    </Text>
+                    <Text size="sm" c="red">
                       Overdue
                     </Text>
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
                 <div>
                   <Text size="xs" className="raid-sub" mb={2}>
                     Status
@@ -391,7 +405,7 @@ export function RaidCards({
                   <RaidStatusControl item={i} editable={canEdit} />
                 </div>
               </Group>
-              {canEdit ? <RaidActions item={i} onEdit={onEdit} /> : null}
+              {canEdit ? <RaidActions item={i} onEdit={onEdit} canDelete={canDelete} /> : null}
             </Group>
           </div>
         </Card>
@@ -497,7 +511,7 @@ export function RaidPage() {
       >
         {(items) =>
           viewMode === "card" ? (
-            <RaidCards items={items} canEdit={isPm && !readOnly} onEdit={openEdit} />
+            <RaidCards items={items} canEdit={!readOnly} canDelete={isPm} onEdit={openEdit} />
           ) : (
             <div className="raid-card">
               <Table.ScrollContainer minWidth={960}>
@@ -511,7 +525,6 @@ export function RaidPage() {
                       <Table.Th>Likelihood</Table.Th>
                       <Table.Th>Owner</Table.Th>
                       <Table.Th>Status</Table.Th>
-                      <Table.Th>Target</Table.Th>
                       <Table.Th />
                     </Table.Tr>
                   </Table.Thead>
@@ -519,8 +532,8 @@ export function RaidPage() {
                     {items.map((i) => (
                       <Table.Tr
                         key={i.id}
-                        style={isPm && !readOnly ? { cursor: "pointer" } : undefined}
-                        onClick={isPm && !readOnly ? () => openEdit(i) : undefined}
+                        style={!readOnly ? { cursor: "pointer" } : undefined}
+                        onClick={!readOnly ? () => openEdit(i) : undefined}
                       >
                         <Table.Td>
                           <Text size="sm" fw={600} className="raid-mono">
@@ -533,7 +546,7 @@ export function RaidPage() {
                         <Table.Td>{ENUM_LABELS.raidType[i.itemType]}</Table.Td>
                         <Table.Td maw={360}>
                           <Text size="sm">{i.description}</Text>
-                          <MitigationChecklist item={i} editable={isPm && !readOnly} />
+                          <MitigationChecklist item={i} editable={!readOnly} />
                         </Table.Td>
                         <Table.Td>
                           <Badge className="raid-badge" data-severity={i.impact} variant="light">
@@ -543,12 +556,7 @@ export function RaidPage() {
                         <Table.Td>{level(i.likelihood)}</Table.Td>
                         <Table.Td>{i.ownerName ?? <Text c="dimmed">Unassigned</Text>}</Table.Td>
                         <Table.Td>
-                          <RaidStatusControl item={i} editable={isPm && !readOnly} />
-                        </Table.Td>
-                        <Table.Td>
-                          <Text size="sm" c={i.isOverdue ? "red" : undefined} className="raid-mono">
-                            {fmtDate(i.targetDate)}
-                          </Text>
+                          <RaidStatusControl item={i} editable={!readOnly} />
                           {i.isOverdue ? (
                             <Text size="xs" c="red">
                               Overdue
@@ -556,7 +564,9 @@ export function RaidPage() {
                           ) : null}
                         </Table.Td>
                         <Table.Td>
-                          {isPm && !readOnly ? <RaidActions item={i} onEdit={openEdit} /> : null}
+                          {!readOnly ? (
+                            <RaidActions item={i} onEdit={openEdit} canDelete={isPm} />
+                          ) : null}
                         </Table.Td>
                       </Table.Tr>
                     ))}

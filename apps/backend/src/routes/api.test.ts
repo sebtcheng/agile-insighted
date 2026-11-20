@@ -98,12 +98,8 @@ describe("permission map per write endpoint", () => {
       call: (a) => a.delete(`/api/users/${f.pm.id}`),
     },
     {
-      name: "POST /projects",
-      call: (a) => a.post("/api/projects").send({ name: "P" }),
-    },
-    {
-      name: "PATCH /projects/:id",
-      call: (a) => a.patch(`/api/projects/${f.project.id}`).send({ name: "Renamed" }),
+      name: "PATCH /projects/:id (archive)",
+      call: (a) => a.patch(`/api/projects/${f.project.id}`).send({ archived: true }),
     },
     {
       name: "POST /projects/:id/subprojects",

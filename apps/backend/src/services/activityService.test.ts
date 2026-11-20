@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "../db/client";
 import { activities, activityEvents, subprojects } from "../db/schema";
 import { AppError } from "../errors";
-import { createFixture, setProjectArchived, type Fixture } from "../test/helpers";
+import { approveRow, createFixture, setProjectArchived, type Fixture } from "../test/helpers";
 import * as activityService from "./activityService";
 import { updateSprint } from "./projectService";
 
@@ -65,6 +65,11 @@ describe("activityService timestamps", () => {
   it("sets completed_at and 100% on done, and clears completed_at when reopened", async () => {
     const { activity } = await activityService.create({ actor: f.pmActor }, f.project.id, base);
     const t = new Date("2026-03-04T01:00:00Z");
+    await expectAppError(
+      activityService.update({ actor: f.pmActor, now: t }, activity.id, { status: "done" }),
+      403,
+    );
+    await approveRow("activities", activity.id);
     const done = await activityService.update({ actor: f.pmActor, now: t }, activity.id, {
       status: "done",
     });

@@ -1,5 +1,5 @@
 export type NavIconKey =
-  "home" | "workload" | "projects" | "ost" | "usm" | "kano" | "raid" | "settings";
+  "home" | "workload" | "projects" | "ost" | "usm" | "kano" | "raid" | "settings" | "adminLog";
 
 export type NavItem = {
   to: string;
@@ -34,7 +34,10 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "admin",
     title: "Administration",
-    items: [{ to: "/settings", label: "Settings", icon: "settings", pmOnly: true }],
+    items: [
+      { to: "/settings", label: "Settings", icon: "settings", pmOnly: true },
+      { to: "/admin-log", label: "Admin Log", icon: "adminLog", pmOnly: true },
+    ],
   },
 ];
 

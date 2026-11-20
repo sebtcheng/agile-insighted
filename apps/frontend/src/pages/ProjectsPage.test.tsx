@@ -20,19 +20,22 @@ const PROJECT = {
   ownerId: "00000000-0000-4000-8000-000000000002",
   ownerName: "Alice Analyst",
   memberIds: ["00000000-0000-4000-8000-000000000003", "00000000-0000-4000-8000-000000000001"],
-  members: [],
+  members: [
+    { id: "00000000-0000-4000-8000-000000000003", fullName: "Bob Builder" },
+    { id: "00000000-0000-4000-8000-000000000001", fullName: "Paula Manager" },
+  ],
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
   archivedAt: null,
   subprojects: [],
 };
 
-const h = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn() }));
+const h = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), role: "pm" }));
 vi.mock("../auth", () => ({
-  useIsPm: () => true,
+  useIsPm: () => h.role === "pm",
   useAuth: () => ({
     id: "00000000-0000-4000-8000-000000000001",
-    role: "pm",
+    role: h.role,
     fullName: "Paula Manager",
     email: "p@x.test",
   }),
@@ -154,5 +157,56 @@ describe("project modals: Owner and Team members", () => {
       },
     });
     expect(h.update.mock.calls[0]?.[0]).not.toHaveProperty("patch.wipLimitPerPerson");
+  });
+});
+
+describe("New project for a team member", () => {
+  afterEach(() => {
+    h.role = "pm";
+  });
+
+  it("offers New project and creates one without any PM-only controls", async () => {
+    h.role = "team_member";
+    mount();
+    expect(byText("button", "New project")).toBeTruthy();
+    act(() => byText("button", "New project")?.click());
+    await flush();
+    expect(inputByLabel("Name")).not.toBeNull();
+    expect(byText("button", "Create")).toBeTruthy();
+  });
+});
+
+describe("Projects table: Owner and Team members, and Edit for every role", () => {
+  afterEach(() => {
+    h.role = "pm";
+  });
+
+  it("renders the Owner and Team members columns for each project", async () => {
+    mount();
+    await flush();
+    const heads = [...document.querySelectorAll("thead th")].map((t) => t.textContent?.trim());
+    expect(heads).toEqual(["Project", "Code", "Owner", "Team members", "Created", ""]);
+    const row = byText("td a", "eSF7")!.closest("tr")!;
+    expect(row.querySelector("[data-col='owner']")?.textContent).toBe("Alice Analyst");
+    expect(
+      [...row.querySelectorAll("[data-col='members'] .mantine-Badge-root")].map(
+        (b) => b.textContent,
+      ),
+    ).toEqual(["Bob Builder", "Paula Manager"]);
+  });
+
+  it("lets a team member open Edit from the row button and save, without PM-only buttons", async () => {
+    h.role = "team_member";
+    mount();
+    await flush();
+    const row = byText("td a", "eSF7")!.closest("tr")!;
+    const labels = [...row.querySelectorAll("button")].map((b) => b.textContent?.trim());
+    expect(labels).toEqual(["Edit"]);
+    act(() => [...row.querySelectorAll("button")].find((b) => b.textContent === "Edit")?.click());
+    await flush();
+    expect(inputByLabel("Owner")?.value).toBe("Alice Analyst");
+    await submit();
+    expect(h.update).toHaveBeenCalledTimes(1);
+    expect(h.update.mock.calls[0]?.[0]).toMatchObject({ id: "p-1" });
   });
 });

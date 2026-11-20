@@ -3,6 +3,7 @@ import { MantineProvider } from "@mantine/core";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { listSprintOptions } from "@myapp/shared";
 import { RequirementModal, stepsToDrafts } from "./RequirementModal";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -96,25 +97,51 @@ describe("RequirementModal", () => {
     );
   });
 
-  it("adds, edits and submits a step with person responsible and target date", async () => {
+  it("adds, edits and submits a step with person responsible and sprint", async () => {
     const { onSubmit } = mount();
     type(q<HTMLInputElement>("input[data-autofocus]"), "Reliable onboarding");
     const add = [...document.querySelectorAll("button")].find((b) => b.textContent === "Add step")!;
     act(() => add.click());
     type(q<HTMLInputElement>('input[aria-label="Step 1"]'), "Write the guide");
-    type(q<HTMLInputElement>('input[aria-label="Step 1 target date"]'), "2026-12-31");
-    act(() => q<HTMLInputElement>('input[aria-label="Step 1 done"]').click());
+    expect(document.querySelector('input[type="date"]')).toBeNull();
+    const sprint = listSprintOptions()[1]!;
+    await act(async () => {
+      q<HTMLInputElement>('input[aria-label="Step 1 sprint"]').click();
+      await Promise.resolve();
+    });
+    const sprintListId = q<HTMLInputElement>('input[aria-label="Step 1 sprint"]').getAttribute(
+      "aria-controls",
+    )!;
+    const sprintOptions = () => [
+      ...document.querySelectorAll<HTMLElement>(`[id="${sprintListId}"] [role="option"]`),
+    ];
+    const sprintLabels = sprintOptions().map((o) => o.textContent ?? "");
+    expect(sprintLabels.length).toBeGreaterThan(10);
+    for (const l of sprintLabels)
+      expect(l).toMatch(/^Sprint \d+ — Ends Sun, \w{3} \d{1,2}, \d{4}$/);
+    await act(async () => {
+      sprintOptions()
+        .find((o) => o.textContent === sprint.label)!
+        .click();
+      await Promise.resolve();
+    });
+    // A new step is PENDING PM approval, so its completion checkbox is locked.
+    const done = q<HTMLInputElement>('input[aria-label="Step 1 done"]');
+    expect(done.disabled).toBe(true);
+    expect(done.getAttribute("aria-disabled")).toBe("true");
+    expect(done.getAttribute("title")).toBe("Pending Project Manager approval");
     await act(async () => {
       q<HTMLInputElement>('input[aria-label="Step 1 staff responsible"]').click();
       await Promise.resolve();
     });
-    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-      (o) => o.textContent === "Tomas Member",
-    )!;
-    expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual([
-      "Paula Manager",
-      "Tomas Member",
-    ]);
+    const staffListId = q<HTMLInputElement>(
+      'input[aria-label="Step 1 staff responsible"]',
+    ).getAttribute("aria-controls")!;
+    const staffOptions = [
+      ...document.querySelectorAll<HTMLElement>(`[id="${staffListId}"] [role="option"]`),
+    ];
+    const option = staffOptions.find((o) => o.textContent === "Tomas Member")!;
+    expect(staffOptions.map((o) => o.textContent)).toEqual(["Paula Manager", "Tomas Member"]);
     await act(async () => {
       option.click();
       await Promise.resolve();
@@ -123,7 +150,7 @@ describe("RequirementModal", () => {
     expect(onSubmit).toHaveBeenCalledWith({
       title: "Reliable onboarding",
       solutions: [
-        { title: "Write the guide", completed: true, ownerId: "u-tm", targetDate: "2026-12-31" },
+        { title: "Write the guide", completed: false, ownerId: "u-tm", sprintKey: sprint.key },
       ],
     });
   });
@@ -153,7 +180,10 @@ describe("RequirementModal", () => {
     expect(q<HTMLInputElement>('input[aria-label="Step 1 staff responsible"]').value).toBe(
       "Paula Manager",
     );
-    expect(q<HTMLInputElement>('input[aria-label="Step 1 target date"]').value).toBe("2026-11-30");
+    // Legacy mid-week date (Mon 2026-11-30) maps to the sprint ending Sun 2026-12-06.
+    expect(q<HTMLInputElement>('input[aria-label="Step 1 sprint"]').value).toBe(
+      "Sprint 49 — Ends Sun, Dec 6, 2026",
+    );
     act(() => q<HTMLButtonElement>('button[aria-label="Remove step 2"]').click());
     expect(document.querySelector('input[aria-label="Step 2"]')).toBeNull();
     type(q<HTMLInputElement>("input[data-autofocus]"), "   ");
@@ -164,7 +194,7 @@ describe("RequirementModal", () => {
     expect(onSubmit).toHaveBeenCalledWith({
       title: "Existing",
       solutions: [
-        { id: "s1", title: "Keep me", completed: true, ownerId: "u-pm", targetDate: "2026-11-30" },
+        { id: "s1", title: "Keep me", completed: true, ownerId: "u-pm", sprintKey: "2026-S49" },
       ],
     });
   });

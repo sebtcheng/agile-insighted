@@ -110,7 +110,6 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
     const outcome = await m.createOutcome({
       ...k,
       title: o[0],
-      targetDate: addDays(c.today, 60 + i * 7),
     });
     const opportunity = await m.createOpportunity({
       ...k,
@@ -497,7 +496,6 @@ export async function seedModules(c: ModuleSeedContext): Promise<void> {
       likelihood: r[3],
       status: r[4],
       ownerId: member(i),
-      targetDate: r[4] === "closed" ? null : addDays(c.today, 7 + i * 6),
     });
     if (r[5]) {
       const done = r[4] === "mitigated" || r[4] === "closed";

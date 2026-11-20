@@ -12,7 +12,7 @@ import {
   sprints,
 } from "../db/schema";
 import { AppError, pgErrorOf } from "../errors";
-import { createFixture, rawActivity, type Fixture } from "../test/helpers";
+import { approveRow, createFixture, rawActivity, type Fixture } from "../test/helpers";
 import * as activityService from "./activityService";
 import * as gov from "./governanceService";
 
@@ -82,6 +82,7 @@ describe("Definition of Done gate", () => {
 
     for (const item of items)
       await gov.setChecklistCheck(f.m1Actor, activityId, item.templateId, true);
+    await approveRow("activities", activityId);
     const done = await activityService.update({ actor: f.m1Actor }, activityId, { status: "done" });
     expect(done.activity.status).toBe("done");
     expect(
@@ -94,6 +95,7 @@ describe("Definition of Done gate", () => {
     expect(
       (await appError(activityService.update({ actor: f.pmActor }, id, { status: "done" }))).code,
     ).toBe("dod_incomplete");
+    await approveRow("activities", id);
     await activityService.update({ actor: f.pmActor }, id, {
       status: "done",
       overrideReason: "Shipped in hotfix, checks done offline",
@@ -280,6 +282,7 @@ describe("dependencies", () => {
     await gov.addDependency(f.pmActor, a, b);
     expect((await activityService.toDto(db, a)).waitingOnDependency).toBe(true);
     expect((await activityService.toDto(db, b)).waitingOnDependency).toBe(false);
+    await approveRow("activities", b);
     await activityService.update({ actor: f.pmActor }, b, {
       status: "done",
       overrideReason: "n/a",

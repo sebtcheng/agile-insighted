@@ -51,26 +51,25 @@ import { SideModal } from "../components/SideModal";
 
 type Dialog = OstDialog;
 
-function targetLine(o: OutcomeDto): string | null {
-  return o.targetDate ? `Target date: ${fmtDate(o.targetDate)}` : null;
-}
-
 export type { OstCtx };
 
 /** A solution is the action under a requirement: tick it when done. */
 function SolutionRow({ s, ctx }: { s: SolutionDto; ctx: OstCtx }) {
   const remove = useDeleteSolution();
-  const canEdit = ctx.isPm && !ctx.readOnly;
+  // Add and edit are open to team members (the server scopes them to their projects); deleting, ticking
+  // (validating) and converting stay with the PM.
+  const canEdit = !ctx.readOnly;
+  const pmOnly = ctx.isPm && !ctx.readOnly;
   return (
     <div className="ost-solution" style={{ paddingLeft: "var(--mantine-spacing-md)" }}>
       <Group justify="space-between" wrap="wrap" py={4} align="flex-start">
         <div style={{ minWidth: 0, flex: 1 }}>
-          <SolutionCheck solution={s} editable={canEdit} />
+          <SolutionCheck solution={s} editable={pmOnly} />
           {s.ownerName || s.targetDate ? (
             <Text size="xs" c="dimmed" ml={26}>
               {[
                 s.ownerName ? `Owner ${s.ownerName}` : null,
-                s.targetDate ? `due ${fmtDate(s.targetDate)}` : null,
+                s.targetDate ? (s.sprintLabel ?? `due ${fmtDate(s.targetDate)}`) : null,
               ]
                 .filter(Boolean)
                 .join(" · ")}
@@ -81,7 +80,7 @@ function SolutionRow({ s, ctx }: { s: SolutionDto; ctx: OstCtx }) {
           <OstActionBar
             scope={s.code}
             workflow={
-              s.convertedStoryId
+              s.convertedStoryId || !pmOnly
                 ? []
                 : [
                     {
@@ -94,11 +93,15 @@ function SolutionRow({ s, ctx }: { s: SolutionDto; ctx: OstCtx }) {
             onEdit={() =>
               ctx.setDialog({ kind: "solution", opportunityId: s.opportunityId, existing: s })
             }
-            onDelete={() => {
-              if (window.confirm(`Delete ${s.code}?`)) {
-                remove.mutate(s.id, { onError: (e) => toast.error(e.message) });
-              }
-            }}
+            onDelete={
+              !pmOnly
+                ? undefined
+                : () => {
+                    if (window.confirm(`Delete ${s.code}?`)) {
+                      remove.mutate(s.id, { onError: (e) => toast.error(e.message) });
+                    }
+                  }
+            }
           />
         ) : null}
       </Group>
@@ -111,7 +114,10 @@ function OpportunityNode({ o, ctx }: { o: OpportunityDto; ctx: OstCtx }) {
   const remove = useDeleteOpportunity();
   const solutions = ctx.tree.solutions.filter((s) => s.opportunityId === o.id);
   const thin = o.isTargeted && solutions.length < MIN_SOLUTIONS_PER_TARGET;
-  const canEdit = ctx.isPm && !ctx.readOnly;
+  // Add and edit are open to team members (the server scopes them to their projects); deleting, ticking
+  // (validating) and converting stay with the PM.
+  const canEdit = !ctx.readOnly;
+  const pmOnly = ctx.isPm && !ctx.readOnly;
   return (
     <Card withBorder p="sm" mb="xs">
       <Group justify="space-between" align="flex-start" wrap="wrap">
@@ -148,11 +154,15 @@ function OpportunityNode({ o, ctx }: { o: OpportunityDto; ctx: OstCtx }) {
             onEdit={() =>
               ctx.setDialog({ kind: "opportunity", outcomeId: o.outcomeId, existing: o })
             }
-            onDelete={() => {
-              if (window.confirm(`Delete "${o.title}" with its solutions?`)) {
-                remove.mutate(o.id, { onError: (e) => toast.error(e.message) });
-              }
-            }}
+            onDelete={
+              !pmOnly
+                ? undefined
+                : () => {
+                    if (window.confirm(`Delete "${o.title}" with its solutions?`)) {
+                      remove.mutate(o.id, { onError: (e) => toast.error(e.message) });
+                    }
+                  }
+            }
           />
         ) : null}
       </Group>
@@ -187,8 +197,10 @@ function OutcomeHeader({
   onDeleted: () => void;
 }) {
   const remove = useDeleteOutcome();
-  const line = targetLine(outcome);
-  const canEdit = ctx.isPm && !ctx.readOnly;
+  // Add and edit are open to team members (the server scopes them to their projects); deleting, ticking
+  // (validating) and converting stay with the PM.
+  const canEdit = !ctx.readOnly;
+  const pmOnly = ctx.isPm && !ctx.readOnly;
   return (
     <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
       <div style={{ minWidth: 0 }}>
@@ -198,20 +210,23 @@ function OutcomeHeader({
         <Text fz={18} fw={700}>
           {outcome.title}
         </Text>
-        {line ? <Text size="sm">{line}</Text> : null}
       </div>
       {canEdit ? (
         <OstActionBar
           scope="outcome"
           onEdit={() => ctx.setDialog({ kind: "outcome", existing: outcome })}
-          onDelete={() => {
-            if (window.confirm(`Delete this outcome and everything under it?`)) {
-              remove.mutate(outcome.id, {
-                onSuccess: onDeleted,
-                onError: (e) => toast.error(e.message),
-              });
-            }
-          }}
+          onDelete={
+            !pmOnly
+              ? undefined
+              : () => {
+                  if (window.confirm(`Delete this outcome and everything under it?`)) {
+                    remove.mutate(outcome.id, {
+                      onSuccess: onDeleted,
+                      onError: (e) => toast.error(e.message),
+                    });
+                  }
+                }
+          }
         />
       ) : null}
     </Group>
@@ -221,7 +236,10 @@ function OutcomeHeader({
 /** Body of the side modal: requirements for this outcome, each with its solutions as the actions. */
 function OutcomeDetail({ outcome, ctx }: { outcome: OutcomeDto; ctx: OstCtx }) {
   const opportunities = ctx.tree.opportunities.filter((o) => o.outcomeId === outcome.id);
-  const canEdit = ctx.isPm && !ctx.readOnly;
+  // Add and edit are open to team members (the server scopes them to their projects); deleting, ticking
+  // (validating) and converting stay with the PM.
+  const canEdit = !ctx.readOnly;
+
   return (
     <Stack gap="xs">
       <Group justify="space-between" align="center">
@@ -253,7 +271,6 @@ function OutcomeDetail({ outcome, ctx }: { outcome: OutcomeDto; ctx: OstCtx }) {
 export function OutcomeCard({ outcome, ctx }: { outcome: OutcomeDto; ctx: OstCtx }) {
   const [opened, setOpened] = useState(false);
   const { done, total } = solutionProgress(outcomeSolutions(ctx.tree, outcome.id));
-  const line = targetLine(outcome);
   return (
     <>
       <Card withBorder p="md" h="100%">
@@ -268,11 +285,6 @@ export function OutcomeCard({ outcome, ctx }: { outcome: OutcomeDto; ctx: OstCtx
           <Text fz={16} fw={700} lineClamp={2}>
             {outcome.title}
           </Text>
-          {line ? (
-            <Text size="sm" lineClamp={1}>
-              {line}
-            </Text>
-          ) : null}
           <div style={{ marginTop: "var(--mantine-spacing-sm)" }}>
             <CompletionMeter done={done} total={total} />
           </div>
@@ -329,7 +341,6 @@ export function OstPage() {
   const outcomeFields: QuickField[] = [
     { key: "title", label: "Business outcome", required: true },
     { key: "description", label: "Description", kind: "textarea" },
-    { key: "targetDate", label: "Target date", kind: "date" },
     // An outcome stays in the project it was created in, so the choice only applies when adding.
     ...(dialog?.kind === "outcome" && dialog.existing
       ? []
@@ -337,7 +348,7 @@ export function OstPage() {
   ];
   const solFields: QuickField[] = [
     { key: "title", label: "Potential solution", required: true },
-    { key: "targetDate", label: "Target date", kind: "date" },
+    { key: "sprintKey", label: "Sprint", kind: "sprint" },
     {
       key: "ownerId",
       label: "Owner",
@@ -354,7 +365,7 @@ export function OstPage() {
         title="Opportunity Solution Tree (OST)"
         subtitle="Start from an outcome, map the requirements, and compare the solutions you could take as actions."
         actions={
-          isPm && !readOnly ? (
+          !readOnly ? (
             <Button onClick={() => setDialog({ kind: "outcome" })}>Add outcome</Button>
           ) : null
         }
@@ -375,9 +386,7 @@ export function OstPage() {
       <QueryState
         query={query}
         isEmpty={(d) => d.outcomes.length === 0}
-        empty={
-          isPm ? "No outcomes yet. Add the business outcome you want to move." : "No outcomes yet."
-        }
+        empty={"No outcomes yet. Add the business outcome you want to move."}
       >
         {(tree) => {
           const ctx: OstCtx = { tree, isPm, readOnly, setDialog, openSolution: setOpenId };
@@ -417,7 +426,6 @@ export function OstPage() {
               ? {
                   title: dialog.existing.title,
                   description: dialog.existing.description ?? "",
-                  targetDate: dialog.existing.targetDate ?? "",
                 }
               : { projectId: project?.id ?? "" }
           }
@@ -426,7 +434,6 @@ export function OstPage() {
             const input = {
               title: v.title ?? "",
               description: v.description || null,
-              targetDate: v.targetDate || null,
             };
             if (dialog.existing)
               updateOutcome.mutate({ id: dialog.existing.id, patch: input }, done);
@@ -477,7 +484,7 @@ export function OstPage() {
           initial={dialog.existing ? solutionToForm(dialog.existing) : undefined}
           onClose={close}
           onSubmit={(v) => {
-            // The form shows a Target date field, so the body must carry it (it was silently dropped before).
+            // The form shows a Sprint field, so the body must carry it (it was silently dropped before).
             const input = formToSolutionInput(v);
             if (dialog.existing) updateSol.mutate({ id: dialog.existing.id, patch: input }, done);
             else createSol.mutate({ opportunityId: dialog.opportunityId, input }, done);

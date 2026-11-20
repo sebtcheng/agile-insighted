@@ -7,11 +7,14 @@ import type {
   RaidMitigatingActionInput,
   UpdateRaidInput,
 } from "@myapp/shared";
+import { sprintFieldsFor } from "@myapp/shared";
 import { db, type DbOrTx } from "../db/client";
 import { projects, raidItems, raidMitigatingActions, users } from "../db/schema";
 import { conflict, notFound, unprocessable } from "../errors";
 import type { Actor } from "../permissions";
 import { createRaidItem } from "./moduleService";
+import { assertCompletionAllowed } from "./approvalGate";
+import { sprintColumns } from "./sprintWrite";
 import { nextSeq } from "./seq";
 import { scopeCondition, type ProjectScope } from "./visibilityService";
 
@@ -44,6 +47,8 @@ function toActionDto(
     isCompleted: a.isCompleted,
     completedAt: a.completedAt ? a.completedAt.toISOString() : null,
     targetDate: a.targetDate,
+    ...sprintFieldsFor(a.sprintKey, a.targetDate),
+    pmApproval: a.pmApproval,
     responsibleId: a.responsibleId,
     responsibleName,
     sortOrder: a.sortOrder,
@@ -99,6 +104,13 @@ async function syncActions(tx: DbOrTx, raidItemId: string, input: RaidMitigating
       throw unprocessable("Unknown staff member responsible for a mitigating action");
     }
   }
+  for (const a of input) {
+    const prev = a.id ? byId.get(a.id) : undefined;
+    assertCompletionAllowed(prev?.pmApproval ?? "PENDING", {
+      wasCompleted: prev?.isCompleted ?? false,
+      willComplete: a.isCompleted ?? false,
+    });
+  }
   const removed = existing.filter((e) => !keep.has(e.id)).map((e) => e.id);
   if (removed.length > 0) {
     await tx.delete(raidMitigatingActions).where(inArray(raidMitigatingActions.id, removed));
@@ -116,7 +128,7 @@ async function syncActions(tx: DbOrTx, raidItemId: string, input: RaidMitigating
           description: a.description,
           isCompleted: done,
           completedAt: done ? (a.id && byId.get(a.id)?.completedAt) || now : null,
-          targetDate: a.targetDate,
+          ...sprintColumns(a),
           responsibleId: a.responsibleId,
           sortOrder: i,
         };
@@ -129,6 +141,7 @@ async function syncActions(tx: DbOrTx, raidItemId: string, input: RaidMitigating
         isCompleted: sql`excluded.is_completed`,
         completedAt: sql`excluded.completed_at`,
         targetDate: sql`excluded.target_date`,
+        sprintKey: sql`excluded.sprint_key`,
         responsibleId: sql`excluded.responsible_id`,
         sortOrder: sql`excluded.sort_order`,
       },
@@ -154,10 +167,11 @@ function toDto(r: Row, actions: RaidMitigatingActionDto[]): RaidItemDto {
     raisedById: x.raisedById,
     raisedByName: r.raisedByName,
     status: x.status,
-    targetDate: x.targetDate,
     closedAt: x.closedAt ? x.closedAt.toISOString() : null,
     createdAt: x.createdAt.toISOString(),
-    isOverdue: x.status !== "closed" && x.targetDate !== null && x.targetDate < today(),
+    isOverdue:
+      x.status !== "closed" &&
+      actions.some((a) => !a.isCompleted && a.targetDate !== null && a.targetDate < today()),
   };
 }
 
@@ -247,7 +261,6 @@ export async function createRaid(
         impact: input.impact,
         likelihood: input.likelihood ?? null,
         ownerId: input.ownerId ?? null,
-        targetDate: input.targetDate ?? null,
       },
       tx,
     );
@@ -278,7 +291,6 @@ export async function updateRaid(id: string, patch: UpdateRaidInput): Promise<Ra
     if (patch.impact !== undefined) set.impact = patch.impact;
     if (patch.likelihood !== undefined) set.likelihood = patch.likelihood;
     if (patch.ownerId !== undefined) set.ownerId = patch.ownerId;
-    if (patch.targetDate !== undefined) set.targetDate = patch.targetDate;
     if (patch.status !== undefined && patch.status !== current.status) {
       set.status = patch.status;
       // closed_at follows the status: set on close, cleared on reopen.
@@ -308,6 +320,24 @@ export async function setMitigatingActionCompleted(
       .limit(1);
     if (!item) throw notFound("RAID item");
     await assertWritable(tx, item.projectId);
+    const [cur] = await tx
+      .select({
+        pmApproval: raidMitigatingActions.pmApproval,
+        isCompleted: raidMitigatingActions.isCompleted,
+      })
+      .from(raidMitigatingActions)
+      .where(
+        and(
+          eq(raidMitigatingActions.id, actionId),
+          eq(raidMitigatingActions.raidItemId, raidItemId),
+        ),
+      )
+      .limit(1);
+    if (!cur) throw notFound("Mitigating action");
+    assertCompletionAllowed(cur.pmApproval, {
+      wasCompleted: cur.isCompleted,
+      willComplete: isCompleted,
+    });
     const [row] = await tx
       .update(raidMitigatingActions)
       .set({

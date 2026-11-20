@@ -12,10 +12,11 @@ vi.mock("../api/client", () => ({
   errorMessage: (e: unknown) => String(e),
   ApiClientError: class extends Error {},
 }));
+const auth = vi.hoisted(() => ({ role: "pm" }));
 vi.mock("../auth", async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
-  useAuth: () => ({ id: "pm1", role: "pm" }),
-  useIsPm: () => true,
+  useAuth: () => ({ id: auth.role === "pm" ? "pm1" : "u1", role: auth.role }),
+  useIsPm: () => auth.role === "pm",
 }));
 import { api } from "../api/client";
 import { WorkloadPage } from "./WorkloadPage";
@@ -41,6 +42,7 @@ const item = (
   isCompleted: false,
   completedAt: null,
   scheduleStatus: "ongoing_on_time",
+  pmApproval: "APPROVED",
   ...over,
 });
 
@@ -324,5 +326,50 @@ describe("Workload page", () => {
     });
     await flush();
     expect(document.body.textContent).toContain("orphan-1 title");
+  });
+});
+
+describe("Workload page as a team member", () => {
+  afterEach(() => {
+    auth.role = "pm";
+  });
+
+  it("shows every person and their counts, with expandable task rows, like a PM", async () => {
+    auth.role = "team_member";
+    await mount();
+    const names = [...document.querySelectorAll("tbody tr td:first-child button")].map((b) =>
+      b.textContent?.replace(/[▸▾]\s*/, "").trim(),
+    );
+    expect(names).toEqual(["Clea", "Klein", "Unassigned"]);
+    expect(cells("Klein")[2]).toBe("4");
+    expect(cells("Clea")).toHaveLength(7);
+    const toggle = [...document.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Klein"),
+    )!;
+    await act(async () => {
+      toggle.click();
+      await Promise.resolve();
+    });
+    expect(document.body.textContent).toContain("PM Approval");
+    expect(document.querySelectorAll("[data-testid='work-item-row']").length).toBeGreaterThan(0);
+  });
+
+  it("names projects the viewer is not a member of from the response", async () => {
+    auth.role = "team_member";
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === "/projects") return Promise.resolve({ items: [] });
+      if (url === "/workload")
+        return Promise.resolve({ ...DATA, projectNames: { p1: "Hidden Project" } });
+      return Promise.resolve({ items: [] });
+    });
+    await mount();
+    const toggle = [...document.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Klein"),
+    )!;
+    await act(async () => {
+      toggle.click();
+      await Promise.resolve();
+    });
+    expect(document.body.textContent).toContain("Hidden Project");
   });
 });

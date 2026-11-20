@@ -13,7 +13,7 @@ describe("visibleSections", () => {
         "RAID Log",
         "KANO Request Tracker",
       ],
-      ["Settings"],
+      ["Settings", "Admin Log"],
     ]);
   });
 
@@ -36,5 +36,18 @@ describe("visibleSections", () => {
     expect(s).toHaveLength(2);
     expect(s.some((x) => x.id === "admin")).toBe(false);
     expect(s[0]?.items.map((i) => i.label)).toEqual(["Home", "Workload", "Projects"]);
+  });
+
+  it("places Admin Log directly below Settings, for PMs only", () => {
+    const admin = visibleSections(true).find((x) => x.id === "admin")!;
+    expect(admin.items.map((i) => [i.label, i.to])).toEqual([
+      ["Settings", "/settings"],
+      ["Admin Log", "/admin-log"],
+    ]);
+    expect(
+      visibleSections(false)
+        .flatMap((x) => x.items)
+        .some((i) => i.to === "/admin-log"),
+    ).toBe(false);
   });
 });

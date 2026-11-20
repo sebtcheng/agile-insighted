@@ -27,6 +27,7 @@ import {
   createUserSchema,
   type ChecklistKind,
   type ChecklistTemplateDto,
+  type UpdateUserInput,
 } from "@myapp/shared";
 import {
   useCreateTemplate,
@@ -98,8 +99,16 @@ function UsersPanel() {
   const [resetFor, setResetFor] = useState<{ id: string; name: string } | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const remove = useDeleteUser();
-  const [editFor, setEditFor] = useState<{ id: string; name: string } | null>(null);
+  const [editFor, setEditFor] = useState<{
+    id: string;
+    name: string;
+    email: string;
+    role: (typeof USER_ROLES)[number];
+  } | null>(null);
   const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editRole, setEditRole] = useState<(typeof USER_ROLES)[number]>("team_member");
+  const [editPassword, setEditPassword] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const form = useForm({
     initialValues: {
@@ -166,8 +175,16 @@ function UsersPanel() {
                           size="compact-xs"
                           variant="default"
                           onClick={() => {
-                            setEditFor({ id: u.id, name: u.fullName });
+                            setEditFor({
+                              id: u.id,
+                              name: u.fullName,
+                              email: u.email,
+                              role: u.role,
+                            });
                             setEditName(u.fullName);
+                            setEditEmail(u.email);
+                            setEditRole(u.role);
+                            setEditPassword("");
                             setEditError(null);
                           }}
                         >
@@ -269,12 +286,32 @@ function UsersPanel() {
             e.preventDefault();
             const name = editName.trim();
             if (!editFor) return;
+            const email = editEmail.trim().toLowerCase();
             if (!name) {
               setEditError("Name is required");
               return;
             }
+            if (!/^\S+@\S+\.\S+$/.test(email)) {
+              setEditError("Enter a valid email");
+              return;
+            }
+            if (editPassword && editPassword.length < MIN_PASSWORD_LENGTH) {
+              setEditError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+              return;
+            }
+            // Only changed fields are sent; a blank password leaves it unchanged.
+            const patch: UpdateUserInput = {
+              ...(name !== editFor.name ? { fullName: name } : {}),
+              ...(email !== editFor.email ? { email } : {}),
+              ...(editRole !== editFor.role ? { role: editRole } : {}),
+              ...(editPassword ? { password: editPassword } : {}),
+            };
+            if (Object.keys(patch).length === 0) {
+              setEditFor(null);
+              return;
+            }
             update.mutate(
-              { id: editFor.id, patch: { fullName: name } },
+              { id: editFor.id, patch },
               {
                 onSuccess: () => {
                   toast.ok("Member updated");
@@ -294,6 +331,34 @@ function UsersPanel() {
               maxLength={120}
               onChange={(e) => {
                 setEditName(e.currentTarget.value);
+                setEditError(null);
+              }}
+            />
+            <TextInput
+              label="Email"
+              value={editEmail}
+              maxLength={254}
+              onChange={(e) => {
+                setEditEmail(e.currentTarget.value);
+                setEditError(null);
+              }}
+            />
+            <Select
+              label="Role"
+              allowDeselect={false}
+              disabled={editFor?.id === me.id}
+              description={editFor?.id === me.id ? "You cannot change your own role" : undefined}
+              value={editRole}
+              data={USER_ROLES.map((r) => ({ value: r, label: ENUM_LABELS.role[r] }))}
+              onChange={(v) => v && setEditRole(v as (typeof USER_ROLES)[number])}
+            />
+            <PasswordInput
+              label="New password"
+              description="Leave blank to keep the current password. Changing it signs that user out."
+              autoComplete="new-password"
+              value={editPassword}
+              onChange={(e) => {
+                setEditPassword(e.currentTarget.value);
                 setEditError(null);
               }}
             />

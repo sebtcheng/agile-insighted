@@ -71,6 +71,9 @@ export const usmStepFeatures = pgTable(
     // Same shapes as kano_request_specs.responsible_id / target_date.
     responsibleId: uuid("responsible_id").references(() => users.id, { onDelete: "set null" }),
     targetDate: date("target_date", { mode: "string" }),
+    // Weekly sprint (`YYYY-Snn`); target_date is kept equal to its Sunday end date. Null for legacy rows.
+    sprintKey: text("sprint_key"),
+    pmApproval: text("pm_approval").$type<"PENDING" | "APPROVED">().notNull().default("PENDING"),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

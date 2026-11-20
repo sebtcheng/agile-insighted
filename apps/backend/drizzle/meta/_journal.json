@@ -232,6 +232,34 @@
       "when": 1795108250264,
       "tag": "0032_drop_project_wip_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1795143249985,
+      "tag": "0033_sprint_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1795149442087,
+      "tag": "0034_drop_outcome_target_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1795150202227,
+      "tag": "0035_drop_raid_item_target_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795151037158,
+      "tag": "0036_pm_approval",
+      "breakpoints": true
     }
   ]
 }
