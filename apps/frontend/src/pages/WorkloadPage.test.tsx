@@ -180,15 +180,15 @@ describe("Workload page", () => {
     await mount();
     const h = headers();
     expect(h).toEqual([
-      "Person",
-      "Owner",
-      "Team member",
-      "Due this week",
-      "All tasks",
-      "Ongoing",
-      "On time",
-      "Delayed",
-      "Completed",
+      "Person↕⧗",
+      "Owner↕⧗",
+      "Team member↕⧗",
+      "Due this week↕⧗",
+      "All tasks↕⧗",
+      "Ongoing↕⧗",
+      "On time↕⧗",
+      "Delayed↕⧗",
+      "Completed↕⧗",
     ]);
     for (const gone of ["In progress / limit", "Blocked", "Waiting on dependency", "Active sprint"])
       expect(h).not.toContain(gone);
@@ -197,21 +197,21 @@ describe("Workload page", () => {
     const c = cells("Klein");
     expect(c).toHaveLength(9);
     // Klein owns 2 projects and is a team member on 3.
-    expect(c[h.indexOf("Owner")]).toBe("2");
-    expect(c[h.indexOf("Team member")]).toBe("3");
-    expect(c[h.indexOf("Due this week")]).toBe("3");
-    expect(c[h.indexOf("All tasks")]).toBe("4");
-    expect(c[h.indexOf("Ongoing")]).toBe("2");
-    expect(c[h.indexOf("On time")]).toBe("3");
-    expect(c[h.indexOf("Delayed")]).toBe("1");
-    expect(c[h.indexOf("Completed")]).toBe("1");
+    expect(c[h.indexOf("Owner↕⧗")]).toBe("2");
+    expect(c[h.indexOf("Team member↕⧗")]).toBe("3");
+    expect(c[h.indexOf("Due this week↕⧗")]).toBe("3");
+    expect(c[h.indexOf("All tasks↕⧗")]).toBe("4");
+    expect(c[h.indexOf("Ongoing↕⧗")]).toBe("2");
+    expect(c[h.indexOf("On time↕⧗")]).toBe("3");
+    expect(c[h.indexOf("Delayed↕⧗")]).toBe("1");
+    expect(c[h.indexOf("Completed↕⧗")]).toBe("1");
   });
 
   it("shows zeros for a person with nothing tagged and keeps the Unassigned row aligned", async () => {
     await mount();
     const h = headers();
     const clea = cells("Clea");
-    expect(clea[h.indexOf("All tasks")]).toBe("0");
+    expect(clea[h.indexOf("All tasks↕⧗")]).toBe("0");
     const un = cells("Unassigned");
     // Person, Owner, Team member, an empty Due this week cell, then the five metrics.
     expect(un).toHaveLength(9);

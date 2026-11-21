@@ -110,7 +110,7 @@ export function AnimeHero({
             margin: 0,
             fontFamily: "var(--font-display)",
             fontWeight: 900,
-            fontSize: "clamp(1.65rem, 2.4vw, 2.125rem)",
+            fontSize: "clamp(1.98rem, 2.88vw, 2.55rem)",
             lineHeight: 1.15,
             letterSpacing: "-0.025em",
             color: "#FFFFFF",
