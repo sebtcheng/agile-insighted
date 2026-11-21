@@ -12,7 +12,7 @@ import {
   type SQL,
   count,
 } from "drizzle-orm";
-import type { HomeResponse, HomeRow } from "@myapp/shared";
+import { compareByStatusOngoingFirst, type HomeResponse, type HomeRow } from "@myapp/shared";
 import { db } from "../db/client";
 import { activities, projects, releases, sprints, subprojects, users } from "../db/schema";
 import { waitingOnDependency } from "./governanceService";
@@ -48,7 +48,11 @@ export function homeCandidatesQuery(
   const windowStart = new Date(`${addDays(r.weekStart, -1)}T00:00:00Z`);
   const windowEnd = new Date(`${addDays(r.weekEnd, 2)}T00:00:00Z`);
 
-  const filters: SQL[] = [isNull(projects.archivedAt), isNotNull(activities.dueDate)];
+  const filters: SQL[] = [
+    isNull(projects.archivedAt),
+    isNotNull(activities.dueDate),
+    eq(activities.pmApproval, "APPROVED"),
+  ];
   const inScope = scopeCondition(activities.projectId, scope);
   if (inScope) filters.push(inScope);
   if (actor.role === "team_member") filters.push(eq(activities.assigneeId, actor.id));
@@ -141,6 +145,7 @@ export async function getHome(
     },
     scope,
     now,
+    { onlyApproved: true },
   );
   result.summary = summarize(loaded.items);
   for (const item of loaded.items) {
@@ -154,6 +159,11 @@ export async function getHome(
       r,
     );
     if (bucket) result.moduleItems[bucket].push(item);
+  }
+
+  for (const key of ["thisWeek", "nextWeek", "thisMonth", "later"] as const) {
+    result[key].sort(compareByStatusOngoingFirst);
+    result.moduleItems[key].sort(compareByStatusOngoingFirst);
   }
 
   // This Month also lists releases still planned with a target date from today to month end.
@@ -196,7 +206,13 @@ export async function getHome(
   const [wipRow] = await db
     .select({ n: count() })
     .from(activities)
-    .where(and(eq(activities.assigneeId, actor.id), inArray(activities.status, ["in_progress"])));
+    .where(
+      and(
+        eq(activities.assigneeId, actor.id),
+        inArray(activities.status, ["in_progress"]),
+        eq(activities.pmApproval, "APPROVED"),
+      ),
+    );
   result.wip = { inProgress: wipRow?.n ?? 0 };
   return result;
 }

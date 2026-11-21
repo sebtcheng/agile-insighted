@@ -12,7 +12,7 @@ import {
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { useSearchParams } from "react-router-dom";
-import type { HomeResponse, HomeRow, WorkItem } from "@myapp/shared";
+import { sortTasksOngoingFirst, type HomeResponse, type HomeRow, type WorkItem } from "@myapp/shared";
 import {
   SummaryStrip,
   WorkItemsView,
@@ -59,27 +59,25 @@ function Section({
   const isNextWeek = title === "Next Week";
   const risky = isNextWeek ? rows.filter((r) => r.atRisk) : [];
   return (
-    <Card withBorder padding={0}>
-      <Group
-        justify="space-between"
-        p="sm"
-        style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}
-      >
-        <Title order={4}>{title}</Title>
-        <Badge variant="light" color="gray">
+    <Card withBorder padding={0} className={title === "This Week" ? "lp-card-coral" : undefined}>
+      <Group justify="space-between" p="md" style={{ borderBottom: "var(--outline)" }}>
+        <Title order={2} className="lp-section-title">
+          {title}
+        </Title>
+        <Badge variant="filled" color="navy">
           {rows.length + moduleRows.length}
         </Badge>
       </Group>
       {isNextWeek && risky.length > 0 ? (
-        <Alert color="orange" m="sm" title="Risk coming up">
+        <Alert color="sun" m="sm" title="Risk coming up">
           {risky.length} item{risky.length === 1 ? " is" : "s are"} blocked or waiting on another
           activity before next week.
         </Alert>
       ) : null}
       {extra}
       {moduleRows.length > 0 ? (
-        <div style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}>
-          <Text size="xs" fw={700} tt="uppercase" c="dimmed" px="sm" pt="sm">
+        <div style={{ borderBottom: "var(--outline-thin)" }}>
+          <Text className="lp-kicker" px="md" pt="sm">
             Other modules
           </Text>
           <WorkItemsView items={moduleRows} view={view} projectNames={projectNames} checkable />
@@ -92,7 +90,7 @@ function Section({
       ) : grouped ? (
         groupBy(rows).map((g) => (
           <div key={g.key}>
-            <Text size="xs" fw={700} tt="uppercase" c="dimmed" px="sm" pt="sm">
+            <Text className="lp-kicker" px="md" pt="sm">
               {g.label}
             </Text>
             {g.rows.map((r) => (
@@ -109,13 +107,13 @@ function Section({
 
 function Header({ data }: { data: HomeResponse }) {
   return (
-    <Paper withBorder p="md" mb="md">
+    <Paper withBorder p="lg" mb="lg" className="lp-card-lg">
       <Group justify="space-between" align="flex-start" wrap="wrap">
         <div>
-          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+          <Text className="lp-label">
             {data.activeSprint ? `Sprint goal · ${data.activeSprint.name}` : "Sprint goal"}
           </Text>
-          <Text fw={600} fz="lg">
+          <Text className="lp-summary-value">
             {data.activeSprint ? (data.activeSprint.goal ?? "No goal set") : "No active sprint"}
           </Text>
           {data.activeSprint ? (
@@ -125,16 +123,13 @@ function Header({ data }: { data: HomeResponse }) {
             </Text>
           ) : null}
         </div>
-        <div>
-          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-            Your work in progress
-          </Text>
-          <Text fw={600} fz="lg">
-            {data.wip.inProgress}
-          </Text>
+        <div style={{ textAlign: "right" }}>
+          <Text className="lp-label">Your work in progress</Text>
+          <Text className="lp-summary-value">{data.wip.inProgress}</Text>
         </div>
       </Group>
-      <Text size="xs" c="dimmed" tt="uppercase" fw={700} mt="md" mb={4}>
+      <div className="lp-rule" />
+      <Text className="lp-kicker" mb="sm">
         All modules
       </Text>
       <SummaryStrip summary={data.summary} />
@@ -229,47 +224,43 @@ export function HomePage() {
               <WorkViewSwitch value={view} onChange={setView} />
             </Group>
             {data.truncated ? (
-              <Alert color="yellow" title="Showing part of a long list">
+              <Alert color="sun" title="Showing part of a long list">
                 There is more work than fits on this page. Filter by assignee or subproject to see
                 the rest.
               </Alert>
             ) : null}
             <Section
               title="This Week"
-              rows={data.thisWeek}
-              moduleRows={data.moduleItems.thisWeek}
+              rows={sortTasksOngoingFirst(data.thisWeek)}
+              moduleRows={sortTasksOngoingFirst(data.moduleItems.thisWeek)}
               grouped={grouped}
               view={view}
               projectNames={projectNames}
             />
             <Section
               title="Next Week"
-              rows={data.nextWeek}
-              moduleRows={data.moduleItems.nextWeek}
+              rows={sortTasksOngoingFirst(data.nextWeek)}
+              moduleRows={sortTasksOngoingFirst(data.moduleItems.nextWeek)}
               grouped={grouped}
               view={view}
               projectNames={projectNames}
             />
             <Section
               title="This Month"
-              rows={data.thisMonth}
-              moduleRows={data.moduleItems.thisMonth}
+              rows={sortTasksOngoingFirst(data.thisMonth)}
+              moduleRows={sortTasksOngoingFirst(data.moduleItems.thisMonth)}
               grouped={grouped}
               view={view}
               projectNames={projectNames}
               extra={
                 data.upcomingReleases.length > 0 ? (
-                  <Stack
-                    gap={4}
-                    p="sm"
-                    style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}
-                  >
+                  <Stack gap={4} p="sm" style={{ borderBottom: "var(--outline-thin)" }}>
                     <Text size="xs" fw={700} tt="uppercase" c="dimmed">
                       Upcoming releases
                     </Text>
                     {data.upcomingReleases.map((r) => (
                       <Group key={r.id} gap="xs">
-                        <Badge color="blue" variant="light">
+                        <Badge color="sea" variant="light">
                           Release
                         </Badge>
                         <Text size="sm" fw={600}>
@@ -287,8 +278,8 @@ export function HomePage() {
             {data.later.length + data.moduleItems.later.length > 0 ? (
               <Section
                 title="Later"
-                rows={data.later}
-                moduleRows={data.moduleItems.later}
+                rows={sortTasksOngoingFirst(data.later)}
+                moduleRows={sortTasksOngoingFirst(data.moduleItems.later)}
                 grouped={grouped}
                 view={view}
                 projectNames={projectNames}

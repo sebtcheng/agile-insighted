@@ -122,7 +122,7 @@ export function OstActionBar({
           <Button
             size="compact-xs"
             variant="subtle"
-            color="red"
+            color="coral"
             leftSection={TRASH}
             title={`Delete ${scope}`}
             onClick={onDelete}

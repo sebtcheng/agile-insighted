@@ -4,7 +4,7 @@ import type { ProjectWorkItemsResponse, WorkItem } from "@myapp/shared";
 import { createApp } from "../app";
 import { db } from "../db/client";
 import { kanoRequestSpecs, raidMitigatingActions } from "../db/schema";
-import { createFixture, rawActivity, type Fixture } from "../test/helpers";
+import { approveRow, createFixture, rawActivity, type Fixture } from "../test/helpers";
 import * as m from "../services/moduleService";
 import * as usm from "../services/usmService";
 
@@ -32,19 +32,21 @@ async function seedProject(projectId: string, suffix: string, owner: string | nu
   const k = { projectId, createdById: f.pm.id };
   const outcome = await m.createOutcome({ ...k, title: `Outcome ${suffix}` });
   const opp = await m.createOpportunity({ ...k, outcomeId: outcome.id, title: `Req ${suffix}` });
-  await m.createSolution({
+  const sol = await m.createSolution({
     ...k,
     opportunityId: opp.id,
     title: `OST solution ${suffix}`,
     ownerId: owner,
     targetDate: FUTURE,
   });
+  await approveRow("ost_solutions", sol.id);
   const req = await m.createKanoRequest({ ...k, revisionRequest: `Revise ${suffix}` });
   await db.insert(kanoRequestSpecs).values({
     kanoRequestId: req.id,
     label: `Kano spec ${suffix}`,
     responsibleId: owner,
     targetDate: PAST,
+    pmApproval: "APPROVED",
   });
   const raid = await m.createRaidItem({
     ...k,
@@ -59,6 +61,7 @@ async function seedProject(projectId: string, suffix: string, owner: string | nu
     targetDate: FUTURE,
     isCompleted: true,
     completedAt: new Date(),
+    pmApproval: "APPROVED",
   });
   const persona = await usm.createPersona(f.pmActor, { projectId, name: `User ${suffix}` });
   const step = await usm.createStep(f.pmActor, {
@@ -66,7 +69,8 @@ async function seedProject(projectId: string, suffix: string, owner: string | nu
     personaId: persona.id,
     title: "Sign in",
   });
-  await usm.createFeature({ projectId, stepId: step.id, title: `USM feature ${suffix}` });
+  const feat = await usm.createFeature({ projectId, stepId: step.id, title: `USM feature ${suffix}` });
+  await approveRow("usm_step_features", feat.id);
 }
 
 beforeAll(async () => {
@@ -74,11 +78,12 @@ beforeAll(async () => {
   pm = await loginAs(f.pm.email);
   member = await loginAs(f.m1.email);
   await seedProject(f.project.id, "A", f.m1.id);
-  await rawActivity(f.project.id, f.pm.id, {
+  const act = await rawActivity(f.project.id, f.pm.id, {
     title: `Core activity ${f.tag}`,
     assigneeId: f.m1.id,
     dueDate: FUTURE,
   });
+  await approveRow("activities", act.id);
   // A decoy project whose items must never leak in.
   await seedProject(f.otherProject.id, "B", f.m1.id);
 });
@@ -178,5 +183,13 @@ describe("GET /projects/:id/work-items", () => {
     expect(bad.status).toBeLessThan(500);
     const hidden = await member.get(`/api/projects/${f.otherProject.id}/work-items`);
     expect(hidden.status).toBe(404);
+  });
+
+  it("excludes PENDING items from project work-items", async () => {
+    const res = await pm
+      .post(`/api/projects/${f.project.id}/activities`)
+      .send({ title: `Pending Activity ${f.tag}`, assigneeId: f.m1.id, dueDate: "2026-03-20" });
+    expect(res.status).toBe(201);
+    expect(titles(await list())).not.toContain(`Pending Activity ${f.tag}`);
   });
 });

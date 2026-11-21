@@ -89,23 +89,25 @@ export function useReorderUsmSteps() {
   return useMutation({
     mutationFn: (v: ReorderUsmStepsInput) => api.patch("/story-map/steps/reorder", v),
     onMutate: async (v) => {
-      const key = ["usm", "steps", v.projectId, v.personaId];
-      await qc.cancelQueries({ queryKey: key });
-      const previous = qc.getQueryData<UsmStepDto[]>(key);
-      if (previous) {
-        const byId = new Map(previous.map((s) => [s.id, s]));
-        qc.setQueryData<UsmStepDto[]>(
-          key,
-          v.stepIds.flatMap((id, i) => {
-            const s = byId.get(id);
-            return s ? [{ ...s, sortOrder: i }] : [];
-          }),
-        );
-      }
-      return { key, previous };
+      // The same user's steps can be cached under their project or under the all-projects view.
+      const match = {
+        queryKey: ["usm", "steps"],
+        predicate: (q: { queryKey: readonly unknown[] }) => q.queryKey[3] === v.personaId,
+      };
+      await qc.cancelQueries(match);
+      const previous = qc.getQueriesData<UsmStepDto[]>(match);
+      qc.setQueriesData<UsmStepDto[]>(match, (old) => {
+        if (!old) return old;
+        const byId = new Map(old.map((s) => [s.id, s]));
+        return v.stepIds.flatMap((id, i) => {
+          const s = byId.get(id);
+          return s ? [{ ...s, sortOrder: i }] : [];
+        });
+      });
+      return { previous };
     },
     onError: (_e, _v, ctx) => {
-      if (ctx?.previous) qc.setQueryData(ctx.key, ctx.previous);
+      for (const [key, data] of ctx?.previous ?? []) qc.setQueryData(key, data);
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["usm"] }),
   });

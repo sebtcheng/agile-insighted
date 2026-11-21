@@ -96,7 +96,7 @@ function FeatureRow({
       {canDelete ? (
         <ActionIcon
           variant="subtle"
-          color="red"
+          color="coral"
           aria-label={`Remove feature ${index + 1}`}
           loading={remove.isPending}
           onClick={() => remove.mutate(feature.id, { onError: (e) => toast.error(e.message) })}
@@ -183,7 +183,7 @@ function NewFeatureRow({
       />
       <ActionIcon
         variant="subtle"
-        color="red"
+        color="coral"
         aria-label="Discard new feature"
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => {
@@ -282,7 +282,7 @@ function StepBody({
           {canDelete ? (
             <Button
               variant="default"
-              color="red"
+              color="coral"
               loading={deleteStep.isPending}
               onClick={() =>
                 deleteStep.mutate(step.id, {

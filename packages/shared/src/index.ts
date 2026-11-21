@@ -7,3 +7,4 @@ export * from "./adminLog";
 export * from "./sprint";
 export * from "./usm";
 export * from "./workItems";
+export * from "./sortTasks";

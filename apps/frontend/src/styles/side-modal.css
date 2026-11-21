@@ -1,12 +1,13 @@
 /* Shared styling for every side modal (slide-over drawer). Reference: "Add RAID item". */
 :root {
-  --shadow-left-md: -8px 0 24px rgba(15, 23, 42, 0.14), -2px 0 6px rgba(15, 23, 42, 0.08);
+  --shadow-left-md: -8px 0 0 var(--lp-teal);
 }
 
 .side-modal {
   position: relative;
   background: var(--surface);
   box-shadow: var(--shadow-left-md);
+  border-inline-start: var(--outline);
   font-family: var(--font-body);
   --mantine-color-dimmed: var(--text-secondary);
   --input-placeholder-color: var(--text-secondary);
@@ -19,7 +20,7 @@
   top: 0;
   height: 3px;
   z-index: 3;
-  background: linear-gradient(90deg, var(--accent-left) 50%, var(--accent-right) 50%);
+  background: var(--lp-teal);
   pointer-events: none;
 }
 

@@ -46,3 +46,22 @@ export const useSetApproval = () => {
     onSettled: refresh,
   });
 };
+
+/** Delete one task; open to every authenticated role. */
+export const useDeleteWorkItem = () => {
+  const refresh = useRefreshAll();
+  return useMutation({
+    mutationFn: (item: { id: string; sourceModule: WorkSourceModule }) =>
+      api.delete(`/work-items/${item.sourceModule}/${item.id}`),
+    onSettled: refresh,
+  });
+};
+
+export const useDeleteAdminLogItem = () => {
+  const refresh = useRefreshAll();
+  return useMutation({
+    mutationFn: (item: { id: string; sourceModule: WorkSourceModule }) =>
+      api.delete(`/admin-log/items/${item.sourceModule}/${item.id}`),
+    onSettled: refresh,
+  });
+};

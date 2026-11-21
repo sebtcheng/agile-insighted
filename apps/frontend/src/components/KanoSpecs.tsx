@@ -126,7 +126,7 @@ export function KanoSpecsField({
           />
           <ActionIcon
             variant="subtle"
-            color="red"
+            color="coral"
             aria-label={`Remove spec ${i + 1}`}
             onClick={() => onChange(value.filter((_, idx) => idx !== i))}
           >

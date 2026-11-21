@@ -74,7 +74,7 @@ export function SolutionModal({
               </Button>
             </Group>
             {needsOverride ? (
-              <Alert color="yellow" mt="sm" title="Not validated yet">
+              <Alert color="sun" mt="sm" title="Not validated yet">
                 <Stack gap={6}>
                   <Text size="sm">
                     Mark the solution validated first, or override with a reason (it is logged).
@@ -87,7 +87,7 @@ export function SolutionModal({
                   <Button
                     size="xs"
                     variant="light"
-                    color="yellow"
+                    color="sun"
                     disabled={!reason.trim()}
                     loading={convert.isPending}
                     onClick={() => run(reason.trim())}

@@ -333,6 +333,10 @@ export type UpdateActivityInput = z.infer<typeof updateActivitySchema>;
 export type WorkloadRow = {
   userId: string;
   fullName: string;
+  /** Projects this person owns. */
+  ownedProjectsCount: number;
+  /** Distinct projects this person is listed on as a team member. */
+  teamMemberProjectsCount: number;
   dueThisWeek: number;
 };
 export type WorkloadResponse = {

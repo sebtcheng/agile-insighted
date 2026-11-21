@@ -66,7 +66,7 @@ export function GlobalSearch() {
         <TextInput
           ref={inputRef}
           aria-label="Search activities, subprojects and people"
-          placeholder="Search…  (press /)"
+          placeholder="Search the charts... (press /)"
           value={text}
           onChange={(e) => {
             setText(e.currentTarget.value);
@@ -86,7 +86,7 @@ export function GlobalSearch() {
       </Popover.Target>
       <Popover.Dropdown p="xs" mah={420} style={{ overflowY: "auto" }}>
         {result.isError ? (
-          <Text size="sm" c="red">
+          <Text size="sm" c="coral">
             Search failed. Try again.
           </Text>
         ) : !data ? (
@@ -117,7 +117,7 @@ export function GlobalSearch() {
                       </Text>
                       <Group gap={6} wrap="nowrap">
                         {a.subprojectCode ? (
-                          <Badge variant="outline" color="gray">
+                          <Badge variant="outline" color="navy">
                             {a.subprojectCode}
                           </Badge>
                         ) : null}

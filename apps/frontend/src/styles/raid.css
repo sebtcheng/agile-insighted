@@ -10,7 +10,7 @@
 .raid-add-btn {
   font-family: var(--font-display);
   background: var(--brand-primary);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   transition: var(--ui-transition);
 }
 .raid-add-btn:hover:not(:disabled) {
@@ -24,7 +24,7 @@
   font-family: var(--font-body);
 }
 .raid-input {
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   border-color: var(--border-muted);
   font-family: var(--font-body);
   transition: var(--ui-transition);
@@ -42,15 +42,15 @@
   height: 36px; /* matches the Select input height so the box centres on the dropdowns */
 }
 .raid-closed .mantine-Checkbox-input {
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   border-color: var(--border-muted);
   transition: var(--ui-transition);
 }
 
 .raid-card {
   background: var(--surface);
-  border-radius: 6px;
-  box-shadow: var(--mantine-shadow-sm);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 .raid-table {
@@ -75,7 +75,7 @@
 }
 .raid-page .raid-action {
   font-family: var(--font-display);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   transition: var(--ui-transition);
 }
 .raid-page .raid-delete {
@@ -100,7 +100,7 @@
 
 .raid-page .raid-status-input,
 .raid-page .raid-status-badge {
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-family: var(--font-body);
   transition: var(--ui-transition);
 }
@@ -118,7 +118,7 @@
   --mantine-color-dimmed: var(--text-secondary);
 }
 .raid-input {
-  --input-radius: 6px;
+  --input-radius: var(--radius-md);
   --input-placeholder-color: var(--text-secondary);
 }
 .raid-mono {
@@ -174,7 +174,7 @@
   display: block;
 }
 .raid-card-actions {
-  border-top: 1px solid var(--border-muted);
+  border-top: var(--outline-thin);
 }
 .raid-item .raid-sub,
 .raid-item .mantine-Text-root.raid-sub {
@@ -190,7 +190,7 @@
   gap: 8px;
 }
 .raid-item .raid-action-check .mantine-Checkbox-input {
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   border-color: var(--border-muted);
   transition: var(--ui-transition);
 }
@@ -205,7 +205,7 @@
   height: 36px;
 }
 .raid-toggle .view-toggle {
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 /* Filter labels and card boundaries. */
@@ -215,11 +215,11 @@
   font-weight: 600;
 }
 .raid-page .raid-item.item-card {
-  border: 1px solid var(--border-muted);
-  box-shadow: var(--mantine-shadow-md);
+  border: var(--outline-thin);
+  box-shadow: var(--shadow-sm);
 }
 .raid-page .raid-item.item-card[data-clickable]:hover {
-  box-shadow: var(--mantine-shadow-md);
+  box-shadow: var(--shadow-sm);
   border-color: var(--text-secondary);
 }
 .raid-page .raid-item .raid-sub {

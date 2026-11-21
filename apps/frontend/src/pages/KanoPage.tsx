@@ -237,7 +237,7 @@ export function EditModal({
               {isPm ? (
                 <Button
                   variant="subtle"
-                  color="red"
+                  color="coral"
                   onClick={() => {
                     if (window.confirm(`Delete ${request.code}? This cannot be undone.`)) {
                       remove.mutate(request.id, {
@@ -345,7 +345,7 @@ export function KanoPage() {
     sort: (params.get("sort") as "newest" | "code" | null) ?? "newest",
   };
   const query = useKano(isAll ? "all" : project?.id, filters);
-  const [viewMode, setViewMode] = useViewMode("table");
+  const [viewMode, setViewMode] = useViewMode("card");
   const [submitOpen, submit] = useDisclosure(false);
   const [editing, setEditing] = useState<KanoDto | null>(null);
   const readOnly = !project || !!project.archivedAt;

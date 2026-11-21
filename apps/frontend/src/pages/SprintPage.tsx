@@ -43,7 +43,7 @@ export function SprintPage() {
     <QueryState query={sprints}>
       {() =>
         !sprint || !projectId ? (
-          <Alert color="red" title="Sprint not found">
+          <Alert color="coral" title="Sprint not found">
             <Anchor component={Link} to="/projects">
               Back to projects
             </Anchor>
@@ -237,7 +237,7 @@ function CapacityCard({ sprint, canEdit }: { sprint: SprintDto; canEdit: boolean
                         )}
                       </Table.Td>
                       <Table.Td>
-                        {m.overCapacity ? <Badge color="red">Over capacity</Badge> : null}
+                        {m.overCapacity ? <Badge color="coral">Over capacity</Badge> : null}
                       </Table.Td>
                     </Table.Tr>
                   ))}

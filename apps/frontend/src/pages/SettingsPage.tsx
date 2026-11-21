@@ -50,7 +50,7 @@ export function SettingsPage() {
   const [params, setParams] = useSearchParams();
   if (!isPm) {
     return (
-      <Alert color="red" title="Project managers only">
+      <Alert color="coral" title="Project managers only">
         Settings are only available to project managers.
       </Alert>
     );
@@ -162,11 +162,11 @@ function UsersPanel() {
                     </Table.Td>
                     <Table.Td>
                       {u.isActive ? (
-                        <Badge color="green" variant="light">
+                        <Badge color="sea" variant="light">
                           Active
                         </Badge>
                       ) : (
-                        <Badge color="gray">Inactive</Badge>
+                        <Badge color="navy">Inactive</Badge>
                       )}
                     </Table.Td>
                     <Table.Td>
@@ -216,7 +216,7 @@ function UsersPanel() {
                           <Button
                             size="compact-xs"
                             variant="subtle"
-                            color="red"
+                            color="coral"
                             loading={remove.isPending && remove.variables === u.id}
                             onClick={() =>
                               window.confirm(
@@ -563,7 +563,7 @@ function ProjectPanel() {
         <Group>
           <Button
             variant="light"
-            color="red"
+            color="coral"
             onClick={() =>
               window.confirm(`Archive ${project.name}? It becomes read-only.`) &&
               update.mutate(

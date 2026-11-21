@@ -107,7 +107,7 @@ export function StoryActionStepsField({
           />
           <ActionIcon
             variant="subtle"
-            color="red"
+            color="coral"
             aria-label={`Remove step ${i + 1}`}
             onClick={() => onChange(value.filter((_, idx) => idx !== i))}
           >
@@ -116,7 +116,7 @@ export function StoryActionStepsField({
         </Group>
       ))}
       {error ? (
-        <Text size="xs" c="red">
+        <Text size="xs" c="coral">
           {error}
         </Text>
       ) : null}

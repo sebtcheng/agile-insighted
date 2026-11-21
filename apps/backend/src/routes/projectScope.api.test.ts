@@ -147,11 +147,14 @@ describe("creating and editing projects with an owner and team members", () => {
     expect(res.status).toBe(404);
   });
 
-  it("only a PM may create or edit", async () => {
-    expect((await m1.post("/api/projects").send({ name: "Nope" })).status).toBe(403);
-    expect((await m1.patch(`/api/projects/${f.project.id}`).send({ memberIds: [] })).status).toBe(
-      403,
+  it("lets a team member create and edit projects", async () => {
+    const made = await m1.post("/api/projects").send({ name: `Member ${f.tag}` });
+    expect(made.status).toBe(201);
+    const id = json<ProjectDto>(made).id;
+    expect((await m1.patch(`/api/projects/${id}`).send({ name: `Edited ${f.tag}` })).status).toBe(
+      200,
     );
+    await pm.delete(`/api/projects/${id}`);
   });
 });
 

@@ -266,7 +266,7 @@ export function ProjectsPage() {
                       {p.members && p.members.length > 0 ? (
                         <Group gap={4} wrap="wrap">
                           {p.members.map((m) => (
-                            <Badge key={m.id} variant="light" color="gray">
+                            <Badge key={m.id} variant="light" color="navy">
                               {m.fullName}
                             </Badge>
                           ))}
@@ -299,7 +299,7 @@ export function ProjectsPage() {
                           <Button
                             size="compact-sm"
                             variant="default"
-                            color="red"
+                            color="coral"
                             onClick={() =>
                               confirmDelete(`project ${p.name}`, () =>
                                 delProject.mutate(p.id, {
@@ -345,7 +345,7 @@ export function ProjectsPage() {
                             <Button
                               size="compact-sm"
                               variant="default"
-                              color="red"
+                              color="coral"
                               onClick={() =>
                                 confirmDelete(`subproject ${s.name}`, () =>
                                   delSub.mutate(s.id, {

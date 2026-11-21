@@ -37,8 +37,8 @@ export function SimulationPicker({ opened, onClose }: { opened: boolean; onClose
           data-autofocus
         />
         {candidates.isPending ? <Loader size="sm" /> : null}
-        {candidates.isError ? <Alert color="red">Could not load team members.</Alert> : null}
-        {start.isError ? <Alert color="red">Could not start the simulation.</Alert> : null}
+        {candidates.isError ? <Alert color="coral">Could not load team members.</Alert> : null}
+        {start.isError ? <Alert color="coral">Could not start the simulation.</Alert> : null}
         {candidates.data && shown.length === 0 ? (
           <Text size="sm" c="dimmed">
             No matching team members.

@@ -223,7 +223,9 @@ modules.get(
   "/story-map/personas",
   asyncHandler(async (req, res) => {
     const { projectId } = parse(usmProjectQuerySchema, req.query);
-    res.json({ items: await usm.listPersonas(projectId) });
+    res.json({
+      items: await usm.listPersonas(projectId, await getVisibleProjectIds(actorOf(res))),
+    });
   }),
 );
 modules.post(
@@ -254,7 +256,13 @@ modules.get(
   "/story-map/steps",
   asyncHandler(async (req, res) => {
     const q = parse(usmStepsQuerySchema, req.query);
-    res.json({ items: await usm.listSteps(q.projectId, q.personaId) });
+    res.json({
+      items: await usm.listSteps(
+        q.projectId,
+        q.personaId,
+        await getVisibleProjectIds(actorOf(res)),
+      ),
+    });
   }),
 );
 modules.post(

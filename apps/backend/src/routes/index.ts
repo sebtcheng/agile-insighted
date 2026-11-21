@@ -45,6 +45,7 @@ import { getHome } from "../services/homeService";
 import { scopeGuard } from "../scopeGuard";
 import { getVisibleProjectIds } from "../services/visibilityService";
 import { adminLog } from "./adminLog";
+import { workItems } from "./workItems";
 import { governance } from "./governance";
 import { modules } from "./modules";
 import { readModels } from "./readModels";
@@ -412,6 +413,7 @@ api.use(governance);
 // ---- Phase 3: workload, search
 api.use(readModels);
 api.use(adminLog);
+api.use(workItems);
 
 // ---- Phases 5 to 8: RAID, Story Map, Kano, OST
 api.use(modules);

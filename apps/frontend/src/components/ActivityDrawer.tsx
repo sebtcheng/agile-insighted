@@ -103,12 +103,12 @@ function ActivityView({ activity }: { activity: ActivityDto }) {
           <PriorityBadge priority={activity.priority} />
           <WorkTypeBadge type={activity.workType} />
           {activity.isBlocked ? (
-            <Text size="xs" c="red" fw={600}>
+            <Text size="xs" c="coral" fw={600}>
               Blocked: {activity.blockedReason}
             </Text>
           ) : null}
           {activity.waitingOnDependency ? (
-            <Text size="xs" c="orange" fw={600}>
+            <Text size="xs" c="sun" fw={600}>
               Waiting on dependency
             </Text>
           ) : null}
@@ -173,7 +173,7 @@ export function GovernancePanels({
   return (
     <>
       {gov.dodMissing ? (
-        <Alert color="orange" title="The Definition of Done is not complete" role="alert">
+        <Alert color="sun" title="The Definition of Done is not complete" role="alert">
           <Stack gap="xs">
             <Text size="sm">Tick these on the “Done checklist” tab before marking this done:</Text>
             <ul style={{ margin: 0, paddingLeft: 18 }}>
@@ -191,7 +191,7 @@ export function GovernancePanels({
                 <Group>
                   <Button
                     size="xs"
-                    color="orange"
+                    color="sun"
                     disabled={!reason.trim()}
                     loading={gov.isPending}
                     onClick={() =>
@@ -275,7 +275,7 @@ export function GovernancePanels({
                 onChange={(e) => setOverrideReason(e.currentTarget.value)}
               />
               <Button
-                color="orange"
+                color="sun"
                 variant="light"
                 w="fit-content"
                 disabled={!overrideReason.trim()}
@@ -633,7 +633,7 @@ function DependenciesTab({ activity, canEdit }: { activity: ActivityDto; canEdit
                   <Button
                     size="compact-xs"
                     variant="subtle"
-                    color="red"
+                    color="coral"
                     loading={remove.isPending}
                     onClick={() =>
                       remove.mutate(d.activityId, { onError: (e) => toast.error(e.message) })

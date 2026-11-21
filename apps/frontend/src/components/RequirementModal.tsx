@@ -131,7 +131,7 @@ export function StepsField({
           />
           <ActionIcon
             variant="subtle"
-            color="red"
+            color="coral"
             aria-label={`Remove step ${i + 1}`}
             onClick={() => onChange(value.filter((_, idx) => idx !== i))}
           >

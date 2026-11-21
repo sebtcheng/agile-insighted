@@ -187,9 +187,9 @@ export function StoryModal(props: Props) {
           {story ? (
             <Group gap="xs">
               <Badge variant="light">{STORY_STATUS_LABELS[story.status]}</Badge>
-              {story.isMvp ? <Badge color="blue">MVP</Badge> : null}
+              {story.isMvp ? <Badge color="sea">MVP</Badge> : null}
               {story.linkedActivities > 0 ? (
-                <Badge variant="outline" color="gray">
+                <Badge variant="outline" color="navy">
                   {story.linkedActivities} linked{" "}
                   {story.linkedActivities === 1 ? "activity" : "activities"}
                 </Badge>
@@ -343,7 +343,7 @@ export function StoryModal(props: Props) {
             {story && isPm ? (
               <Button
                 variant="subtle"
-                color="red"
+                color="coral"
                 onClick={() => {
                   if (window.confirm(`Delete ${story.code}? This cannot be undone.`)) {
                     remove.mutate(story.id, {

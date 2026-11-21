@@ -62,10 +62,10 @@ function StepCard({
   const pct = sum.total === 0 ? 0 : Math.round((sum.completed / sum.total) * 100);
   const state =
     sum.total > 0 && sum.completed === sum.total
-      ? { label: "Complete", color: "green" }
+      ? { label: "Complete", color: "sea" }
       : sum.completed > 0
-        ? { label: "In progress", color: "blue" }
-        : { label: sum.total === 0 ? "No features" : "Not started", color: "gray" };
+        ? { label: "In progress", color: "sea" }
+        : { label: sum.total === 0 ? "No features" : "Not started", color: "navy" };
   return (
     <Card
       className="item-card usm-card usm-step"
@@ -155,7 +155,7 @@ function StepCard({
             {state.label}
           </Badge>
           {sum.overdue > 0 ? (
-            <Badge size="xs" color="red" variant="light">
+            <Badge size="xs" color="coral" variant="light">
               {sum.overdue} overdue
             </Badge>
           ) : null}
@@ -365,17 +365,25 @@ export function StoryMapPage() {
   const canAdd = true;
   const [params, setParams] = useSearchParams();
   const allProjects = useProjects();
-  const { project } = useCurrentProject(params.get("project"));
-  const personas = useUsmPersonas(project?.id);
+  // `all` lists every visible project's users and steps; creating a user still needs one concrete project.
+  const isAll = params.get("project") === "all";
+  const { project: current } = useCurrentProject(isAll ? null : params.get("project"));
+  const project = isAll ? undefined : current;
+  const queryProject = isAll ? "all" : project?.id;
+  const personas = useUsmPersonas(queryProject);
   const personaParam = params.get("user");
   const persona = personas.data?.find((p) => p.id === personaParam) ?? personas.data?.[0];
-  const steps = useUsmSteps(project?.id, persona?.id);
+  const steps = useUsmSteps(queryProject, persona?.id);
   const reorder = useReorderUsmSteps();
   const [openId, setOpenId] = useState<string | null>(null);
   const [reorderError, setReorderError] = useState<string | null>(null);
   const [addOpen, addModal] = useDisclosure(false);
   const [insertAt, setInsertAt] = useState<number | undefined>();
-  const readOnly = !project || !!project.archivedAt;
+  // In the all-projects view a step belongs to its own user's project.
+  const activeProject = isAll
+    ? allProjects.data?.find((p) => p.id === persona?.projectId)
+    : project;
+  const readOnly = !activeProject || !!activeProject.archivedAt;
   const today = manilaToday();
 
   const setParam = (key: string, value: string | null) => {
@@ -390,7 +398,7 @@ export function StoryMapPage() {
     addModal.open();
   };
   const move = (list: UsmStepDto[], from: number, to: number) => {
-    if (!project || !persona) return;
+    if (!persona) return;
     const ids = list.map((s) => s.id);
     const [moved] = ids.splice(from, 1);
     if (!moved) return;
@@ -398,7 +406,7 @@ export function StoryMapPage() {
     setReorderError(null);
     // The hook reorders the cards at once (numbers 1..N follow) and restores them if the server refuses.
     reorder.mutate(
-      { projectId: project.id, personaId: persona.id, stepIds: ids },
+      { projectId: persona.projectId, personaId: persona.id, stepIds: ids },
       { onError: (e) => setReorderError(e.message) },
     );
   };
@@ -422,17 +430,25 @@ export function StoryMapPage() {
           w={220}
           allowDeselect={false}
           placeholder="Choose a project"
-          data={(allProjects.data ?? [])
-            .filter((p) => !p.archivedAt)
-            .map((p) => ({ value: p.id, label: p.name }))}
-          value={project?.id ?? null}
+          data={[
+            { value: "all", label: "All projects" },
+            ...(allProjects.data ?? [])
+              .filter((p) => !p.archivedAt)
+              .map((p) => ({ value: p.id, label: p.name })),
+          ]}
+          value={isAll ? "all" : (project?.id ?? null)}
           onChange={(v) => setParam("project", v)}
         />
         {project && canAdd && !readOnly ? (
           <AddUser projectId={project.id} onAdded={(id) => setParam("user", id)} />
         ) : null}
+        {isAll ? (
+          <Button variant="default" disabled title="Select a specific project to add a user">
+            Add user
+          </Button>
+        ) : null}
       </Group>
-      {!project && !allProjects.isLoading ? (
+      {!isAll && !project && !allProjects.isLoading ? (
         <Text c="dimmed">You are not assigned to a project yet.</Text>
       ) : (
         <QueryState
@@ -452,7 +468,7 @@ export function StoryMapPage() {
                     variant={p.id === persona?.id ? "light" : "default"}
                     onClick={() => setParam("user", p.id)}
                   >
-                    {p.name}
+                    {isAll && p.projectName ? `${p.name} · ${p.projectName}` : p.name}
                   </Button>
                 ))}
               </Group>
@@ -464,7 +480,7 @@ export function StoryMapPage() {
                 {(data) => (
                   <Stack gap="xs">
                     {reorderError ? (
-                      <Alert color="red" title="Could not reorder the steps" role="alert">
+                      <Alert color="coral" title="Could not reorder the steps" role="alert">
                         {reorderError}
                       </Alert>
                     ) : null}
@@ -491,12 +507,12 @@ export function StoryMapPage() {
         canDelete={isPm && !readOnly}
         canTick={!readOnly}
       />
-      {project && persona ? (
+      {persona ? (
         <AddStepModal
           key={`${addOpen}-${insertAt}-${persona.id}`}
           opened={addOpen}
           onClose={addModal.close}
-          projectId={project.id}
+          projectId={persona.projectId}
           personaId={persona.id}
           insertAtIndex={insertAt}
         />

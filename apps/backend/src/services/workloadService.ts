@@ -12,6 +12,8 @@ import { scopeCondition, scopeSql, type ProjectScope } from "./visibilityService
 type Row = {
   user_id: string;
   full_name: string;
+  owned_projects: number;
+  member_projects: number;
 };
 
 /**
@@ -20,8 +22,14 @@ type Row = {
  */
 export function workloadSql(scope: ProjectScope = null): SQL {
   return sql`
-    SELECT u.id AS user_id, u.full_name
+    SELECT u.id AS user_id, u.full_name,
+      COALESCE(o.n, 0)::int AS owned_projects,
+      COALESCE(m.n, 0)::int AS member_projects
     FROM users u
+    LEFT JOIN (SELECT owner_id, count(*)::int AS n FROM projects GROUP BY owner_id) o ON o.owner_id = u.id
+    LEFT JOIN (
+      SELECT user_id, count(DISTINCT project_id)::int AS n FROM project_members GROUP BY user_id
+    ) m ON m.user_id = u.id
     WHERE u.is_active
       AND (${sql.raw(scope === null ? "true" : "false")} OR u.id IN (
         SELECT pm.user_id FROM project_members pm WHERE ${scopeSql(sql`pm.project_id`, scope)}
@@ -34,9 +42,16 @@ export async function getWorkload(
 ): Promise<WorkloadResponse> {
   const r = homeRanges(localDate(opts.now ?? new Date(), env.APP_TIMEZONE));
   const res = await db.execute<Row>(workloadSql(opts.scope ?? null));
-  const people = res.rows.map((x) => ({ id: x.user_id, fullName: x.full_name }));
+  const people = res.rows.map((x) => ({
+    id: x.user_id,
+    fullName: x.full_name,
+    owned: Number(x.owned_projects),
+    member: Number(x.member_projects),
+  }));
   // Counts cover every visible project and module, exactly like Home, so the two reconcile.
-  const loaded = await loadWorkItems({}, opts.scope ?? null, opts.now ?? new Date());
+  const loaded = await loadWorkItems({}, opts.scope ?? null, opts.now ?? new Date(), {
+    onlyApproved: true,
+  });
   const members = memberRollups(loaded.items, people).map((m) => ({
     ...m,
     items: m.items.slice(0, 300),
@@ -45,6 +60,8 @@ export async function getWorkload(
   const items: WorkloadRow[] = people.map((p) => ({
     userId: p.id,
     fullName: p.fullName,
+    ownedProjectsCount: p.owned,
+    teamMemberProjectsCount: p.member,
     dueThisWeek: loaded.items.filter(
       (i) =>
         i.assigneeId === p.id &&
@@ -77,6 +94,7 @@ export async function getPersonItems(userId: string, scope: ProjectScope = null)
       and(
         eq(activities.assigneeId, userId),
         ne(activities.status, "done"),
+        eq(activities.pmApproval, "APPROVED"),
         scopeCondition(activities.projectId, scope),
       ),
     )

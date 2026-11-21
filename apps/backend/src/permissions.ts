@@ -65,6 +65,18 @@ export function memberMayEditOnly(fields: string[]): boolean {
   return fields.every((f) => allowed.includes(f));
 }
 
+/** Can this actor delete an entry owned/created by one of `ownerIds`? */
+export function canDeleteEntry(
+  actor: Pick<Actor, "id" | "role">,
+  ...ownerIds: Array<string | null | undefined>
+): boolean {
+  if (actor.role === "pm") return true;
+  if (actor.role === "team_member") {
+    return ownerIds.some((id) => typeof id === "string" && id.length > 0 && id === actor.id);
+  }
+  return false;
+}
+
 /** Can this actor apply this set of changed fields to an activity with this assignee? */
 export function canEditActivityFields(
   actor: Actor,
