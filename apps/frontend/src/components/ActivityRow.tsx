@@ -95,16 +95,16 @@ export function ActivityRow({
           </Text>
         </UnstyledButton>
         <Group gap={6} wrap="wrap" justify="flex-end">
-          {activity.isOverdue ? <Badge color="red">Overdue</Badge> : null}
+          {activity.isOverdue ? <Badge color="coral">Overdue</Badge> : null}
           {activity.isBlocked ? (
             <Tooltip label={activity.blockedReason ?? "Blocked"}>
-              <Badge color="red" variant="light">
+              <Badge color="coral" variant="light">
                 Blocked
               </Badge>
             </Tooltip>
           ) : null}
           {activity.waitingOnDependency ? (
-            <Badge color="orange" variant="light">
+            <Badge color="sun" variant="light">
               Waiting on dependency
             </Badge>
           ) : null}

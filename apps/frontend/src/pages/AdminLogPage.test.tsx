@@ -147,7 +147,7 @@ describe("Admin Log page", () => {
     expect(groups[0]!.textContent).toContain("2 tasks");
     expect(groups[0]!.querySelectorAll("[data-testid='admin-log-row']")).toHaveLength(2);
     const heads = [...el.querySelectorAll("thead th")].map((th) => th.textContent);
-    expect(heads).toContain("PM Approval");
+    expect(heads.some((h) => h?.includes("PM Approval"))).toBe(true);
     expect(groups[0]!.textContent).toMatch(/USM/);
     expect(groups[0]!.textContent).toMatch(/RAID/);
     expect(groups[1]!.textContent).toMatch(/OST/);
@@ -220,5 +220,41 @@ describe("PM Approval column in task tables", () => {
     expect(badges).toEqual(["Pending", "Approved"]);
     expect(byLabel("Complete usm-1 title")!.disabled).toBe(true);
     expect(byLabel("Complete raid-1 title")!.disabled).toBe(false);
+  });
+});
+
+describe("Admin Log delete", () => {
+  const confirmWith = (answer: boolean) => vi.spyOn(window, "confirm").mockReturnValue(answer);
+
+  it("renders Edit and Delete on every row", async () => {
+    const el = await mount(createElement(AdminLogPage));
+    for (const row of el.querySelectorAll("[data-testid='admin-log-row']")) {
+      const labels = [...row.querySelectorAll("button")].map((b) => b.textContent);
+      expect(labels).toEqual(expect.arrayContaining(["Edit", "Delete"]));
+    }
+  });
+
+  it("deletes through the API with the module and id once confirmed", async () => {
+    const ask = confirmWith(true);
+    vi.mocked(api.delete).mockResolvedValue(undefined);
+    const el = await mount(createElement(AdminLogPage));
+    const row = el.querySelectorAll("[data-testid='admin-log-row']")[0]!;
+    await act(async () => {
+      button("Delete", row)!.click();
+      await Promise.resolve();
+    });
+    expect(ask).toHaveBeenCalledWith(expect.stringContaining("usm-1 title"));
+    expect(api.delete).toHaveBeenCalledWith("/admin-log/items/user_story/usm-1");
+  });
+
+  it("does nothing when the confirmation is cancelled", async () => {
+    confirmWith(false);
+    const el = await mount(createElement(AdminLogPage));
+    const row = el.querySelectorAll("[data-testid='admin-log-row']")[0]!;
+    await act(async () => {
+      button("Delete", row)!.click();
+      await Promise.resolve();
+    });
+    expect(api.delete).not.toHaveBeenCalled();
   });
 });

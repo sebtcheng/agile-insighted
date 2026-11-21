@@ -1,7 +1,7 @@
 import { Badge, Collapse, Table, Text, UnstyledButton } from "@mantine/core";
 import { Fragment } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { WorkItem, WorkMemberRollup } from "@myapp/shared";
+import { sortTasksOngoingFirst, type WorkItem, type WorkMemberRollup } from "@myapp/shared";
 import { WorkItemsTable } from "../components/WorkItems";
 import { useProjects, useWorkload } from "../api/hooks";
 import { PageHeader, QueryState } from "../components/ui";
@@ -12,7 +12,7 @@ function MemberCells({ m }: { m: WorkMemberRollup | undefined }) {
       <Table.Td>{m?.total ?? 0}</Table.Td>
       <Table.Td>{m?.ongoing ?? 0}</Table.Td>
       <Table.Td>{m?.onTime ?? 0}</Table.Td>
-      <Table.Td>{m && m.delayed > 0 ? <Badge color="red">{m.delayed}</Badge> : 0}</Table.Td>
+      <Table.Td>{m && m.delayed > 0 ? <Badge color="coral">{m.delayed}</Badge> : 0}</Table.Td>
       <Table.Td>{m?.completed ?? 0}</Table.Td>
     </>
   );
@@ -32,7 +32,7 @@ function WorkList({
       </Text>
     );
   }
-  return <WorkItemsTable items={items} projectNames={projectNames} checkable />;
+  return <WorkItemsTable items={items} projectNames={projectNames} checkable deletable />;
 }
 
 export function WorkloadPage() {
@@ -67,6 +67,8 @@ export function WorkloadPage() {
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Person</Table.Th>
+                    <Table.Th>Owner</Table.Th>
+                    <Table.Th>Team member</Table.Th>
                     <Table.Th>Due this week</Table.Th>
                     <Table.Th>All tasks</Table.Th>
                     <Table.Th>Ongoing</Table.Th>
@@ -89,19 +91,21 @@ export function WorkloadPage() {
                             {r.fullName}
                           </UnstyledButton>
                         </Table.Td>
+                        <Table.Td data-col="owner">{r.ownedProjectsCount ?? 0}</Table.Td>
+                        <Table.Td data-col="team-member">{r.teamMemberProjectsCount ?? 0}</Table.Td>
                         <Table.Td>{r.dueThisWeek}</Table.Td>
                         <MemberCells m={byUser.get(r.userId)} />
                       </Table.Tr>
                       <Table.Tr key={`${r.userId}-items`}>
                         <Table.Td
-                          colSpan={7}
+                          colSpan={9}
                           p={0}
                           style={{ borderBottom: expanded === r.userId ? undefined : "none" }}
                         >
                           <Collapse in={expanded === r.userId}>
                             {expanded === r.userId ? (
                               <WorkList
-                                items={byUser.get(r.userId)?.items ?? []}
+                                items={sortTasksOngoingFirst(byUser.get(r.userId)?.items ?? [])}
                                 projectNames={projectNames}
                               />
                             ) : null}
@@ -113,7 +117,7 @@ export function WorkloadPage() {
                   {unassigned ? (
                     <Fragment key="unassigned">
                       <Table.Tr>
-                        <Table.Td colSpan={2}>
+                        <Table.Td>
                           <UnstyledButton
                             onClick={() => toggle("unassigned")}
                             aria-expanded={expanded === "unassigned"}
@@ -122,10 +126,13 @@ export function WorkloadPage() {
                             {expanded === "unassigned" ? "▾ " : "▸ "}Unassigned
                           </UnstyledButton>
                         </Table.Td>
+                        <Table.Td data-col="owner">—</Table.Td>
+                        <Table.Td data-col="team-member">—</Table.Td>
+                        <Table.Td />
                         <MemberCells m={unassigned} />
                       </Table.Tr>
                       <Table.Tr>
-                        <Table.Td colSpan={7} p={0} style={{ borderBottom: "none" }}>
+                        <Table.Td colSpan={9} p={0} style={{ borderBottom: "none" }}>
                           <Collapse in={expanded === "unassigned"}>
                             <WorkList items={unassigned.items} projectNames={projectNames} />
                           </Collapse>

@@ -58,7 +58,7 @@ export function StoryQuickCreate({
 
   return (
     <div data-prereq={kind} role="group" aria-label={copy.button}>
-      <Text size="xs" c="orange" mb={4}>
+      <Text size="xs" c="sun" mb={4}>
         {copy.missing}
       </Text>
       {canCreate ? (

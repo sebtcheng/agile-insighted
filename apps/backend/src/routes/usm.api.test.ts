@@ -60,11 +60,37 @@ describe("USM personas", () => {
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.status).toBeLessThan(500);
   });
-  it("only the PM may add users", async () => {
+  it("lets a team member add users to their own project, but only the PM delete them", async () => {
     const res = await member
       .post(`${BASE}/personas`)
-      .send({ projectId: f.project.id, name: "Nope" });
-    expect(res.status).toBe(403);
+      .send({ projectId: f.project.id, name: "By member" });
+    expect(res.status).toBe(201);
+    expect((await member.delete(`${BASE}/personas/${json<UsmPersonaDto>(res).id}`)).status).toBe(
+      403,
+    );
+  });
+  it("lists every visible project's users with project names when projectId is omitted or all", async () => {
+    await pm.post(`${BASE}/personas`).send({ projectId: f.otherProject.id, name: "Elsewhere" });
+    for (const q of [{}, { projectId: "all" }, { projectId: "" }]) {
+      const items = json<{ items: UsmPersonaDto[] }>(
+        await pm.get(`${BASE}/personas`).query(q),
+      ).items;
+      const projectIds = new Set(items.map((p) => p.projectId));
+      expect(
+        projectIds.has(f.project.id) && projectIds.has(f.otherProject.id),
+        JSON.stringify(q),
+      ).toBe(true);
+      expect(items.every((p) => typeof p.projectName === "string")).toBe(true);
+    }
+    // A team member only gets their own project's users, and creation still needs a project.
+    const mine = json<{ items: UsmPersonaDto[] }>(
+      await member.get(`${BASE}/personas`).query({ projectId: "all" }),
+    ).items;
+    expect(mine.every((p) => p.projectId !== f.otherProject.id)).toBe(true);
+    expect((await pm.post(`${BASE}/personas`).send({ projectId: "all", name: "x" })).status).toBe(
+      400,
+    );
+    expect((await pm.post(`${BASE}/personas`).send({ name: "x" })).status).toBe(400);
   });
 });
 
@@ -166,7 +192,7 @@ describe("USM step features", () => {
     ).items[0];
     expect(withFeatures?.features).toHaveLength(1);
   });
-  it("lets a team member tick but not edit", async () => {
+  it("lets a team member tick (once approved) and edit", async () => {
     const p = await persona("Member");
     const s = await step(p.id, "S");
     const feat = json<UsmFeatureDto>(
@@ -177,7 +203,7 @@ describe("USM step features", () => {
       (await member.patch(`${BASE}/features/${feat.id}`).send({ isCompleted: true })).status,
     ).toBe(200);
     expect((await member.patch(`${BASE}/features/${feat.id}`).send({ title: "Z" })).status).toBe(
-      403,
+      200,
     );
   });
   it("feeds Home and Workload through the shared work-item selector", async () => {
@@ -216,7 +242,8 @@ describe("USM add user (persona) contract", () => {
     const other = await pm
       .post(`${BASE}/personas`)
       .send({ projectId: f.otherProject.id, name: "X" });
-    expect(json<UsmPersonaDto>(other).sortOrder).toBe(0);
+    // Numbered within its own project (an earlier test may already have added one there), not continuing project A.
+    expect(json<UsmPersonaDto>(other).sortOrder).toBeLessThan(json<UsmPersonaDto>(b).sortOrder + 1);
   });
   it("answers bad input with a structured error, never an empty body", async () => {
     for (const body of [

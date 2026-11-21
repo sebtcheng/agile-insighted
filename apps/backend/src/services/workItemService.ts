@@ -6,7 +6,7 @@ import type {
   WorkItemsQuery,
   WorkSourceModule,
 } from "@myapp/shared";
-import { matchesWorkStatus, resolveAssignee } from "@myapp/shared";
+import { compareByStatusOngoingFirst, matchesWorkStatus, resolveAssignee } from "@myapp/shared";
 import { db } from "../db/client";
 import {
   activities,
@@ -65,7 +65,7 @@ export async function loadWorkItems(
   query: WorkItemsQuery = {},
   scope: ProjectScope = null,
   now: Date = new Date(),
-  opts: { includeArchived?: boolean } = {},
+  opts: { includeArchived?: boolean; onlyApproved?: boolean } = {},
 ): Promise<LoadedWork> {
   const timeZone = env.APP_TIMEZONE;
   const today = localDate(now, timeZone);
@@ -298,7 +298,8 @@ export async function loadWorkItems(
         pmApproval: r.pmApproval ?? "PENDING",
       };
     })
-    .filter((i) => !query.assigneeId || i.assigneeId === query.assigneeId);
+    .filter((i) => !query.assigneeId || i.assigneeId === query.assigneeId)
+    .filter((i) => !opts.onlyApproved || i.pmApproval === "APPROVED");
 
   return {
     items,
@@ -321,16 +322,11 @@ export async function listProjectWorkItems(
 ): Promise<ProjectWorkItemsResponse> {
   const loaded = await loadWorkItems({ projectId, assigneeId: q.assigneeId }, scope, now, {
     includeArchived: true,
+    onlyApproved: true,
   });
   const items = loaded.items
     .filter((i) => !q.module || i.sourceModule === q.module)
     .filter((i) => !q.status || matchesWorkStatus(i, q.status))
-    .sort(
-      (a, b) =>
-        Number(a.isCompleted) - Number(b.isCompleted) ||
-        (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999") ||
-        a.title.localeCompare(b.title) ||
-        a.id.localeCompare(b.id),
-    );
+    .sort(compareByStatusOngoingFirst);
   return { items, today: loaded.today };
 }

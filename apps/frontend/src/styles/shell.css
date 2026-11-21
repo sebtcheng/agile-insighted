@@ -1,13 +1,9 @@
-/* Global navigation shell: top bar and left rail. */
+/* Global navigation shell (LogPose spec, Home mockup): Deep Navy top bar with a 3px Ocean Teal rule,
+   Deep Navy rail with Sand stroke icons, active item as a Coral Sail rounded square. */
 .shell-header {
-  background: linear-gradient(
-    90deg,
-    var(--nav-gradient-from),
-    var(--nav-gradient-mid),
-    var(--nav-gradient-to)
-  );
+  background: var(--lp-navy);
   border-bottom: 0;
-  color: #fff;
+  color: var(--lp-sailcloth);
 }
 .shell-header::after {
   content: "";
@@ -15,49 +11,60 @@
   inset-inline: 0;
   bottom: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--accent-left) 50%, var(--accent-right) 50%);
+  background: var(--lp-teal);
   pointer-events: none;
-}
-.shell-header .mantine-Text-root,
-.shell-header .shell-account {
-  color: #fff;
 }
 .shell-header .shell-brand {
   font-family: var(--font-display);
-}
-.shell-header input::placeholder {
-  color: var(--text-secondary);
+  font-weight: 900;
+  font-size: 1.5rem;
+  line-height: 1;
+  letter-spacing: var(--track-display);
+  color: var(--lp-sand);
 }
 .shell-header .mantine-Input-input {
-  border-radius: 6px;
-  border-color: var(--border-muted);
+  background: var(--lp-sailcloth);
+  border: var(--outline-thin);
+  border-radius: var(--radius-md);
+  color: var(--lp-text);
   transition: var(--ui-transition);
 }
+.shell-header input::placeholder {
+  color: var(--lp-placeholder);
+}
 .shell-account {
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   transition: var(--ui-transition);
 }
 .shell-account:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(246, 231, 200, 0.12);
+}
+.shell-header .shell-account .mantine-Text-root {
+  font-family: var(--font-body);
+  font-weight: 700;
+  color: var(--lp-sailcloth);
+}
+.shell-header .shell-account .shell-role {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: var(--track-micro);
+  text-transform: uppercase;
+  color: var(--lp-sunshine);
+}
+.shell-header .shell-chevron {
+  color: var(--lp-sailcloth);
 }
 
 .shell-navbar {
-  background: linear-gradient(
-    180deg,
-    var(--nav-gradient-from),
-    var(--nav-gradient-mid),
-    var(--nav-gradient-to)
-  );
+  background: var(--lp-navy);
   border-inline-end: 0;
   overflow: hidden;
   z-index: 101;
-  /* The rail overlays the main panel (main keeps its 64px offset), so only the rail's own width animates. */
-  /* transform keeps Mantine's mobile slide-in, now on the same curve. */
+  /* The rail overlays the main panel, so only the rail's own width animates. */
   transition:
     width var(--motion-duration) var(--motion-ease),
     transform var(--motion-duration) var(--motion-ease);
 }
-/* Labels fade in with the width instead of being revealed as the edge slides past them. */
 .shell-navbar .mantine-NavLink-body {
   overflow: hidden;
   opacity: 0;
@@ -67,64 +74,75 @@
   opacity: 1;
 }
 .shell-navbar .mantine-NavLink-root {
-  color: #fff;
-  border-radius: 6px;
+  color: var(--lp-sand);
+  border-radius: var(--radius-md);
+  margin-block: 4px;
   transition: var(--ui-transition);
 }
 .shell-navbar .mantine-NavLink-root svg,
 .shell-navbar .mantine-NavLink-label {
-  color: #fff;
+  color: var(--lp-sand);
+  font-weight: 500;
 }
 .shell-navbar .mantine-NavLink-root:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(246, 231, 200, 0.1);
 }
 .shell-navbar .mantine-NavLink-root[data-active],
 .shell-navbar .mantine-NavLink-root[aria-current="page"] {
-  background: var(--nav-active-overlay);
-  box-shadow: inset 3px 0 0 var(--nav-active-marker);
+  background: var(--lp-coral);
+  box-shadow: var(--shadow-sm);
+  outline: 2px solid var(--lp-sand);
+  outline-offset: -2px;
+}
+.shell-navbar .mantine-NavLink-root[data-active] svg,
+.shell-navbar .mantine-NavLink-root[data-active] .mantine-NavLink-label,
+.shell-navbar .mantine-NavLink-root[aria-current="page"] svg,
+.shell-navbar .mantine-NavLink-root[aria-current="page"] .mantine-NavLink-label {
+  color: var(--lp-navy);
+  font-weight: 700;
 }
 .shell-nav-section {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 2px solid var(--lp-teal);
 }
 .shell-nav-section[data-first="true"] {
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
 }
-/* Headings open by height and opacity, in step with the rail, so links slide down instead of jumping. */
+/* Headings open by height and opacity, in step with the rail. */
 .shell-nav-heading {
   max-height: 0;
   padding: 0 10px;
   overflow: hidden;
   opacity: 0;
-  font-size: 11px;
   line-height: 16px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--lp-sunshine);
   transition:
     max-height var(--motion-duration) var(--motion-ease),
     padding-bottom var(--motion-duration) var(--motion-ease),
     opacity var(--motion-duration) var(--motion-ease);
+}
+.shell-navbar[data-expanded="false"] .shell-nav-heading {
+  display: none;
 }
 .shell-nav-section[data-expanded="true"] .shell-nav-heading {
   max-height: 20px;
   padding-bottom: 4px;
   opacity: 1;
 }
-.shell-nav-section[data-expanded="true"][data-first="true"] .shell-nav-heading {
-  padding-top: 0;
-}
 .shell-navbar .mantine-NavLink-root:focus-visible {
-  outline: 2px solid var(--nav-active-marker);
-  outline-offset: -2px;
+  outline: 3px solid var(--lp-sunshine);
+  outline-offset: -3px;
 }
 
-/* Main panel: each page fades and rises 4px on entry. Opacity and transform only (GPU-composited), and the
-   `backwards` fill leaves no transform behind once settled, so nothing shifts and pointer events are never held. */
+.mantine-AppShell-main {
+  background: var(--lp-app-ground);
+}
+
+/* Each page fades and rises 4px on entry (opacity and transform only). */
 @keyframes shell-page-enter {
   from {
     opacity: 0;
@@ -142,16 +160,4 @@
   .shell-page {
     animation: none;
   }
-}
-
-.shell-header .shell-role,
-.shell-header .shell-chevron {
-  color: #fff;
-}
-
-.shell-header .shell-account,
-.shell-header .shell-account .mantine-Text-root,
-.shell-header .shell-role {
-  font-family: var(--font-display);
-  color: #fff;
 }

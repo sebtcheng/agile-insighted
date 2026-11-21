@@ -69,14 +69,16 @@ const member = (over: Partial<WorkMemberRollup>): WorkMemberRollup => ({
   ...over,
 });
 
-const row = (userId: string, fullName: string) => ({
+const row = (userId: string, fullName: string, owned = 0, memberCount = 0) => ({
   userId,
   fullName,
+  ownedProjectsCount: owned,
+  teamMemberProjectsCount: memberCount,
   dueThisWeek: 3,
 });
 // No active sprint anywhere; Klein has tagged OST, USM, Kano and RAID work, Clea has none, one item is unassigned.
 const DATA: WorkloadResponse = {
-  items: [row("u2", "Clea"), row("u1", "Klein")],
+  items: [row("u2", "Clea"), row("u1", "Klein", 2, 3)],
   members: [
     member({
       userId: "u2",
@@ -174,11 +176,13 @@ const cells = (name: string) => {
 };
 
 describe("Workload page", () => {
-  it("binds every cell to its column: the table has exactly the seven kept columns", async () => {
+  it("binds every cell to its column: Owner and Team member sit right after Person", async () => {
     await mount();
     const h = headers();
     expect(h).toEqual([
       "Person",
+      "Owner",
+      "Team member",
       "Due this week",
       "All tasks",
       "Ongoing",
@@ -191,7 +195,10 @@ describe("Workload page", () => {
     expect(document.body.textContent).not.toContain("No active sprint");
     expect(document.body.textContent).not.toContain("over limit");
     const c = cells("Klein");
-    expect(c).toHaveLength(7);
+    expect(c).toHaveLength(9);
+    // Klein owns 2 projects and is a team member on 3.
+    expect(c[h.indexOf("Owner")]).toBe("2");
+    expect(c[h.indexOf("Team member")]).toBe("3");
     expect(c[h.indexOf("Due this week")]).toBe("3");
     expect(c[h.indexOf("All tasks")]).toBe("4");
     expect(c[h.indexOf("Ongoing")]).toBe("2");
@@ -206,14 +213,17 @@ describe("Workload page", () => {
     const clea = cells("Clea");
     expect(clea[h.indexOf("All tasks")]).toBe("0");
     const un = cells("Unassigned");
-    expect(un).toHaveLength(6); // one name cell spanning Person and Due this week, then the five metrics (2 + 5 = 7)
+    // Person, Owner, Team member, an empty Due this week cell, then the five metrics.
+    expect(un).toHaveLength(9);
     expect(un[0]).toContain("Unassigned");
-    expect(un[1]).toBe("1");
-    expect(document.querySelector("tbody td[colspan='2']")?.textContent).toContain("Unassigned");
+    expect(un[1]).toBe("—");
+    expect(un[2]).toBe("—");
+    expect(un[4]).toBe("1");
     const spans = [...document.querySelectorAll("tbody td[colspan]")].map((c) =>
       c.getAttribute("colspan"),
     );
-    expect(spans.filter((s) => s === "7").length).toBeGreaterThan(0);
+    expect(spans.filter((s) => s === "9").length).toBeGreaterThan(0);
+    expect(spans).not.toContain("7");
   });
 
   it("expands a person to every assigned item across the modules, with module pill and schedule", async () => {
@@ -329,6 +339,77 @@ describe("Workload page", () => {
   });
 });
 
+describe("Workload task delete", () => {
+  afterEach(() => {
+    auth.role = "pm";
+  });
+  const expandKlein = async () => {
+    const toggle = [...document.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Klein"),
+    );
+    await act(() => {
+      toggle!.click();
+      return Promise.resolve();
+    });
+    await flush();
+  };
+  const deleteButton = (title: string) =>
+    document.querySelector<HTMLButtonElement>(`button[aria-label="Delete ${title}"]`);
+  const modalButton = (label: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>("[role='dialog'] button")].find(
+      (b) => b.textContent?.trim() === label,
+    );
+
+  for (const role of ["pm", "team_member"]) {
+    it(`renders Delete right of PM Approval for ${role}`, async () => {
+      auth.role = role;
+      await mount();
+      await expandKlein();
+      const ths = [...document.querySelectorAll("table table thead th")].map((h) =>
+        h.textContent?.trim(),
+      );
+      expect(ths.at(-1)).toBe("Delete");
+      expect(ths.at(-2)).toBe("PM Approval");
+      expect(deleteButton("ost-1 title")).toBeTruthy();
+    });
+  }
+
+  it("opens a confirmation first, cancels without a request, then deletes and refetches", async () => {
+    vi.mocked(api.delete).mockResolvedValue(undefined);
+    await mount();
+    await expandKlein();
+    await act(() => {
+      deleteButton("ost-1 title")!.click();
+      return Promise.resolve();
+    });
+    await flush();
+    expect(document.querySelector("[role='dialog']")?.textContent).toContain("ost-1 title");
+    expect(api.delete).not.toHaveBeenCalled();
+    await act(() => {
+      modalButton("Cancel")!.click();
+      return Promise.resolve();
+    });
+    await flush();
+    expect(api.delete).not.toHaveBeenCalled();
+
+    await act(() => {
+      deleteButton("ost-1 title")!.click();
+      return Promise.resolve();
+    });
+    await flush();
+    const before = vi.mocked(api.get).mock.calls.filter((c) => c[0] === "/workload").length;
+    await act(() => {
+      modalButton("Delete")!.click();
+      return Promise.resolve();
+    });
+    await flush();
+    expect(api.delete).toHaveBeenCalledWith("/work-items/ost/ost-1");
+    expect(
+      vi.mocked(api.get).mock.calls.filter((c) => c[0] === "/workload").length,
+    ).toBeGreaterThan(before);
+  });
+});
+
 describe("Workload page as a team member", () => {
   afterEach(() => {
     auth.role = "pm";
@@ -337,12 +418,14 @@ describe("Workload page as a team member", () => {
   it("shows every person and their counts, with expandable task rows, like a PM", async () => {
     auth.role = "team_member";
     await mount();
-    const names = [...document.querySelectorAll("tbody tr td:first-child button")].map((b) =>
+    const names = [
+      ...document.querySelectorAll("tbody tr td:first-child button:not([aria-label^='Delete'])"),
+    ].map((b) =>
       b.textContent?.replace(/[▸▾]\s*/, "").trim(),
     );
     expect(names).toEqual(["Clea", "Klein", "Unassigned"]);
-    expect(cells("Klein")[2]).toBe("4");
-    expect(cells("Clea")).toHaveLength(7);
+    expect(cells("Klein")[4]).toBe("4");
+    expect(cells("Clea")).toHaveLength(9);
     const toggle = [...document.querySelectorAll("button")].find((b) =>
       b.textContent?.includes("Klein"),
     )!;

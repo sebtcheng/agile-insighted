@@ -1,5 +1,7 @@
+import { useState } from "react";
 import {
   Badge,
+  Button,
   Card,
   Checkbox,
   Group,
@@ -19,6 +21,7 @@ import { useToggleWorkItem } from "../api/hooks";
 import { useAuth, useIsPm } from "../auth";
 import { isCheckable } from "../lib/workItemToggle";
 import { useOpenActivity } from "./ActivityRow";
+import { DeleteTaskModal } from "./DeleteTaskModal";
 import { PmApprovalBadge, approvalGateProps } from "./PmApprovalBadge";
 import { fmtDate, toast } from "./ui";
 import { useGovernedUpdate } from "./useGovernedUpdate";
@@ -151,7 +154,7 @@ export function WorkItemRow({
         </div>
       </Group>
       <Group gap={6} wrap="nowrap">
-        <Badge variant="outline" color="gray">
+        <Badge variant="outline" color="navy">
           {SOURCE_MODULE_LABELS[item.sourceModule]}
         </Badge>
         <ScheduleBadge status={item.scheduleStatus} />
@@ -170,74 +173,101 @@ export function WorkItemsTable({
   projectNames,
   onOpen,
   checkable = false,
+  deletable = false,
 }: {
   items: WorkItem[];
   projectNames: Map<string, string>;
   checkable?: boolean;
+  /** Adds a Delete column right of PM Approval (any role) with a confirmation modal. */
+  deletable?: boolean;
   /** Returns a click handler for items that can be opened, or undefined for those that cannot. */
   onOpen?: (item: WorkItem) => (() => void) | undefined;
 }) {
+  const [pendingDelete, setPendingDelete] = useState<WorkItem | null>(null);
   return (
-    <Table verticalSpacing={4} fz="sm" mb="xs">
-      <Table.Thead>
-        <Table.Tr>
-          {checkable ? <Table.Th w={36} aria-label="Done" /> : null}
-          <Table.Th>Task</Table.Th>
-          <Table.Th>Project</Table.Th>
-          <Table.Th>Module</Table.Th>
-          <Table.Th>Assignee</Table.Th>
-          <Table.Th>Status</Table.Th>
-          <Table.Th>Due date</Table.Th>
-          <Table.Th>PM Approval</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        {items.map((i) => {
-          const open = onOpen?.(i);
-          return (
-            <Table.Tr
-              key={`${i.sourceModule}-${i.id}`}
-              data-testid="work-item-row"
-              onClick={open}
-              style={open ? { cursor: "pointer" } : undefined}
-            >
-              {checkable ? (
+    <>
+      <Table verticalSpacing={4} fz="sm" mb="xs">
+        <Table.Thead>
+          <Table.Tr>
+            {checkable ? <Table.Th w={36} aria-label="Done" /> : null}
+            <Table.Th>Task</Table.Th>
+            <Table.Th>Project</Table.Th>
+            <Table.Th>Module</Table.Th>
+            <Table.Th>Assignee</Table.Th>
+            <Table.Th>Status</Table.Th>
+            <Table.Th>Due date</Table.Th>
+            <Table.Th>PM Approval</Table.Th>
+            {deletable ? <Table.Th>Delete</Table.Th> : null}
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {items.map((i) => {
+            const open = onOpen?.(i);
+            return (
+              <Table.Tr
+                key={`${i.sourceModule}-${i.id}`}
+                data-testid="work-item-row"
+                onClick={open}
+                style={open ? { cursor: "pointer" } : undefined}
+              >
+                {checkable ? (
+                  <Table.Td>
+                    <WorkItemCheck item={i} />
+                  </Table.Td>
+                ) : null}
                 <Table.Td>
-                  <WorkItemCheck item={i} />
+                  <Text
+                    size="sm"
+                    lineClamp={1}
+                    td={i.isCompleted ? "line-through" : undefined}
+                    c={i.isCompleted ? "dimmed" : undefined}
+                  >
+                    {i.title}
+                  </Text>
+                  <Text size="xs" c="dimmed" lineClamp={1}>
+                    {i.parentTitle ?? SOURCE_MODULE_LABELS[i.sourceModule]}
+                  </Text>
                 </Table.Td>
-              ) : null}
-              <Table.Td>
-                <Text
-                  size="sm"
-                  lineClamp={1}
-                  td={i.isCompleted ? "line-through" : undefined}
-                  c={i.isCompleted ? "dimmed" : undefined}
-                >
-                  {i.title}
-                </Text>
-                <Text size="xs" c="dimmed" lineClamp={1}>
-                  {i.parentTitle ?? SOURCE_MODULE_LABELS[i.sourceModule]}
-                </Text>
-              </Table.Td>
-              <Table.Td>{projectNames.get(i.projectId) ?? "—"}</Table.Td>
-              <Table.Td>
-                <Badge variant="outline" color="gray">
-                  {SOURCE_MODULE_LABELS[i.sourceModule]}
-                </Badge>
-              </Table.Td>
-              <Table.Td>{i.assigneeName ?? "Unassigned"}</Table.Td>
-              <Table.Td>
-                <ScheduleBadge status={i.scheduleStatus} />
-              </Table.Td>
-              <Table.Td>{i.dueDate ? fmtDate(i.dueDate) : "No due date"}</Table.Td>
-              <Table.Td>
-                <PmApprovalBadge value={i.pmApproval} />
-              </Table.Td>
-            </Table.Tr>
-          );
-        })}
-      </Table.Tbody>
-    </Table>
+                <Table.Td>{projectNames.get(i.projectId) ?? "—"}</Table.Td>
+                <Table.Td>
+                  <Badge variant="outline" color="navy">
+                    {SOURCE_MODULE_LABELS[i.sourceModule]}
+                  </Badge>
+                </Table.Td>
+                <Table.Td>{i.assigneeName ?? "Unassigned"}</Table.Td>
+                <Table.Td>
+                  <ScheduleBadge status={i.scheduleStatus} />
+                </Table.Td>
+                <Table.Td>{i.dueDate ? fmtDate(i.dueDate) : "No due date"}</Table.Td>
+                <Table.Td>
+                  <PmApprovalBadge value={i.pmApproval} />
+                </Table.Td>
+                {deletable ? (
+                  <Table.Td onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      size="compact-xs"
+                      variant="subtle"
+                      color="coral"
+                      aria-label={`Delete ${i.title}`}
+                      onClick={() => setPendingDelete(i)}
+                    >
+                      Delete
+                    </Button>
+                  </Table.Td>
+                ) : null}
+              </Table.Tr>
+            );
+          })}
+        </Table.Tbody>
+      </Table>
+      {deletable ? (
+        <DeleteTaskModal
+          item={pendingDelete}
+          projectName={pendingDelete ? projectNames.get(pendingDelete.projectId) : undefined}
+          onClose={() => setPendingDelete(null)}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -267,7 +297,7 @@ export function WorkItemsCards({
           <Group justify="space-between" wrap="nowrap" mb={4}>
             <Group gap="xs" wrap="nowrap">
               {checkable ? <WorkItemCheck item={i} /> : null}
-              <Badge variant="outline" color="gray">
+              <Badge variant="outline" color="navy">
                 {SOURCE_MODULE_LABELS[i.sourceModule]}
               </Badge>
             </Group>
@@ -306,9 +336,12 @@ export function WorkItemsView({
   onOpen,
   detailed = false,
   checkable = false,
+  deletable = false,
 }: {
   items: WorkItem[];
   view: WorkView;
+  /** Table view only: adds the Delete column. */
+  deletable?: boolean;
   /** Adds the leftmost completion checkbox in every view. */
   checkable?: boolean;
   projectNames: Map<string, string>;
@@ -323,6 +356,7 @@ export function WorkItemsView({
         projectNames={projectNames}
         onOpen={onOpen}
         checkable={checkable}
+        deletable={deletable}
       />
     );
   if (view === "cards")
@@ -380,15 +414,11 @@ export function SummaryStrip({ summary }: { summary: WorkSummary }) {
     ["Completed", summary.completed],
   ];
   return (
-    <SimpleGrid cols={{ base: 2, sm: 4 }} data-testid="work-summary">
+    <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md" data-testid="work-summary">
       {cells.map(([label, n]) => (
-        <div key={label}>
-          <Text size="xs" tt="uppercase" fw={700} c="dimmed">
-            {label}
-          </Text>
-          <Text fw={600} fz="lg">
-            {n}
-          </Text>
+        <div key={label} className="lp-tile" data-tone={label.replace(" ", "-").toLowerCase()}>
+          <Text className="lp-label">{label}</Text>
+          <Text className="lp-stat">{n}</Text>
         </div>
       ))}
     </SimpleGrid>

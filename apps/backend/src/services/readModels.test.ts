@@ -5,6 +5,8 @@ import { createApp } from "../app";
 import { db } from "../db/client";
 import {
   activityDependencies,
+  projectMembers,
+  projects,
   releases,
   sprintMemberCapacity,
   sprints,
@@ -122,6 +124,34 @@ describe("workload", () => {
       { sprintId: f.sprint.id, userId: f.m1.id, capacityItems: 1 },
       { sprintId: f.sprint.id, userId: f.m2.id, capacityItems: 5 },
     ]);
+  });
+
+  it("counts owned and team-member projects per person, zero when none", async () => {
+    const before = (await getWorkload({ now: NOW })).items;
+    const get = (rows: typeof before, id: string) => rows.find((r) => r.userId === id)!;
+    const [extra] = await db
+      .insert(projects)
+      .values({ name: `WL ${f.tag}`, code: `WL-${f.tag}`, ownerId: f.m2.id })
+      .returning({ id: projects.id });
+    await db.insert(projectMembers).values({ projectId: extra!.id, userId: f.m1.id });
+    try {
+      const after = (await getWorkload({ now: NOW })).items;
+      expect(get(after, f.m2.id).ownedProjectsCount).toBe(
+        get(before, f.m2.id).ownedProjectsCount + 1,
+      );
+      expect(get(after, f.m1.id).teamMemberProjectsCount).toBe(
+        get(before, f.m1.id).teamMemberProjectsCount + 1,
+      );
+      expect(get(after, f.m1.id).ownedProjectsCount).toBe(get(before, f.m1.id).ownedProjectsCount);
+      for (const r of after) {
+        expect(Number.isInteger(r.ownedProjectsCount) && r.ownedProjectsCount >= 0).toBe(true);
+        expect(Number.isInteger(r.teamMemberProjectsCount) && r.teamMemberProjectsCount >= 0).toBe(
+          true,
+        );
+      }
+    } finally {
+      await db.delete(projects).where(eq(projects.id, extra!.id));
+    }
   });
 
   it("counts due-this-week per person", async () => {

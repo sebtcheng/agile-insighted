@@ -6,13 +6,13 @@
 }
 
 .login-stage {
-  --obsidian: #050814;
-  --glass: rgba(13, 18, 36, 0.72);
-  --glass-line: rgba(255, 255, 255, 0.14);
-  --ink: #e8ecf8;
-  --ink-2: #a9b4d0; /* 8:1 on the glass surface */
-  --ink-3: #8f9bbd; /* placeholders, 5.9:1 */
-  --danger-ink: #ff9aa8;
+  --obsidian: #dff3f1;
+  --glass: #ffffff;
+  --glass-line: #0b2545;
+  --ink: #0b2545;
+  --ink-2: #1f3a57;
+  --ink-3: #55677d;
+  --danger-ink: #c2412a;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --mouse-x: 50%;
   --mouse-y: 30%;
@@ -20,10 +20,10 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 16px;
   min-height: 100vh;
   overflow: hidden;
-  padding: 20px 16px 24px;
+  padding: 16px 16px 18px;
   background: var(--obsidian);
   color: var(--ink);
   font-family: var(--font-body);
@@ -31,7 +31,7 @@
 }
 @media (min-width: 992px) {
   .login-stage {
-    padding: 28px 48px 32px;
+    padding: 20px 48px 18px;
   }
 }
 
@@ -56,20 +56,20 @@
 .login-stage .ls-blob--a {
   top: -20vmax;
   left: -15vmax;
-  background: radial-gradient(circle, #1e3a8a, transparent 65%);
+  background: radial-gradient(circle, var(--lp-sea-mist), transparent 65%);
   animation: ls-drift-a 14s ease-in-out infinite alternate;
 }
 .login-stage .ls-blob--b {
   right: -20vmax;
   top: 10vmax;
-  background: radial-gradient(circle, #4f46e5, transparent 65%);
+  background: radial-gradient(circle, var(--lp-sea-mist), transparent 65%);
   animation: ls-drift-b 18s ease-in-out infinite alternate;
 }
 .login-stage .ls-blob--c {
   bottom: -25vmax;
   left: 20vmax;
-  background: radial-gradient(circle, #06b6d4, transparent 65%);
-  opacity: 0.32;
+  background: radial-gradient(circle, var(--lp-shallows), transparent 65%);
+  opacity: 0.35;
   animation: ls-drift-c 16s ease-in-out infinite alternate;
 }
 .login-stage .ls-blob--d {
@@ -77,8 +77,8 @@
   right: 10vmax;
   width: 30vmax;
   height: 30vmax;
-  background: radial-gradient(circle, #f59e0b, transparent 65%);
-  opacity: 0.12;
+  background: radial-gradient(circle, var(--lp-sand), transparent 65%);
+  opacity: 0.45;
   animation: ls-drift-a 12s ease-in-out infinite alternate-reverse;
 }
 @keyframes ls-drift-a {
@@ -111,11 +111,7 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 .login-stage .ls-spot {
-  background: radial-gradient(
-    480px circle at var(--mouse-x) var(--mouse-y),
-    rgba(99, 102, 241, 0.18),
-    transparent 70%
-  );
+  display: none;
 }
 
 /* ---- entrance choreography: blur-to-sharp, staggered by --d */
@@ -160,7 +156,9 @@
   padding: 6px 14px 6px 12px;
   border: 1px solid var(--glass-line);
   border-radius: 9999px;
-  background: rgba(13, 18, 36, 0.6);
+  background: #0b2545;
+  color: #f6e7c8;
+  border: 2px solid #0b2545;
   color: var(--ink);
   font-family: var(--font-mono);
   font-size: 12px;
@@ -171,14 +169,14 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #34d399;
+  background: var(--lp-teal);
 }
 .login-stage .ls-dot::after {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  border: 1px solid #34d399;
+  border: 1.5px solid var(--lp-navy);
   animation: ls-ping 1.8s ease-out infinite;
 }
 @keyframes ls-ping {
@@ -198,7 +196,9 @@
   padding: 6px;
   border: 1px solid var(--glass-line);
   border-radius: 12px;
-  background: rgba(13, 18, 36, 0.6);
+  background: #0b2545;
+  color: #f6e7c8;
+  border: 2px solid #0b2545;
   backdrop-filter: blur(12px);
 }
 .login-stage .ls-chip {
@@ -262,7 +262,7 @@
   height: 3px;
   margin: 10px 0 18px;
   border-radius: 2px;
-  background: linear-gradient(90deg, #4f46e5, #06b6d4, #f59e0b, #4f46e5);
+  background: var(--lp-brass);
   background-size: 200% 100%;
   animation: ls-slide 4s linear infinite;
 }
@@ -277,12 +277,7 @@
   font-size: clamp(2.5rem, 6vw, 4.25rem);
   font-weight: 700;
   line-height: 1.04;
-  background: linear-gradient(100deg, #ffffff 20%, #a5b4fc 40%, #67e8f9 50%, #ffffff 65%);
-  background-size: 250% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: ls-shimmer 7s ease-in-out infinite;
+  color: var(--lp-navy);
 }
 @keyframes ls-shimmer {
   0%,
@@ -318,7 +313,9 @@
   padding: 14px;
   border: 1px solid var(--glass-line);
   border-radius: 12px;
-  background: rgba(13, 18, 36, 0.55);
+  background: #0b2545;
+  color: #f6e7c8;
+  border: 2px solid #0b2545;
   color: var(--ink);
   text-align: left;
   cursor: pointer;
@@ -347,7 +344,7 @@
   opacity: 1;
 }
 .login-stage .ls-card:focus-visible {
-  outline: 2px solid #a5b4fc;
+  outline: 2px solid var(--lp-teal);
   outline-offset: 2px;
 }
 .login-stage .ls-card > * {
@@ -378,7 +375,7 @@
   width: 100%;
   height: 100%;
   border-radius: 2px;
-  background: linear-gradient(90deg, #4f46e5, #22d3ee);
+  background: var(--lp-teal);
   transform-origin: left;
   transform: scaleX(calc(var(--pct) / 100));
   animation: ls-fill 1100ms var(--ease-out) 500ms both;
@@ -416,8 +413,8 @@
   background: conic-gradient(
     from var(--beam-angle),
     transparent 0 70%,
-    #06b6d4 82%,
-    #818cf8 92%,
+    var(--lp-shallows) 82%,
+    var(--lp-teal) 92%,
     transparent 100%
   );
   -webkit-mask:
@@ -443,7 +440,7 @@
   font-family: var(--font-display);
   font-size: 1.75rem;
   font-weight: 700;
-  color: #fff;
+  color: var(--lp-navy);
 }
 .login-stage .ls-sub {
   margin: 4px 0 10px;
@@ -465,7 +462,7 @@
   transition: color 160ms var(--ease-out);
 }
 .login-stage .ls-field:focus-within .ls-label {
-  color: #c7d2fe;
+  color: var(--lp-navy);
 }
 .login-stage .ls-input-wrap {
   position: relative;
@@ -475,9 +472,9 @@
   width: 100%;
   height: 48px;
   padding: 0 14px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1.5px solid var(--lp-navy);
   border-radius: 10px;
-  background: rgba(2, 6, 23, 0.6);
+  background: var(--lp-input-fill);
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.35);
   color: var(--ink);
   font-family: var(--font-body);
@@ -492,14 +489,14 @@
 }
 .login-stage .ls-input:focus-visible {
   outline: none;
-  border-color: #818cf8;
+  border-color: var(--lp-teal);
   box-shadow:
     inset 0 2px 4px rgba(0, 0, 0, 0.35),
     0 0 0 3px rgba(129, 140, 248, 0.35),
     0 0 20px rgba(99, 102, 241, 0.35);
 }
 .login-stage .ls-input[aria-invalid="true"] {
-  border-color: #fb7185;
+  border-color: var(--lp-coral-text);
 }
 .login-stage .ls-input--toggle {
   padding-right: 70px;
@@ -523,10 +520,10 @@
   right: 7px;
   height: 34px;
   padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 2px solid #0b2545;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--ink);
+  background: #0b2545;
+  color: #ffffff;
   font-family: var(--font-display);
   font-size: 12px;
   font-weight: 600;
@@ -540,12 +537,12 @@
   border-color: rgba(165, 180, 252, 0.6);
 }
 .login-stage .ls-toggle:focus-visible {
-  outline: 2px solid #a5b4fc;
+  outline: 2px solid var(--lp-teal);
   outline-offset: 2px;
 }
-/* Fixed slot: the message fades in without moving the next field. */
+/* Fixed slot: collapses when empty so form spacing stays compact. */
 .login-stage .ls-slot {
-  min-height: 20px;
+  min-height: 0;
 }
 .login-stage .ls-error,
 .login-stage .ls-caps {
@@ -558,7 +555,7 @@
   animation: ls-fade 160ms ease-out both;
 }
 .login-stage .ls-caps {
-  color: #fcd34d;
+  color: var(--lp-sunshine);
 }
 .login-stage .ls-alert {
   padding: 10px 12px;
@@ -579,8 +576,11 @@
   overflow: hidden;
   border: 0;
   border-radius: 10px;
-  background: linear-gradient(100deg, #3730a3, #4f46e5 55%, #0e7490);
-  color: #fff;
+  background: #ff6b4a;
+  color: #ffffff;
+  border: 2px solid #0b2545;
+  box-shadow: 3px 3px 0 #0b2545;
+  color: var(--lp-navy);
   font-family: var(--font-display);
   font-size: 16px;
   font-weight: 700;
@@ -612,7 +612,7 @@
   transform: scale(0.985);
 }
 .login-stage .ls-submit:focus-visible {
-  outline: 3px solid #a5b4fc;
+  outline: 3px solid var(--lp-teal);
   outline-offset: 2px;
 }
 .login-stage .ls-submit:disabled {
@@ -633,18 +633,26 @@
   }
 }
 .login-stage .ls-help {
-  margin-top: 16px;
-  padding: 14px 16px;
-  border: 1px solid rgba(103, 232, 249, 0.25);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1.5px dashed #b07a1f;
   border-radius: 10px;
-  background: rgba(14, 116, 144, 0.22);
-  color: #d5e4f5;
+  background: #f6e7c8;
+  color: #6b4510;
   font-size: 13px;
   line-height: 1.5;
 }
+.login-stage .ls-help-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--lp-navy);
+}
 .login-stage .ls-help strong {
   display: block;
-  color: #fff;
+  color: var(--lp-navy);
   font-family: var(--font-display);
 }
 .login-stage .ls-footer {
@@ -686,4 +694,208 @@
   .login-stage .ls-spinner {
     animation-duration: 2s;
   }
+}
+
+/* ==== LogPose spec overrides (docs/112026_logpose_ui_spec.pdf, page 1). Placed last so they win over the
+   earlier glass/indigo treatment without changing any selector the page or tests rely on. */
+.login-stage {
+  background: var(--lp-sea-mist);
+  color: var(--lp-text);
+}
+.login-stage .ls-pill {
+  background: var(--lp-sailcloth);
+  color: var(--lp-text);
+  border: var(--outline-thin);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: none;
+}
+.login-stage .ls-dock {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: var(--lp-navy);
+  color: var(--lp-sand);
+  border: var(--outline);
+  border-radius: 9999px;
+  backdrop-filter: none;
+}
+.login-stage .ls-chip {
+  color: var(--lp-sand);
+  font-family: var(--font-body);
+  font-weight: 700;
+}
+.login-stage .ls-chip:hover {
+  transform: none;
+  border-color: var(--lp-sand);
+  box-shadow: none;
+}
+.login-stage .ls-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: var(--track-micro);
+  color: var(--lp-brass-text);
+}
+.login-stage .ls-bar {
+  display: none;
+}
+.login-stage .ls-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-wordmark);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: var(--track-display);
+  color: var(--lp-text);
+}
+.login-stage .ls-lede {
+  font-size: var(--fs-lead);
+  line-height: 1.45;
+  color: var(--lp-text-2);
+}
+.login-stage .ls-cards {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+.login-stage .ls-card {
+  background: var(--lp-sailcloth);
+  color: var(--lp-text);
+  border: var(--outline);
+  border-radius: var(--radius-tile);
+  box-shadow: 2px 2px 0 var(--lp-navy);
+  backdrop-filter: none;
+}
+.login-stage .ls-card::before {
+  display: none;
+}
+.login-stage .ls-card[aria-current="true"] {
+  transform: translate(-2px, -2px);
+  background: var(--lp-sand);
+  border-color: var(--lp-navy);
+  box-shadow: 3px 3px 0 var(--lp-navy);
+}
+.login-stage .ls-card-title {
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--lp-text);
+}
+.login-stage .ls-card-meta {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--lp-text);
+}
+.login-stage .ls-meter {
+  height: 10px;
+  overflow: hidden;
+  border: var(--outline-thin);
+  border-radius: var(--radius-pill);
+  background: var(--lp-sailcloth);
+}
+.login-stage .ls-meter > span {
+  border-radius: var(--radius-pill);
+}
+.login-stage .ls-auth {
+  padding: 28px;
+  background: var(--lp-sailcloth);
+  border: var(--outline);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: none;
+  transform: none;
+}
+.login-stage .ls-auth::before {
+  display: none;
+}
+.login-stage .ls-heading {
+  font-family: var(--font-display);
+  font-size: var(--fs-card-heading);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: var(--track-heading);
+  color: var(--lp-text);
+}
+.login-stage .ls-sub {
+  color: var(--lp-text-2);
+}
+.login-stage .ls-label {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: var(--track-micro);
+  color: var(--lp-text);
+}
+.login-stage .ls-input {
+  box-shadow: none;
+  color: var(--lp-text);
+}
+.login-stage .ls-input::placeholder {
+  color: var(--lp-placeholder);
+}
+.login-stage .ls-input:focus-visible {
+  border-color: var(--lp-teal);
+  box-shadow: 0 0 0 3px var(--lp-shallows);
+}
+.login-stage .ls-toggle {
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-weight: 700;
+  color: var(--lp-sailcloth);
+}
+.login-stage .ls-toggle:hover {
+  background: var(--lp-text-2);
+  border-color: var(--lp-text-2);
+}
+.login-stage .ls-error {
+  color: var(--lp-coral-text);
+}
+.login-stage .ls-alert {
+  border: 1.5px solid var(--lp-coral-text);
+  background: var(--lp-coral-tint);
+  color: var(--lp-coral-text);
+}
+.login-stage .ls-submit {
+  background: var(--lp-coral);
+  color: var(--lp-text);
+  border: var(--outline);
+  box-shadow: var(--shadow-button);
+  font-family: var(--font-body);
+  font-size: 17px;
+  font-weight: 700;
+}
+.login-stage .ls-submit::after {
+  display: none;
+}
+.login-stage .ls-submit:hover:not(:disabled) {
+  box-shadow: 0 6px 0 var(--lp-navy);
+  transform: translateY(-2px);
+}
+.login-stage .ls-submit:active:not(:disabled) {
+  box-shadow: 0 2px 0 var(--lp-navy);
+  transform: translateY(2px);
+}
+.login-stage .ls-spinner {
+  border-color: rgba(11, 37, 69, 0.3);
+  border-top-color: var(--lp-navy);
+}
+.login-stage .ls-help {
+  border-radius: var(--radius-tile);
+  color: var(--lp-text);
+}
+.login-stage .ls-help strong {
+  display: inline;
+  font-family: var(--font-body);
+  font-weight: 700;
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-stage .ls-submit:hover:not(:disabled),
+  .login-stage .ls-submit:active:not(:disabled),
+  .login-stage .ls-card[aria-current="true"] {
+    transform: none;
+  }
+}
+.login-stage .ls-cards > li:nth-child(2) .ls-meter > span {
+  background: var(--lp-coral);
+}
+.login-stage .ls-cards > li:nth-child(3) .ls-meter > span {
+  background: var(--lp-sunshine);
 }

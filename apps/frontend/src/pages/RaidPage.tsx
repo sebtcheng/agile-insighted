@@ -393,7 +393,7 @@ export function RaidCards({
                     <Text size="xs" className="raid-sub">
                       Actions
                     </Text>
-                    <Text size="sm" c="red">
+                    <Text size="sm" c="coral">
                       Overdue
                     </Text>
                   </div>
@@ -558,7 +558,7 @@ export function RaidPage() {
                         <Table.Td>
                           <RaidStatusControl item={i} editable={!readOnly} />
                           {i.isOverdue ? (
-                            <Text size="xs" c="red">
+                            <Text size="xs" c="coral">
                               Overdue
                             </Text>
                           ) : null}

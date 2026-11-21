@@ -102,7 +102,7 @@ const flush = async () => {
   for (let i = 0; i < 4; i++)
     await act(async () => void (await new Promise((r) => setTimeout(r, 0))));
 };
-async function mount() {
+async function mount(path = "/usm?project=p1") {
   const el = document.createElement("div");
   document.body.appendChild(el);
   const root = createRoot(el);
@@ -110,7 +110,7 @@ async function mount() {
     root.render(
       createElement(
         MemoryRouter,
-        { initialEntries: ["/usm?project=p1"] },
+        { initialEntries: [path] },
         createElement(
           QueryClientProvider,
           { client: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
@@ -550,5 +550,66 @@ describe("User Story Mapping as a team member", () => {
     await mount();
     await click(document.querySelector("[data-step='s1']"));
     expect(byLabel("Feature 1 done")!.disabled).toBe(false); // seeded APPROVED
+  });
+});
+
+describe("User Story Mapping: All projects", () => {
+  const persona = (id: string, name: string, projectId: string, projectName: string) => ({
+    id,
+    projectId,
+    projectName,
+    name,
+    description: null,
+    sortOrder: 0,
+  });
+  beforeEach(() => {
+    vi.mocked(api.get).mockImplementation((url: string, params?: unknown) => {
+      if (url === "/projects")
+        return Promise.resolve({
+          items: [
+            { id: "p1", name: "Infra", archivedAt: null },
+            { id: "p2", name: "Docs", archivedAt: null },
+          ],
+        });
+      if (url === "/users") return Promise.resolve({ items: USERS });
+      if (url === "/story-map/personas")
+        return Promise.resolve({
+          items: [
+            persona("per1", "Teacher", "p1", "Infra"),
+            persona("per2", "Parent", "p2", "Docs"),
+          ],
+        });
+      if (url === "/story-map/steps")
+        return Promise.resolve({
+          items: (params as { personaId?: string } | undefined)?.personaId === "per2" ? [] : STEPS,
+        });
+      return Promise.resolve({ items: [] });
+    });
+  });
+
+  it("offers All projects, loads every project's users, and labels each with its project", async () => {
+    await mount("/usm?project=all");
+    const projectInput = document.querySelector<HTMLInputElement>(
+      'input[placeholder="Choose a project"]',
+    );
+    expect(projectInput?.value).toBe("All projects");
+    expect(api.get).toHaveBeenCalledWith("/story-map/personas", { projectId: "all" });
+    expect(buttonByText("Teacher · Infra")).toBeTruthy();
+    expect(buttonByText("Parent · Docs")).toBeTruthy();
+    expect(document.querySelectorAll("[data-step]")).toHaveLength(2);
+  });
+
+  it("guards Add user until a specific project is chosen, but a step opens with its own project", async () => {
+    await mount("/usm?project=all");
+    const add = buttonByText("Add user") as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    expect(add.getAttribute("title")).toBe("Select a specific project to add a user");
+    await click(document.querySelector("[data-step='s1']"));
+    expect(byLabel("Feature 1")?.value).toBe("Sign-in form");
+  });
+
+  it("keeps Add user for a concrete project", async () => {
+    await mount();
+    expect(document.querySelector('input[placeholder="User or role"]')).not.toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import {
+  compareByStatusOngoingFirst,
   isPmApproved,
   type AdminLogItemPatch,
   type AdminLogProjectGroup,
@@ -58,13 +59,7 @@ export async function listAdminLog(now: Date = new Date()): Promise<AdminLogResp
   }
   const sorted = [...groups.values()].sort((a, b) => a.projectName.localeCompare(b.projectName));
   for (const g of sorted) {
-    g.items.sort(
-      (a, b) =>
-        Number(a.isCompleted) - Number(b.isCompleted) ||
-        (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999") ||
-        a.title.localeCompare(b.title) ||
-        a.id.localeCompare(b.id),
-    );
+    g.items.sort(compareByStatusOngoingFirst);
   }
   return { projects: sorted, today: loaded.today };
 }
@@ -217,4 +212,52 @@ export async function updateAdminLogItem(
   const item = loaded.items.find((i) => i.id === id && i.sourceModule === module);
   if (!item) throw notFound("Task");
   return item;
+}
+
+/**
+ * PM deletion of one task, and only that task: a RAID mitigating action, OST solution, Kano revision spec,
+ * USM feature or project activity. Parent records (RAID item, OST requirement, Kano request, USM step) are never
+ * touched; every one of these lives in its own row, so the delete is a single targeted DELETE by primary key.
+ */
+export async function deleteAdminLogItem(
+  actor: Actor,
+  module: WorkSourceModule,
+  id: string,
+): Promise<void> {
+  await deleteWorkItem(actor, module, id);
+}
+
+/** Same item-only delete, callable by any authenticated role (the route enforces authentication). */
+export async function deleteWorkItem(
+  actor: Actor,
+  module: WorkSourceModule,
+  id: string,
+): Promise<void> {
+  if (module === "project") {
+    await activityService.remove({ actor }, id, { anyRole: true });
+    return;
+  }
+  await db.transaction(async (tx) => {
+    const deleted =
+      module === "user_story"
+        ? await tx
+            .delete(usmStepFeatures)
+            .where(eq(usmStepFeatures.id, id))
+            .returning({ id: usmStepFeatures.id })
+        : module === "ost"
+          ? await tx
+              .delete(ostSolutions)
+              .where(eq(ostSolutions.id, id))
+              .returning({ id: ostSolutions.id })
+          : module === "kano"
+            ? await tx
+                .delete(kanoRequestSpecs)
+                .where(eq(kanoRequestSpecs.id, id))
+                .returning({ id: kanoRequestSpecs.id })
+            : await tx
+                .delete(raidMitigatingActions)
+                .where(eq(raidMitigatingActions.id, id))
+                .returning({ id: raidMitigatingActions.id });
+    if (deleted.length === 0) throw notFound("Task");
+  });
 }

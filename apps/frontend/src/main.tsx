@@ -40,7 +40,7 @@ createRoot(root).render(
   <StrictMode>
     <DevProfiler id="root">
       <DevErrorBoundary>
-        <MantineProvider theme={theme} defaultColorScheme="light">
+        <MantineProvider theme={theme} forceColorScheme="light">
           <Notifications position="top-right" />
           <QueryClientProvider client={queryClient}>
             <BrowserRouter basename={import.meta.env.BASE_URL}>

@@ -1,124 +1,137 @@
-/* Semantic design tokens. Keep in sync with DESIGN.md. */
+/* LogPose Nautical Style Spec (112026_logpose_ui_spec.pdf) */
 :root {
-  /* Font roles. --font-serif is the title face (kept by name so existing rules keep working).
-     Experiment with <html data-fonts="classic"> (set it in devtools) to compare against the old set. */
-  --font-serif: "Bricolage Grotesque", system-ui, sans-serif;
-  --font-display: "Geist", system-ui, sans-serif;
-  --font-body: "Geist", system-ui, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, system-ui, sans-serif;
+  /* Typefaces */
+  --font-serif: "Fraunces", Georgia, serif;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "DM Sans", system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, monospace;
 
-  /* InsightED v2 palette (light is the default). Indigo/cyan brand; nav stays a deep gradient. */
-  --nav-gradient-from: #1e3a8a;
-  --nav-gradient-mid: #1d2f7a;
-  --nav-gradient-to: #131c4f;
-  --brand-primary: #4f46e5;
-  --brand-primary-hover: #4338ca;
-  --nav-active-overlay: rgba(255, 255, 255, 0.14);
-  --nav-active-marker: #22d3ee;
-  --accent-left: #4f46e5;
-  --accent-right: #06b6d4;
+  /* Brand */
+  --lp-navy: #0b2545;
+  --lp-teal: #13747d;
+  --lp-shallows: #7cc6c1;
+  --lp-sky: #123a6b;
 
-  --surface: #ffffff;
-  --surface-page: #f8fafc;
-  --text-primary: #0f172a;
-  --focus-ring: rgba(79, 70, 229, 0.35);
+  /* Accents */
+  --lp-coral: #ff6b4a;
+  --lp-sunshine: #ffc857;
+  --lp-brass: #b07a1f;
+  --lp-sand: #f6e7c8;
 
-  --danger-bg: #fbe6e9;
-  --danger-fg: #9b1022;
-  --warning-bg: #fdf0d8;
-  --warning-fg: #8a5605;
-  --info-bg: #e0e7ff;
-  --info-fg: #3730a3;
-  --success-bg: #e2f3eb;
-  --success-fg: #14603f;
+  /* Surfaces */
+  --lp-sailcloth: #ffffff;
+  --lp-sea-mist: #dff3f1;
+  --lp-app-ground: #e8f5f3;
+  --lp-input-fill: #f1f9f8;
 
-  --text-secondary: #586679;
-  --border-muted: #cbd5e1;
+  /* Tints */
+  --lp-coral-tint: #ffe3db;
+  --lp-sun-tint: #fff1cc;
 
-  --radius-md: 6px;
-  --radius-sm: 4px;
+  /* Text */
+  --lp-text: #0b2545;
+  --lp-text-2: #1f3a57;
+  --lp-muted: #3f5670;
+  --lp-placeholder: #55677d;
+  --lp-coral-text: #c2412a;
+  --lp-brass-text: #8a5a12;
+  --lp-teal-text: #13606a;
+  --lp-status-text: #0b4f57;
+  --lp-pending-text: #6b4510;
+
+  /* Semantic mappings */
+  --nav-gradient-from: var(--lp-navy);
+  --nav-gradient-mid: var(--lp-navy);
+  --nav-gradient-to: var(--lp-navy);
+  --brand-primary: var(--lp-coral);
+  --brand-primary-hover: #e85a3a;
+  --nav-active-overlay: var(--lp-coral);
+  --nav-active-marker: var(--lp-sunshine);
+  --accent-left: var(--lp-teal);
+  --accent-right: var(--lp-teal);
+
+  --surface: var(--lp-sailcloth);
+  --surface-page: var(--lp-app-ground);
+  --text-primary: var(--lp-text);
+  --text-secondary: var(--lp-muted);
+  --border-muted: var(--lp-navy);
+  --focus-ring: var(--lp-teal);
+
+  --danger-bg: var(--lp-coral-tint);
+  --danger-fg: var(--lp-coral-text);
+  --warning-bg: var(--lp-sand);
+  --warning-fg: var(--lp-pending-text);
+  --info-bg: var(--lp-sea-mist);
+  --info-fg: var(--lp-status-text);
+  --success-bg: var(--lp-sun-tint);
+  --success-fg: var(--lp-brass-text);
+
+  /* Shape, outline and hard-shadow values measured from the Sign in and Home mockups. */
+  --radius-lg: 22px;
+  --radius-tile: 14px;
+  --radius-md: 10px;
+  --radius-sm: 6px;
   --radius-pill: 9999px;
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
-  --shadow-md: 0 1px 2px rgba(15, 23, 42, 0.1), 0 6px 12px rgba(15, 23, 42, 0.1);
+  --outline: 2px solid var(--lp-navy);
+  --outline-thin: 1.5px solid var(--lp-navy);
+  --shadow-sm: 4px 4px 0 var(--lp-navy);
+  --shadow-md: 8px 8px 0 var(--lp-teal);
+  --shadow-lg: 10px 10px 0 var(--lp-teal);
+  --shadow-coral: 8px 8px 0 var(--lp-coral);
+  --shadow-button: 0 4px 0 var(--lp-navy);
+  --space-gutter: 24px;
+  --space-card: 22px;
+  --space-gap: 16px;
 
   --ui-duration: 120ms;
   --ui-ease: cubic-bezier(0.2, 0, 0, 1);
   --ui-transition:
     background-color var(--ui-duration) var(--ui-ease),
     border-color var(--ui-duration) var(--ui-ease), color var(--ui-duration) var(--ui-ease),
-    box-shadow var(--ui-duration) var(--ui-ease);
+    box-shadow var(--ui-duration) var(--ui-ease), transform var(--ui-duration) var(--ui-ease);
 
-  /* Layout motion (sidebar rail, page entry): one duration and one deceleration curve so pieces move together. */
   --motion-duration: 240ms;
   --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --mantine-color-body: var(--lp-app-ground);
+  --mantine-color-text: var(--lp-text);
+  --mantine-color-dimmed: var(--lp-muted);
+  --mantine-color-placeholder: var(--lp-placeholder);
 }
 
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-duration: 0ms;
+    --ui-duration: 0ms;
   }
 }
 
-/* Dark theme: opt-in through the account menu (Mantine sets data-mantine-color-scheme on <html>). */
-:root[data-mantine-color-scheme="dark"] {
-  --nav-gradient-from: #0f1a3d;
-  --nav-gradient-mid: #0b1230;
-  --nav-gradient-to: #070b1f;
-  --brand-primary: #6366f1;
-  --brand-primary-hover: #818cf8;
-  --accent-left: #6366f1;
-  --accent-right: #22d3ee;
-
-  --surface: #0d1224;
-  --surface-page: #050814;
-  --text-primary: #e8ecf8;
-  --focus-ring: rgba(129, 140, 248, 0.45);
-  --mantine-color-body: #050814;
-
-  --danger-bg: #3b0f18;
-  --danger-fg: #ff9aa8;
-  --warning-bg: #3a2a08;
-  --warning-fg: #fcd34d;
-  --info-bg: #1e1b4b;
-  --info-fg: #c7d2fe;
-  --success-bg: #0b2e22;
-  --success-fg: #6ee7b7;
-
-  --text-secondary: #a9b4d0;
-  --border-muted: #2a3354;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 16px rgba(0, 0, 0, 0.45);
-}
 body {
   background: var(--surface-page);
+  color: var(--lp-text);
 }
 
-:root[data-fonts="classic"] {
-  --font-serif: "Source Serif 4", system-ui, sans-serif;
-  --font-display: "Plus Jakarta Sans", system-ui, sans-serif;
-  --font-body: "Public Sans", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", system-ui, sans-serif;
-}
-
-/* ---- Typography. Large text is tight and heavy, small text is quiet and tracked: the contrast is
-   the style. Serif is reserved for page titles; Plus Jakarta Sans for headings and controls;
-   Public Sans for reading; IBM Plex Mono for identifiers and numbers. */
+/* ---- Typography (spec section 2). Fraunces 800/900 for display and numbers, DM Sans for reading and
+   controls, DM Mono 500 uppercase for labels, tags and data. */
 :root {
-  --fs-display: clamp(2rem, 1.4rem + 2vw, 2.75rem);
-  --fs-h1: 1.875rem;
-  --fs-h2: 1.375rem;
-  --fs-h3: 1.0625rem;
-  --fs-body: 0.9375rem;
-  --fs-small: 0.8125rem;
-  --fs-micro: 0.6875rem;
+  --fs-wordmark: clamp(3.5rem, 2rem + 6vw, 8rem);
+  --fs-display: clamp(2.5rem, 1.6rem + 3.5vw, 4.5rem);
+  --fs-card-heading: clamp(2rem, 1.6rem + 1.5vw, 2.875rem);
+  --fs-stat: 2.5rem;
+  --fs-h2: 1.75rem;
+  --fs-h3: 1.125rem;
+  --fs-lead: clamp(1.125rem, 1rem + 0.5vw, 1.375rem);
+  --fs-body: 1rem;
+  --fs-small: 0.875rem;
+  --fs-micro: 0.75rem;
   --track-display: -0.03em;
-  --track-heading: -0.012em;
-  --track-micro: 0.09em;
+  --track-heading: -0.02em;
+  --track-micro: 0.12em;
 }
 body {
   font-family: var(--font-body);
   font-size: var(--fs-body);
-  line-height: 1.55;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -128,16 +141,17 @@ h3,
 h4,
 .mantine-Title-root {
   font-family: var(--font-display);
-  font-weight: 700;
+  font-weight: 900;
   letter-spacing: var(--track-heading);
+  color: var(--lp-text);
   text-wrap: balance;
 }
 .page-title {
   margin: 0;
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-size: var(--fs-display);
-  font-weight: 700;
-  line-height: 1.08;
+  font-weight: 900;
+  line-height: 1;
   letter-spacing: var(--track-display);
   color: var(--text-primary);
 }
@@ -145,27 +159,34 @@ h4,
   margin-top: 6px;
   font-family: var(--font-body);
   font-size: var(--fs-body);
-  color: var(--text-secondary);
+  color: var(--lp-text-2);
 }
-/* Small labels: uppercase, tracked, semibold display face. */
+/* Small labels: DM Mono 500, uppercase, wide tracking. */
 .mantine-InputWrapper-label,
 .mantine-Table-th,
 .mantine-Badge-label,
 .shell-nav-heading {
-  font-family: var(--font-display);
+  font-family: var(--font-mono);
   font-size: var(--fs-micro);
-  font-weight: 700;
+  font-weight: 500;
   letter-spacing: var(--track-micro);
   text-transform: uppercase;
 }
-.mantine-Table-th {
-  color: var(--text-secondary);
+.mantine-InputWrapper-label {
+  color: var(--lp-text);
+  margin-bottom: 6px;
 }
-.mantine-InputWrapper-description,
+.mantine-Table-th {
+  color: var(--lp-teal-text);
+}
+.mantine-InputWrapper-description {
+  font-size: var(--fs-small);
+  color: var(--lp-muted);
+}
 .mantine-InputWrapper-error {
   font-size: var(--fs-small);
+  color: var(--lp-coral-text);
 }
-/* Numbers line up in tables and identifiers. */
 .mantine-Table-td,
 code,
 kbd {
@@ -176,86 +197,241 @@ kbd {
   font-family: var(--font-mono);
 }
 
-/* ---- Main panels: same language as the login card, sidebar and header. Flat in the app (no blur). */
-.mantine-Paper-root,
-.mantine-Card-root {
-  background: var(--surface);
-  border: 1px solid var(--border-muted);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  color: var(--text-primary);
-  transition:
-    border-color var(--ui-duration) var(--ui-ease),
-    box-shadow var(--ui-duration) var(--ui-ease);
-}
-/* Panels that are the page's primary surface get the dual accent line, like the header and login card. */
+/* ---- Cards and panels: thick navy outline, large radius, hard offset shadow. */
 .mantine-Paper-root[data-with-border],
 .mantine-Card-root {
-  position: relative;
+  background: var(--lp-sailcloth);
+  border: var(--outline);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
-.mantine-Card-root::before {
-  content: "";
-  position: absolute;
-  inset: -1px -1px auto -1px;
-  height: 3px;
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
-  background: linear-gradient(90deg, var(--accent-left) 50%, var(--accent-right) 50%);
-  pointer-events: none;
+.mantine-Card-root {
+  transition: var(--ui-transition);
 }
 .mantine-Card-root:hover {
-  border-color: var(--brand-primary);
   box-shadow: var(--shadow-md);
 }
+
+/* ---- Pills and badges: DM Mono on a tint, 1.5px border in the matching text color. */
+.mantine-Badge-root {
+  border-radius: var(--radius-pill);
+  border-width: 1.5px;
+  height: auto;
+  padding: 3px 10px;
+}
+.mantine-Badge-root[data-variant="light"] {
+  border-style: solid;
+  border-color: currentColor;
+}
+.mantine-Badge-root[data-variant="outline"] {
+  background: var(--lp-sailcloth);
+}
+
+/* ---- Modals and drawers. */
 .mantine-Modal-content,
 .mantine-Drawer-content {
-  background: var(--surface);
-  border: 1px solid var(--border-muted);
-  box-shadow: var(--shadow-md);
+  background: var(--lp-sailcloth);
+  border: var(--outline);
+  box-shadow: var(--shadow-lg);
+}
+.mantine-Modal-content {
+  border-radius: var(--radius-lg);
 }
 .mantine-Modal-header,
 .mantine-Drawer-header {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border-muted);
+  background: var(--lp-sailcloth);
+  border-bottom: var(--outline);
 }
 .mantine-Modal-title,
 .mantine-Drawer-title {
   font-family: var(--font-display);
-  font-weight: 700;
+  font-weight: 900;
+  font-size: var(--fs-h2);
   letter-spacing: var(--track-heading);
+  color: var(--lp-text);
 }
+
+/* ---- Tables. */
 .mantine-Table-table {
-  --table-border-color: var(--border-muted);
+  --table-border-color: rgba(11, 37, 69, 0.14);
 }
-.mantine-Table-thead {
-  background: var(--surface-page);
+.mantine-Table-thead .mantine-Table-th {
+  border-bottom: var(--outline-thin);
 }
 .mantine-Table-tr[data-hover]:hover,
 .mantine-Table-tbody .mantine-Table-tr:hover {
-  background: var(--info-bg);
+  background: var(--lp-app-ground);
 }
+
+/* ---- Inputs and selects. */
 .mantine-Input-input,
 .mantine-Textarea-input,
 .mantine-Select-input {
-  background: var(--surface);
-  border-color: var(--border-muted);
+  background: var(--lp-sailcloth);
+  border: var(--outline-thin);
+  border-radius: var(--radius-md);
   color: var(--text-primary);
   transition: var(--ui-transition);
 }
-.mantine-Input-input:focus,
-.mantine-Input-input:focus-within {
-  border-color: var(--brand-primary);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+.mantine-Input-input::placeholder {
+  color: var(--lp-placeholder);
 }
+.mantine-Input-input:focus,
+.mantine-Input-input:focus-within,
+*:focus-visible {
+  outline: 3px solid var(--lp-teal);
+  outline-offset: 2px;
+}
+.mantine-Switch-track {
+  border: var(--outline-thin);
+}
+.mantine-Switch-thumb {
+  background: var(--lp-sunshine);
+  border: var(--outline-thin);
+}
+
+/* ---- Buttons: DM Sans 700, navy outline; filled buttons carry the hard bottom edge. */
 .mantine-Button-root {
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-weight: 700;
+  border-radius: var(--radius-md);
   transition: var(--ui-transition);
 }
-.mantine-Button-root:active:not(:disabled) {
-  transform: scale(0.985);
+.mantine-Button-root[data-variant="filled"] {
+  border: var(--outline-thin);
+  box-shadow: var(--shadow-button);
+  color: var(--lp-text);
 }
+.mantine-Button-root[data-variant="filled"]:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 var(--lp-navy);
+}
+.mantine-Button-root[data-variant="outline"],
+.mantine-Button-root[data-variant="default"] {
+  border: var(--outline-thin);
+  color: var(--lp-text);
+  background: var(--lp-sailcloth);
+}
+.mantine-SegmentedControl-root {
+  background: var(--lp-sailcloth);
+  border: var(--outline-thin);
+  border-radius: var(--radius-md);
+}
+.mantine-SegmentedControl-indicator {
+  background: var(--lp-navy);
+}
+.mantine-SegmentedControl-label[data-active] {
+  color: var(--lp-sailcloth);
+}
+.mantine-SegmentedControl-label {
+  font-weight: 700;
+}
+
+/* ---- Alerts and callouts: dashed brass border on sand, like the trouble note. */
+.mantine-Alert-root {
+  border-radius: var(--radius-tile);
+  border: 1.5px dashed var(--lp-brass);
+}
+.mantine-Tooltip-tooltip {
+  background: var(--lp-navy);
+  color: var(--lp-sailcloth);
+  border-radius: var(--radius-sm);
+}
+.mantine-Divider-root {
+  --divider-color: var(--lp-brass);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .mantine-Button-root:active:not(:disabled) {
+  .mantine-Button-root[data-variant="filled"]:active:not(:disabled) {
     transform: none;
   }
+}
+
+/* Light and outline variants pinned to the spec's tint + text pairs so badges, pills and alerts stay AA. */
+:root:root {
+  --mantine-color-sea-light: var(--lp-sea-mist);
+  --mantine-color-sea-light-hover: #c8eae7;
+  --mantine-color-sea-light-color: var(--lp-status-text);
+  --mantine-color-sea-outline: var(--lp-teal-text);
+  --mantine-color-sun-light: var(--lp-sand);
+  --mantine-color-sun-light-hover: var(--lp-sun-tint);
+  --mantine-color-sun-light-color: var(--lp-pending-text);
+  --mantine-color-sun-outline: var(--lp-brass-text);
+  --mantine-color-sun-filled: var(--lp-sunshine);
+  --mantine-color-sun-filled-hover: #ffbf3d;
+  --mantine-color-coral-light: var(--lp-coral-tint);
+  --mantine-color-coral-light-hover: #ffd3c6;
+  --mantine-color-coral-light-color: var(--lp-coral-text);
+  --mantine-color-coral-outline: var(--lp-coral-text);
+  --mantine-color-navy-light: var(--lp-sailcloth);
+  --mantine-color-navy-light-hover: var(--lp-app-ground);
+  --mantine-color-navy-light-color: var(--lp-text);
+  --mantine-color-navy-outline: var(--lp-navy);
+  --mantine-color-sea-filled: var(--lp-teal);
+}
+.mantine-Button-root[data-variant="filled"][style*="sea"],
+.mantine-Button-root[data-variant="filled"][style*="navy"] {
+  color: var(--lp-sailcloth);
+}
+
+/* ---- LogPose content helpers (Home mockup). */
+.lp-kicker {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-micro);
+  text-transform: uppercase;
+  color: var(--lp-brass-text);
+}
+.lp-label {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-micro);
+  text-transform: uppercase;
+  color: var(--lp-text);
+}
+.lp-summary-value {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.75rem;
+  line-height: 1.15;
+  color: var(--lp-text);
+}
+.lp-section-title.mantine-Title-root {
+  font-size: var(--fs-h2);
+  font-weight: 900;
+}
+.lp-stat {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: var(--fs-stat);
+  line-height: 1;
+  color: var(--lp-text);
+}
+.lp-rule {
+  border-top: 1.5px dashed var(--lp-brass);
+  margin-block: var(--space-gap);
+}
+.lp-tile {
+  border: var(--outline-thin);
+  border-radius: var(--radius-tile);
+  padding: 12px 14px;
+  background: var(--lp-sailcloth);
+}
+.lp-tile[data-tone="ongoing"] {
+  background: var(--lp-sea-mist);
+}
+.lp-tile[data-tone="delayed"] {
+  background: var(--lp-coral-tint);
+}
+.lp-tile[data-tone="completed"] {
+  background: var(--lp-sun-tint);
+}
+.mantine-Paper-root.lp-card-lg {
+  box-shadow: var(--shadow-lg);
+}
+.mantine-Card-root.lp-card-coral,
+.mantine-Card-root.lp-card-coral:hover {
+  box-shadow: var(--shadow-coral);
 }

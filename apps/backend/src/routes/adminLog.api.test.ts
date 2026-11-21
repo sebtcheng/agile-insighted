@@ -150,3 +150,156 @@ describe("PATCH /api/admin-log/items/:sourceModule/:itemId", () => {
     expect(item.pmApproval).toBe("APPROVED");
   });
 });
+
+describe("DELETE /api/admin-log/items/:sourceModule/:itemId", () => {
+  it("deletes one RAID action, Kano spec, OST solution and USM feature, never their parents", async () => {
+    const raid = json<{ id: string; mitigatingActions: Array<{ id: string }> }>(
+      await pm.post(`/api/projects/${f.project.id}/raid`).send({
+        itemType: "risk",
+        description: "Delete test",
+        impact: 2,
+        mitigatingActions: [
+          { description: "a1", sprintKey: "2026-S50", responsibleId: f.m1.id },
+          { description: "a2", sprintKey: "2026-S50", responsibleId: f.m1.id },
+        ],
+      }),
+    );
+    const [a1, a2] = raid.mitigatingActions;
+    expect((await pm.delete(`/api/admin-log/items/raid/${a1!.id}`)).status).toBe(204);
+    const raidAfter = json<{ mitigatingActions: Array<{ id: string }> }>(
+      await pm.get(`/api/projects/${f.project.id}/raid`).then((r) => ({
+        body: (r.body as { items: Array<{ id: string }> }).items.find((i) => i.id === raid.id),
+      })),
+    );
+    expect(raidAfter.mitigatingActions.map((a) => a.id)).toEqual([a2!.id]);
+
+    const kano = json<{ id: string; specs: Array<{ id: string }> }>(
+      await pm
+        .post(`/api/projects/${f.project.id}/kano`)
+        .send({ revisionRequest: "Spec delete", specs: [{ label: "s1" }, { label: "s2" }] }),
+    );
+    expect((await pm.delete(`/api/admin-log/items/kano/${kano.specs[0]!.id}`)).status).toBe(204);
+    const kanoAfter = {
+      specs: (
+        (await pm.get(`/api/projects/${f.project.id}/kano`)).body as {
+          items: Array<{ id: string; specs: Array<{ id: string }> }>;
+        }
+      ).items.find((k) => k.id === kano.id)!.specs,
+    };
+    expect(kanoAfter.specs.map((x) => x.id)).toEqual([kano.specs[1]!.id]);
+
+    const outcome = json<{ id: string }>(
+      await pm.post(`/api/projects/${f.project.id}/ost/outcomes`).send({ title: "O" }),
+    );
+    const opp = json<{ id: string }>(
+      await pm.post(`/api/ost/outcomes/${outcome.id}/opportunities`).send({
+        title: "R",
+        solutions: [{ title: "S1" }, { title: "S2" }],
+      }),
+    );
+    const tree = async () =>
+      json<{
+        opportunities: Array<{ id: string }>;
+        solutions: Array<{ id: string; opportunityId: string }>;
+      }>(await pm.get(`/api/projects/${f.project.id}/ost`));
+    const sols = (await tree()).solutions.filter((x) => x.opportunityId === opp.id);
+    expect((await pm.delete(`/api/admin-log/items/ost/${sols[0]!.id}`)).status).toBe(204);
+    const t = await tree();
+    expect(t.opportunities.some((o) => o.id === opp.id)).toBe(true);
+    expect(t.solutions.filter((x) => x.opportunityId === opp.id)).toHaveLength(1);
+
+    expect((await pm.delete(`/api/admin-log/items/user_story/${featureId}`)).status).toBe(204);
+    const steps = json<{ items: Array<{ features: Array<{ id: string }> }> }>(
+      await pm.get("/api/story-map/steps").query({ projectId: f.project.id }),
+    );
+    expect(steps.items.length).toBeGreaterThan(0);
+    expect(steps.items.flatMap((x) => x.features).some((x) => x.id === featureId)).toBe(false);
+  });
+
+  it("answers 404 for a missing task, 400 for a bad module or id, 403 for members, 401 signed out", async () => {
+    const ghost = "00000000-0000-4000-8000-000000000000";
+    expect((await pm.delete(`/api/admin-log/items/raid/${ghost}`)).status).toBe(404);
+    expect((await pm.delete(`/api/admin-log/items/bogus/${ghost}`)).status).toBe(400);
+    expect((await pm.delete("/api/admin-log/items/raid/not-a-uuid")).status).toBe(400);
+    expect((await member.delete(`/api/admin-log/items/raid/${actionId}`)).status).toBe(403);
+    expect((await request(app).delete(`/api/admin-log/items/raid/${actionId}`)).status).toBe(401);
+    // The action survived the rejected attempts.
+    const log = json<AdminLogResponse>(await pm.get("/api/admin-log"));
+    expect(log.projects.flatMap((g) => g.items).some((i) => i.id === actionId)).toBe(true);
+  });
+});
+
+describe("DELETE /api/work-items/:sourceModule/:itemId (any authenticated role)", () => {
+  it("lets a team member and a PM delete one RAID action, Kano spec and OST solution, keeping parents", async () => {
+    const raid = json<{ id: string; mitigatingActions: Array<{ id: string }> }>(
+      await pm.post(`/api/projects/${f.project.id}/raid`).send({
+        itemType: "risk",
+        description: "Shared delete",
+        impact: 2,
+        mitigatingActions: [
+          { description: "a1", sprintKey: "2026-S50", responsibleId: f.m1.id },
+          { description: "a2", sprintKey: "2026-S50", responsibleId: f.m1.id },
+        ],
+      }),
+    );
+    const [a1, a2] = raid.mitigatingActions;
+    expect((await member.delete(`/api/work-items/raid/${a1!.id}`)).status).toBe(204);
+    expect((await pm.delete(`/api/work-items/raid/${a2!.id}`)).status).toBe(204);
+    const raidList = (await pm.get(`/api/projects/${f.project.id}/raid`)).body as {
+      items: Array<{ id: string; mitigatingActions: unknown[] }>;
+    };
+    const parent = raidList.items.find((i) => i.id === raid.id);
+    expect(parent?.mitigatingActions).toHaveLength(0);
+
+    const kano = json<{ id: string; specs: Array<{ id: string }> }>(
+      await pm
+        .post(`/api/projects/${f.project.id}/kano`)
+        .send({ revisionRequest: "Shared spec delete", specs: [{ label: "s1" }, { label: "s2" }] }),
+    );
+    expect((await member.delete(`/api/work-items/kano/${kano.specs[0]!.id}`)).status).toBe(204);
+    const kanoAfter = {
+      specs: (
+        (await pm.get(`/api/projects/${f.project.id}/kano`)).body as {
+          items: Array<{ id: string; specs: Array<{ id: string }> }>;
+        }
+      ).items.find((k) => k.id === kano.id)!.specs,
+    };
+    expect(kanoAfter.specs.map((x) => x.id)).toEqual([kano.specs[1]!.id]);
+
+    const outcome = json<{ id: string }>(
+      await pm.post(`/api/projects/${f.project.id}/ost/outcomes`).send({ title: "O2" }),
+    );
+    const opp = json<{ id: string }>(
+      await pm.post(`/api/ost/outcomes/${outcome.id}/opportunities`).send({
+        title: "R2",
+        solutions: [{ title: "S1" }, { title: "S2" }],
+      }),
+    );
+    const tree = async () =>
+      json<{
+        opportunities: Array<{ id: string }>;
+        solutions: Array<{ id: string; opportunityId: string }>;
+      }>(await pm.get(`/api/projects/${f.project.id}/ost`));
+    const sols = (await tree()).solutions.filter((x) => x.opportunityId === opp.id);
+    expect((await member.delete(`/api/work-items/ost/${sols[0]!.id}`)).status).toBe(204);
+    const t = await tree();
+    expect(t.opportunities.some((o) => o.id === opp.id)).toBe(true);
+    expect(t.solutions.filter((x) => x.opportunityId === opp.id)).toHaveLength(1);
+  });
+
+  it("answers 404, 400 and 401, and keeps Admin Log approval PM-only", async () => {
+    const ghost = "00000000-0000-4000-8000-000000000000";
+    expect((await member.delete(`/api/work-items/raid/${ghost}`)).status).toBe(404);
+    expect((await member.delete(`/api/work-items/bogus/${ghost}`)).status).toBe(400);
+    expect((await member.delete("/api/work-items/raid/not-a-uuid")).status).toBe(400);
+    expect((await request(app).delete(`/api/work-items/raid/${ghost}`)).status).toBe(401);
+    expect(
+      (
+        await member
+          .patch(`/api/admin-log/items/raid/${ghost}/approval`)
+          .send({ pmApproval: "APPROVED" })
+      ).status,
+    ).toBe(403);
+    expect((await member.get("/api/admin-log")).status).toBe(403);
+  });
+});

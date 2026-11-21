@@ -1,6 +1,6 @@
 /* Card / Table switch and shared card-view surface. */
 .view-toggle {
-  border: 1px solid var(--border-muted);
+  border: var(--outline-thin);
   background: var(--surface);
 }
 .view-toggle .mantine-SegmentedControl-label {
@@ -17,13 +17,13 @@
 
 .item-card {
   background: var(--surface);
-  border-radius: 6px;
-  box-shadow: var(--mantine-shadow-sm);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
   transition: var(--ui-transition);
 }
 .item-card[data-clickable] {
   cursor: pointer;
 }
 .item-card[data-clickable]:hover {
-  box-shadow: var(--mantine-shadow-md);
+  box-shadow: var(--shadow-sm);
 }

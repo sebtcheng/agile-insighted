@@ -9,7 +9,6 @@ import {
   ScrollArea,
   Text,
   UnstyledButton,
-  useMantineColorScheme,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { useQueryClient } from "@tanstack/react-query";
@@ -26,6 +25,13 @@ import { useExitSimulation, useLogout } from "../api/hooks";
 import { useAuth, useIsPm, useSimulation } from "../auth";
 import { ActivityDrawer } from "./ActivityDrawer";
 import { GlobalSearch } from "./GlobalSearch";
+import {
+  AnchorIcon,
+  CompassRoseIcon,
+  NauticalWatermark,
+  SailboatIcon,
+  ShipsHelmIcon,
+} from "./PirateIcons";
 import { SimulationPicker } from "./SimulationPicker";
 import { visibleSections } from "./navSections";
 import { useRailExpansion } from "./useRailExpansion";
@@ -78,7 +84,6 @@ export function Layout() {
   const [params, setParams] = useSearchParams();
   const activityId = params.get("activity");
 
-  const { colorScheme, setColorScheme } = useMantineColorScheme();
   const sim = useSimulation();
   const exitSim = useExitSimulation();
   const [pickerOpen, { open: openPicker, close: closePicker }] = useDisclosure(false);
@@ -101,14 +106,19 @@ export function Layout() {
               hiddenFrom="sm"
               size="sm"
               aria-label="Toggle navigation"
-              color="#fff"
+              color="var(--lp-sand)"
             />
-            <Text fw={700} className="shell-brand">
-              T.R.A.I.L
-            </Text>
+            <Group gap={6} wrap="nowrap">
+              <SailboatIcon size={22} style={{ color: "var(--lp-sunshine)" }} />
+              <Text fw={700} className="shell-brand">
+                LogPose
+              </Text>
+            </Group>
           </Group>
-          <Group wrap="nowrap" gap="md">
+          <div style={{ flex: 1, display: "flex", justifyContent: "center", paddingInline: 16 }}>
             <GlobalSearch />
+          </div>
+          <Group wrap="nowrap" gap="md">
             <Menu position="bottom-end" width={240} withinPortal>
               <Menu.Target>
                 <UnstyledButton
@@ -123,13 +133,13 @@ export function Layout() {
                       <Text fw={600} size="sm" lh={1.2}>
                         {user.fullName}
                       </Text>
-                      <Text size="xs" c="#FFFFFF" lh={1.2} className="shell-role">
+                      <Text size="xs" lh={1.2} className="shell-role">
                         {ENUM_LABELS.role[user.role]}
                       </Text>
                     </div>
                     <span
                       className="shell-chevron"
-                      style={{ display: "inline-flex", color: "#FFFFFF" }}
+                      style={{ display: "inline-flex", color: "var(--lp-sailcloth)" }}
                     >
                       <Icon size={14}>
                         <path d="M6 9l6 6 6-6" />
@@ -160,22 +170,8 @@ export function Layout() {
                   </Menu.Item>
                 ) : null}
                 <Menu.Divider />
-                <Menu.Label>Appearance</Menu.Label>
-                {(["light", "dark", "auto"] as const).map((mode) => (
-                  <Menu.Item
-                    key={mode}
-                    closeMenuOnClick={false}
-                    aria-checked={colorScheme === mode}
-                    role="menuitemradio"
-                    rightSection={colorScheme === mode ? "✓" : null}
-                    onClick={() => setColorScheme(mode)}
-                  >
-                    {mode === "auto" ? "System" : mode === "light" ? "Light" : "Dark"}
-                  </Menu.Item>
-                ))}
-                <Menu.Divider />
                 <Menu.Item
-                  color="red"
+                  color="coral"
                   disabled={logout.isPending}
                   onClick={() =>
                     logout.mutate(undefined, {
@@ -240,9 +236,18 @@ export function Layout() {
         </AppShell.Section>
       </AppShell.Navbar>
 
-      <AppShell.Main>
+      <AppShell.Main style={{ position: "relative", overflow: "hidden" }}>
+        <NauticalWatermark style={{ top: 12, right: 16, zIndex: 0 }}>
+          <CompassRoseIcon size={180} />
+        </NauticalWatermark>
+        <NauticalWatermark style={{ bottom: 16, left: 24, zIndex: 0 }}>
+          <AnchorIcon size={120} />
+        </NauticalWatermark>
+        <NauticalWatermark style={{ bottom: 24, right: 32, zIndex: 0 }}>
+          <ShipsHelmIcon size={140} />
+        </NauticalWatermark>
         {sim.isSimulating ? (
-          <Alert color="yellow" mb="md" py="xs" role="status">
+          <Alert color="sun" mb="md" py="xs" role="status">
             <Group justify="space-between" wrap="nowrap">
               <Text size="sm">Viewing as {user.fullName}</Text>
               <Button

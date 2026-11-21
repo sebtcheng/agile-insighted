@@ -54,14 +54,14 @@ const allTree = async () => json<OstTreeDto>(await pm.get("/api/ost"));
 const tree = async () => json<OstTreeDto>(await pm.get(`/api/projects/${f.project.id}/ost`));
 
 describe("OST API", () => {
-  it("requires sign in and keeps structure PM-only", async () => {
+  it("requires sign in and lets team members create outcomes and solutions", async () => {
     expect((await anon.get(`/api/projects/${f.project.id}/ost`)).status).toBe(401);
     expect(
       (await member.post(`/api/projects/${f.project.id}/ost/outcomes`).send({ title: "x" })).status,
-    ).toBe(403);
+    ).toBe(201);
     expect(
       (await member.post(`/api/ost/opportunities/${oppId}/solutions`).send({ title: "x" })).status,
-    ).toBe(403);
+    ).toBe(201);
   });
 
   it("lists a newly created outcome straight away, per project and across all projects", async () => {

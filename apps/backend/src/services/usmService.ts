@@ -19,6 +19,7 @@ import { projects, usmPersonas, usmStepFeatures, usmSteps, users } from "../db/s
 import { conflict, notFound, unprocessable } from "../errors";
 import { assertCompletionAllowed } from "./approvalGate";
 import { sprintColumns, sprintColumnsOrUndefined } from "./sprintWrite";
+import { scopeCondition, type ProjectScope } from "./visibilityService";
 import type { Actor } from "../permissions";
 import { assertResponsibleUsers } from "./storyActionStepService";
 
@@ -92,13 +93,31 @@ async function featuresByStep(
 }
 
 // ---------------------------------------------------------------- personas
-export async function listPersonas(projectId: string): Promise<UsmPersonaDto[]> {
+/**
+ * Users of one project, or of every visible project when `projectId` is omitted (`scope` limits a non-PM to
+ * their projects). One joined query either way, ordered by project name and then position.
+ */
+export async function listPersonas(
+  projectId?: string,
+  scope: ProjectScope = null,
+): Promise<UsmPersonaDto[]> {
   const rows = await db
-    .select()
+    .select({ p: usmPersonas, projectName: projects.name })
     .from(usmPersonas)
-    .where(eq(usmPersonas.projectId, projectId))
-    .orderBy(asc(usmPersonas.sortOrder), asc(usmPersonas.createdAt), asc(usmPersonas.id));
-  return rows.map(toPersonaDto);
+    .innerJoin(projects, eq(projects.id, usmPersonas.projectId))
+    .where(
+      and(
+        projectId ? eq(usmPersonas.projectId, projectId) : undefined,
+        scopeCondition(usmPersonas.projectId, scope),
+      ),
+    )
+    .orderBy(
+      asc(projects.name),
+      asc(usmPersonas.sortOrder),
+      asc(usmPersonas.createdAt),
+      asc(usmPersonas.id),
+    );
+  return rows.map(({ p, projectName }) => ({ ...toPersonaDto(p), projectName }));
 }
 
 export async function createPersona(
@@ -142,24 +161,36 @@ export async function deletePersona(id: string) {
 }
 
 // ---------------------------------------------------------------- steps
-export async function listSteps(projectId: string, personaId?: string): Promise<UsmStepDto[]> {
-  const steps = await db
-    .select()
+export async function listSteps(
+  projectId?: string,
+  personaId?: string,
+  scope: ProjectScope = null,
+): Promise<UsmStepDto[]> {
+  const rows = await db
+    .select({ s: usmSteps, projectName: projects.name })
     .from(usmSteps)
+    .innerJoin(projects, eq(projects.id, usmSteps.projectId))
     .where(
       and(
-        eq(usmSteps.projectId, projectId),
+        projectId ? eq(usmSteps.projectId, projectId) : undefined,
         personaId ? eq(usmSteps.personaId, personaId) : undefined,
+        scopeCondition(usmSteps.projectId, scope),
       ),
     )
-    .orderBy(asc(usmSteps.sortOrder), asc(usmSteps.createdAt), asc(usmSteps.id));
+    .orderBy(
+      asc(projects.name),
+      asc(usmSteps.sortOrder),
+      asc(usmSteps.createdAt),
+      asc(usmSteps.id),
+    );
   const features = await featuresByStep(
     db,
-    steps.map((s) => s.id),
+    rows.map((r) => r.s.id),
   );
-  return steps.map((s) => ({
+  return rows.map(({ s, projectName }) => ({
     id: s.id,
     projectId: s.projectId,
+    projectName,
     personaId: s.personaId,
     title: s.title,
     description: s.description,

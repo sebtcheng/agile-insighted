@@ -167,7 +167,7 @@ function OpportunityNode({ o, ctx }: { o: OpportunityDto; ctx: OstCtx }) {
         ) : null}
       </Group>
       {thin ? (
-        <Alert color="yellow" mt="xs" p="xs">
+        <Alert color="sun" mt="xs" p="xs">
           This is the targeted requirement but has {solutions.length} of {MIN_SOLUTIONS_PER_TARGET}{" "}
           solutions. Compare at least {MIN_SOLUTIONS_PER_TARGET} different ideas before committing.
         </Alert>

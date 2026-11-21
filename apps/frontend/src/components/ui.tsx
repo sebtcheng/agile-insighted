@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Center, Group, Loader, Stack, Text } from "@mantine/core";
+import { Alert, Badge, Button, Center, Loader, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -34,7 +34,7 @@ export function QueryState<T>({
   }
   if (query.isError) {
     return (
-      <Alert color="red" title="Could not load this">
+      <Alert color="coral" title="Could not load this">
         <Stack gap="xs" align="flex-start">
           <Text size="sm">{errorMessage(query.error)}</Text>
           <Button size="xs" variant="light" onClick={() => void query.refetch()}>
@@ -66,7 +66,7 @@ export const PriorityBadge = ({ priority }: { priority: ActivityPriority }) => (
   </Badge>
 );
 export const WorkTypeBadge = ({ type }: { type: WorkType }) => (
-  <Badge color="gray" variant="outline">
+  <Badge color="navy" variant="outline">
     {ENUM_LABELS.workType[type]}
   </Badge>
 );
@@ -96,11 +96,13 @@ export const fmtDateTime = (iso: string): string =>
 
 export const toast = {
   error: (message: string, title = "That did not work") =>
-    notifications.show({ color: "red", title, message, autoClose: 8000 }),
-  ok: (message: string) => notifications.show({ color: "green", message, autoClose: 3000 }),
+    notifications.show({ color: "coral", title, message, autoClose: 8000 }),
+  ok: (message: string) => notifications.show({ color: "sea", message, autoClose: 3000 }),
   warn: (message: string, title = "Heads up") =>
-    notifications.show({ color: "yellow", title, message, autoClose: 8000 }),
+    notifications.show({ color: "sun", title, message, autoClose: 8000 }),
 };
+
+import { AnimeHero } from "./AnimeHero";
 
 export function PageHeader({
   title,
@@ -112,18 +114,12 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <Group justify="space-between" align="flex-start" mb="md" wrap="wrap">
-      <div>
-        <Text component="h1" fz={26} fw={700} lh={1.2} m={0} className="page-title">
-          {title}
-        </Text>
-        {subtitle ? (
-          <Text c="dimmed" size="sm" mt={8} className="page-subtitle">
-            {subtitle}
-          </Text>
-        ) : null}
-      </div>
-      {actions ? <Group>{actions}</Group> : null}
-    </Group>
+    <div style={{ marginBottom: 16, position: "relative", zIndex: 0 }}>
+      <AnimeHero
+        title={title}
+        subtitle={typeof subtitle === "string" ? subtitle : undefined}
+        rightSlot={actions}
+      />
+    </div>
   );
 }

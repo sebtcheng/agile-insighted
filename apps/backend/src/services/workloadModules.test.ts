@@ -24,20 +24,22 @@ beforeAll(async () => {
 
   const outcome = await m.createOutcome({ ...k, title: "Outcome" });
   const opp = await m.createOpportunity({ ...k, outcomeId: outcome.id, title: "Opportunity" });
-  await m.createSolution({
+  const sol1 = await m.createSolution({
     ...k,
     opportunityId: opp.id,
     title: "OST solution",
     ownerId: f.m1.id,
     targetDate: "2026-11-20",
   });
+  await approveRow("ost_solutions", sol1.id);
   // One unowned solution so there is something for the Unassigned bucket.
-  await m.createSolution({
+  const sol2 = await m.createSolution({
     ...k,
     opportunityId: opp.id,
     title: "OST orphan",
     targetDate: "2026-11-25",
   });
+  await approveRow("ost_solutions", sol2.id);
 
   const req = await m.createKanoRequest({ ...k, revisionRequest: "Revise the form" });
   await db.insert(kanoRequestSpecs).values({
@@ -45,6 +47,7 @@ beforeAll(async () => {
     label: "Kano spec",
     responsibleId: f.m1.id,
     targetDate: "2026-11-02",
+    pmApproval: "APPROVED",
   });
 
   const raid = await m.createRaidItem({ ...k, itemType: "risk", description: "Risk", impact: 2 });
@@ -55,6 +58,7 @@ beforeAll(async () => {
     targetDate: "2026-11-19",
     isCompleted: true,
     completedAt: new Date("2026-11-17T02:00:00Z"),
+    pmApproval: "APPROVED",
   });
 
   const persona = await usm.createPersona(f.pmActor, {
@@ -66,13 +70,14 @@ beforeAll(async () => {
     personaId: persona.id,
     title: "Sign in",
   });
-  await usm.createFeature({
+  const feat = await usm.createFeature({
     projectId: f.otherProject.id,
     stepId: step.id,
     title: "USM feature",
     responsibleId: f.m1.id,
     targetDate: "2026-11-21",
   });
+  await approveRow("usm_step_features", feat.id);
 });
 afterAll(async () => {
   await f.cleanup();

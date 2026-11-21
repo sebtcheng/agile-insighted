@@ -10,7 +10,12 @@ const titles = (rows: Array<{ title: string }>) => rows.map((r) => r.title).sort
 beforeAll(async () => {
   f = await createFixture();
   const mk = (title: string, o: Parameters<typeof rawActivity>[2]) =>
-    rawActivity(f.project.id, f.pm.id, { title, assigneeId: f.m1.id, ...o });
+    rawActivity(f.project.id, f.pm.id, {
+      title,
+      assigneeId: f.m1.id,
+      pmApproval: "APPROVED",
+      ...o,
+    });
   const started = new Date("2026-11-01T00:00:00Z");
   await mk("monday", { dueDate: "2026-11-16", status: "in_progress", startedAt: started });
   await mk("sunday", { dueDate: "2026-11-22" });
@@ -108,5 +113,18 @@ describe("getHome", () => {
     expect(
       filtered.thisWeek.filter((r) => r.projectId === f.project.id).map((r) => r.title),
     ).toEqual(["someone-else"]);
+  });
+
+  it("excludes PENDING items from Home lists, summary, and WIP", async () => {
+    const before = await getHome(f.m1Actor, { now: NOW }, [f.project.id]);
+    const pendingAct = await rawActivity(f.project.id, f.m1.id, {
+      title: `Pending Home ${f.tag}`,
+      dueDate: "2026-03-19",
+      status: "in_progress",
+      startedAt: new Date(),
+    });
+    const res = await getHome(f.m1Actor, { now: NOW }, [f.project.id]);
+    expect(res.thisWeek.map((r) => r.id)).not.toContain(pendingAct.id);
+    expect(res.wip.inProgress).toBe(before.wip.inProgress);
   });
 });

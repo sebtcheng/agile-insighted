@@ -533,8 +533,12 @@ export async function update(
   return tx ? run(tx) : db.transaction(run);
 }
 
-export async function remove(ctx: ServiceContext, activityId: string): Promise<void> {
-  if (ctx.actor.role !== "pm") throw forbidden();
+export async function remove(
+  ctx: ServiceContext,
+  activityId: string,
+  opts: { anyRole?: boolean } = {},
+): Promise<void> {
+  if (!opts.anyRole && ctx.actor.role !== "pm") throw forbidden();
   await db.transaction(async (t) => {
     const [current] = await t
       .select({ projectId: activities.projectId, subprojectId: activities.subprojectId })

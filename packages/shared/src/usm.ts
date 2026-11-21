@@ -14,8 +14,13 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
 
 export const MAX_USM_FEATURES_PER_STEP = 50;
 
-export const usmProjectQuerySchema = z.object({ projectId: id });
-export const usmStepsQuerySchema = z.object({ projectId: id, personaId: id.optional() });
+/** A concrete project id, or `all` / empty for every project the caller can see (reads only). */
+const projectFilter = z
+  .union([id, z.enum(["all", ""])])
+  .optional()
+  .transform((v) => (v && v !== "all" ? v : undefined));
+export const usmProjectQuerySchema = z.object({ projectId: projectFilter });
+export const usmStepsQuerySchema = z.object({ projectId: projectFilter, personaId: id.optional() });
 
 export const createUsmPersonaSchema = z.object({
   projectId: id,
@@ -74,6 +79,8 @@ export type UpdateUsmFeatureInput = z.infer<typeof updateUsmFeatureSchema>;
 export type UsmPersonaDto = {
   id: string;
   projectId: string;
+  /** Present on list reads, so an all-projects view can label each user. */
+  projectName?: string | null;
   name: string;
   description: string | null;
   sortOrder: number;
@@ -96,6 +103,7 @@ export type UsmFeatureDto = {
 export type UsmStepDto = {
   id: string;
   projectId: string;
+  projectName?: string | null;
   personaId: string;
   title: string;
   description: string | null;

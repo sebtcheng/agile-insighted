@@ -43,7 +43,7 @@ export function ProjectPage() {
     <QueryState query={projects}>
       {() =>
         !project ? (
-          <Alert color="red" title="Project not found">
+          <Alert color="coral" title="Project not found">
             <Anchor component={Link} to="/projects">
               Back to projects
             </Anchor>
@@ -176,6 +176,7 @@ function ProjectWork({
               projectNames={projectNames}
               detailed
               checkable
+              deletable
               onOpen={(item) =>
                 item.sourceModule === "project" ? () => openActivity(item.id) : undefined
               }

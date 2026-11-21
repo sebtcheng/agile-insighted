@@ -182,7 +182,12 @@ describe("Kano API", () => {
   });
 
   it("creates a request in the project chosen in the form", async () => {
-    const r = await submit({ projectId: f.otherProject.id });
+    // Members are scoped to their own project, so the PM submits into the other one.
+    const r = json<KanoDto>(
+      await pm
+        .post(base())
+        .send({ revisionRequest: "Chosen project", projectId: f.otherProject.id }),
+    );
     expect(r.projectId).toBe(f.otherProject.id);
   });
 
