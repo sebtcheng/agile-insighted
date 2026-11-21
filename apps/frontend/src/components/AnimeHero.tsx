@@ -59,7 +59,7 @@ export function AnimeHero({
         {/* Deep Navy front wave */}
         <path d="M0 138 Q 300 124 600 138 T 1200 134 L 1200 160 L 0 160 Z" fill="#0B2545" />
         {/* White sailboat */}
-        <g transform="translate(790, 74)">
+        <g transform="translate(860, 74)">
           <path d="M18 0 L18 36 L0 36 Z" fill="#FFFFFF" />
           <path d="M22 6 L22 36 L36 36 Z" fill="#F6E7C8" />
           <path d="M-4 39 L40 39 L32 47 L4 47 Z" fill="#0B2545" />
@@ -74,7 +74,19 @@ export function AnimeHero({
         </g>
       </svg>
 
-      <div style={{ position: "relative", zIndex: 1 }}>
+      {/* Directional navy scrim for text-to-background separation */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          background:
+            "linear-gradient(90deg, rgba(18, 58, 107, 0.88) 0%, rgba(18, 58, 107, 0.62) 52%, rgba(18, 58, 107, 0) 82%)",
+        }}
+      />
+
+      <div style={{ position: "relative", zIndex: 1, maxWidth: "min(680px, 65%)" }}>
         <span
           style={{
             display: "inline-block",
@@ -98,9 +110,9 @@ export function AnimeHero({
             margin: 0,
             fontFamily: "var(--font-display)",
             fontWeight: 900,
-            fontSize: "var(--fs-display)",
-            lineHeight: 1,
-            letterSpacing: "-0.03em",
+            fontSize: "clamp(1.65rem, 2.4vw, 2.125rem)",
+            lineHeight: 1.15,
+            letterSpacing: "-0.025em",
             color: "#FFFFFF",
             textShadow: "3px 3px 0 #0B2545",
           }}
@@ -112,8 +124,10 @@ export function AnimeHero({
             style={{
               margin: "4px 0 0",
               fontFamily: "var(--font-body)",
-              fontSize: 16,
+              fontSize: 14,
+              lineHeight: 1.4,
               color: "#DFF3F1",
+              textShadow: "0 1px 2px rgba(11, 37, 69, 0.85)",
             }}
           >
             {subtitle}

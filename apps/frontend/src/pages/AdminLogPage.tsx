@@ -1,12 +1,10 @@
 import { useMemo, useState } from "react";
 import {
-  ActionIcon,
   Alert,
   Badge,
   Button,
   Checkbox,
   Group,
-  Popover,
   Select,
   Stack,
   Table,
@@ -14,6 +12,7 @@ import {
   TextInput,
   UnstyledButton,
 } from "@mantine/core";
+import { ColumnHeader, compareNullable } from "../components/ColumnHeader";
 import {
   PM_APPROVALS,
   isPmApproved,
@@ -67,14 +66,6 @@ const EMPTY_FILTERS: ColumnFilters = {
 const sprintLabelFor = (i: WorkItem) => resolveStoredSprint(null, i.dueDate)?.label ?? "No sprint";
 const assigneeLabelFor = (i: WorkItem) => i.assigneeName ?? "Unassigned";
 
-function compareNullable(a: string | null, b: string | null, dir: "asc" | "desc"): number {
-  if (!a && !b) return 0;
-  if (!a) return 1;
-  if (!b) return -1;
-  const cmp = a.localeCompare(b);
-  return dir === "asc" ? cmp : -cmp;
-}
-
 function sortItems(items: WorkItem[], sort: SortConfig): WorkItem[] {
   if (!sort.key) return sortTasksOngoingFirst(items);
   const { key, direction } = sort;
@@ -92,90 +83,6 @@ function sortItems(items: WorkItem[], sort: SortConfig): WorkItem[] {
         return compareNullable(a.pmApproval ?? "PENDING", b.pmApproval ?? "PENDING", direction);
     }
   });
-}
-
-function ColumnHeader({
-  label,
-  colKey,
-  sort,
-  onSort,
-  activeFilterCount,
-  onClearFilter,
-  children,
-}: {
-  label: string;
-  colKey: SortKey;
-  sort: SortConfig;
-  onSort: (key: SortKey) => void;
-  activeFilterCount: number;
-  onClearFilter: () => void;
-  children: React.ReactNode;
-}) {
-  const [opened, setOpened] = useState(false);
-  const isSorted = sort.key === colKey;
-  const ariaSort = isSorted ? (sort.direction === "asc" ? "ascending" : "descending") : "none";
-  const sortIcon = isSorted ? (sort.direction === "asc" ? "↑" : "↓") : "↕";
-
-  return (
-    <Table.Th aria-sort={ariaSort}>
-      <Group gap={4} wrap="nowrap" justify="space-between">
-        <UnstyledButton
-          type="button"
-          onClick={() => onSort(colKey)}
-          fw={700}
-          fz="sm"
-          style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-        >
-          <span>{label}</span>
-          <Text span size="xs" c={isSorted ? "navy" : "dimmed"} aria-hidden="true">
-            {sortIcon}
-          </Text>
-        </UnstyledButton>
-        <Popover
-          opened={opened}
-          onChange={setOpened}
-          position="bottom-start"
-          withArrow
-          shadow="md"
-        >
-          <Popover.Target>
-            <ActionIcon
-              type="button"
-              size="xs"
-              variant={activeFilterCount > 0 ? "filled" : "subtle"}
-              color={activeFilterCount > 0 ? "navy" : "gray"}
-              aria-label={`Filter ${label}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpened((o) => !o);
-              }}
-            >
-              <Text span fz={11} lh={1}>
-                ⧗
-              </Text>
-            </ActionIcon>
-          </Popover.Target>
-          <Popover.Dropdown p="xs" miw={200} onClick={(e) => e.stopPropagation()}>
-            <Stack gap="xs">
-              {children}
-              <Group justify="flex-end">
-                <Button
-                  size="compact-xs"
-                  variant="subtle"
-                  onClick={() => {
-                    onClearFilter();
-                    setOpened(false);
-                  }}
-                >
-                  Clear
-                </Button>
-              </Group>
-            </Stack>
-          </Popover.Dropdown>
-        </Popover>
-      </Group>
-    </Table.Th>
-  );
 }
 
 /** OST titles are shown as "OST-01 Title"; the stored title has no code. */
@@ -286,6 +193,8 @@ function EditItemModal({ item, onClose }: { item: WorkItem; onClose: () => void 
 
 function ProjectSection({
   group,
+  isOpen,
+  onToggle,
   onEdit,
   sort,
   onSort,
@@ -294,6 +203,8 @@ function ProjectSection({
   options,
 }: {
   group: AdminLogProjectGroup;
+  isOpen: boolean;
+  onToggle: () => void;
   onEdit: (item: WorkItem) => void;
   sort: SortConfig;
   onSort: (key: SortKey) => void;
@@ -304,22 +215,37 @@ function ProjectSection({
   const update = useUpdateAdminLogItem();
   const approve = useSetApproval();
   const remove = useDeleteAdminLogItem();
+  const panelId = `admin-log-panel-${group.projectId}`;
   return (
     <section aria-label={group.projectName} data-testid="admin-log-project">
-      <Group gap="sm" mb="xs">
-        <Text fw={700} fz="lg" component="h2" m={0}>
-          {group.projectName}
+      <UnstyledButton
+        type="button"
+        aria-expanded={isOpen}
+        aria-controls={panelId}
+        onClick={onToggle}
+        mb="xs"
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8 }}
+      >
+        <Text span fw={700} fz="sm" c="dimmed" aria-hidden="true">
+          {isOpen ? "▾" : "▸"}
         </Text>
-        <Badge variant="outline" color="navy">
-          {group.total} {group.total === 1 ? "task" : "tasks"}
-        </Badge>
-        {group.pending > 0 ? (
-          <Badge variant="light" color="navy">
-            {group.pending} pending
+        <Group gap="sm">
+          <Text fw={700} fz="lg" component="h2" m={0}>
+            {group.projectName}
+          </Text>
+          <Badge variant="outline" color="navy">
+            {group.total} {group.total === 1 ? "task" : "tasks"}
           </Badge>
-        ) : null}
-      </Group>
-      <Table.ScrollContainer minWidth={860}>
+          {group.pending > 0 ? (
+            <Badge variant="light" color="navy">
+              {group.pending} pending
+            </Badge>
+          ) : null}
+        </Group>
+      </UnstyledButton>
+      {isOpen ? (
+        <div id={panelId} role="region" aria-label={`${group.projectName} tasks`}>
+          <Table.ScrollContainer minWidth={860}>
         <Table verticalSpacing={4} fz="sm">
           <Table.Thead>
             <Table.Tr>
@@ -506,7 +432,9 @@ function ProjectSection({
             })}
           </Table.Tbody>
         </Table>
-      </Table.ScrollContainer>
+          </Table.ScrollContainer>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -515,6 +443,7 @@ export function AdminLogPage() {
   const isPm = useIsPm();
   const log = useAdminLog();
   const [editing, setEditing] = useState<WorkItem | null>(null);
+  const [expandedProjectId, setExpandedProjectId] = useState<string | null | undefined>(undefined);
   const [sort, setSort] = useState<SortConfig>({ key: null, direction: "asc" });
   const [filters, setFilters] = useState<ColumnFilters>(EMPTY_FILTERS);
 
@@ -615,22 +544,35 @@ export function AdminLogPage() {
         isEmpty={(d) => d.projects.length === 0}
         empty={<Text c="dimmed">No tasks yet.</Text>}
       >
-        {() => (
-          <Stack gap="xl">
-            {filteredProjects.map((g) => (
-              <ProjectSection
-                key={g.projectId}
-                group={g}
-                onEdit={setEditing}
-                sort={sort}
-                onSort={toggleSort}
-                filters={filters}
-                onFiltersChange={setFilters}
-                options={options}
-              />
-            ))}
-          </Stack>
-        )}
+        {() => {
+          const activeProjectId =
+            expandedProjectId === undefined
+              ? (filteredProjects[0]?.projectId ?? null)
+              : filteredProjects.some((g) => g.projectId === expandedProjectId)
+                ? expandedProjectId
+                : null;
+          return (
+            <Stack gap="md">
+              {filteredProjects.map((g) => {
+                const isOpen = g.projectId === activeProjectId;
+                return (
+                  <ProjectSection
+                    key={g.projectId}
+                    group={g}
+                    isOpen={isOpen}
+                    onToggle={() => setExpandedProjectId(isOpen ? null : g.projectId)}
+                    onEdit={setEditing}
+                    sort={sort}
+                    onSort={toggleSort}
+                    filters={filters}
+                    onFiltersChange={setFilters}
+                    options={options}
+                  />
+                );
+              })}
+            </Stack>
+          );
+        }}
       </QueryState>
       {editing ? (
         <EditItemModal key={editing.id} item={editing} onClose={() => setEditing(null)} />

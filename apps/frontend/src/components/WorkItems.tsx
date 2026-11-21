@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Badge,
   Button,
@@ -7,16 +7,21 @@ import {
   Group,
   SegmentedControl,
   SimpleGrid,
+  Stack,
   Table,
   Text,
+  TextInput,
 } from "@mantine/core";
 import {
   SOURCE_MODULE_LABELS,
+  sortTasksOngoingFirst,
   type ScheduleStatus,
   type WorkBreakdownRow,
   type WorkItem,
   type WorkSummary,
 } from "@myapp/shared";
+import { ColumnHeader, compareNullable, toggleSortConfig, type SortConfig } from "./ColumnHeader";
+import { TaskDetailModal } from "./TaskDetailModal";
 import { useToggleWorkItem } from "../api/hooks";
 import { useAuth, useIsPm } from "../auth";
 import { isCheckable } from "../lib/workItemToggle";
@@ -167,6 +172,24 @@ export function WorkItemRow({
   );
 }
 
+type WorkColKey = "title" | "project" | "module" | "assignee" | "status" | "dueDate" | "pmApproval";
+type WorkColFilters = {
+  title: string;
+  projects: string[];
+  modules: string[];
+  assignees: string[];
+  statuses: string[];
+  approvals: string[];
+};
+const EMPTY_WORK_FILTERS: WorkColFilters = {
+  title: "",
+  projects: [],
+  modules: [],
+  assignees: [],
+  statuses: [],
+  approvals: [],
+};
+
 /** Work items as a table with the project as its own column. */
 export function WorkItemsTable({
   items,
@@ -184,31 +207,231 @@ export function WorkItemsTable({
   onOpen?: (item: WorkItem) => (() => void) | undefined;
 }) {
   const [pendingDelete, setPendingDelete] = useState<WorkItem | null>(null);
+  const [selectedTask, setSelectedTask] = useState<WorkItem | null>(null);
+  const [sort, setSort] = useState<SortConfig<WorkColKey>>({ key: null, direction: "asc" });
+  const [filters, setFilters] = useState<WorkColFilters>(EMPTY_WORK_FILTERS);
+
+  const hasFilters =
+    filters.title.trim().length > 0 ||
+    filters.projects.length > 0 ||
+    filters.modules.length > 0 ||
+    filters.assignees.length > 0 ||
+    filters.statuses.length > 0 ||
+    filters.approvals.length > 0;
+
+  const projectOpts = useMemo(
+    () => [...new Set(items.map((i) => projectNames.get(i.projectId) ?? "—"))].sort(),
+    [items, projectNames],
+  );
+  const moduleOpts = useMemo(
+    () => [...new Set(items.map((i) => SOURCE_MODULE_LABELS[i.sourceModule]))].sort(),
+    [items],
+  );
+  const assigneeOpts = useMemo(
+    () => [...new Set(items.map((i) => i.assigneeName ?? "Unassigned"))].sort(),
+    [items],
+  );
+  const statusOpts = useMemo(
+    () => [...new Set(items.map((i) => SCHEDULE_LABEL[i.scheduleStatus]))].sort(),
+    [items],
+  );
+  const approvalOpts = useMemo(
+    () => [...new Set(items.map((i) => i.pmApproval ?? "PENDING"))].sort(),
+    [items],
+  );
+
+  const visible = useMemo(() => {
+    const q = filters.title.trim().toLowerCase();
+    const filtered = items.filter((i) => {
+      if (q && !i.title.toLowerCase().includes(q)) return false;
+      if (filters.projects.length && !filters.projects.includes(projectNames.get(i.projectId) ?? "—"))
+        return false;
+      if (filters.modules.length && !filters.modules.includes(SOURCE_MODULE_LABELS[i.sourceModule]))
+        return false;
+      if (filters.assignees.length && !filters.assignees.includes(i.assigneeName ?? "Unassigned"))
+        return false;
+      if (filters.statuses.length && !filters.statuses.includes(SCHEDULE_LABEL[i.scheduleStatus]))
+        return false;
+      if (filters.approvals.length && !filters.approvals.includes(i.pmApproval ?? "PENDING"))
+        return false;
+      return true;
+    });
+    if (!sort.key) return sortTasksOngoingFirst(filtered);
+    const { key, direction } = sort;
+    return [...filtered].sort((a, b) => {
+      switch (key) {
+        case "title":
+          return compareNullable(a.title, b.title, direction);
+        case "project":
+          return compareNullable(
+            projectNames.get(a.projectId) ?? null,
+            projectNames.get(b.projectId) ?? null,
+            direction,
+          );
+        case "module":
+          return compareNullable(
+            SOURCE_MODULE_LABELS[a.sourceModule],
+            SOURCE_MODULE_LABELS[b.sourceModule],
+            direction,
+          );
+        case "assignee":
+          return compareNullable(a.assigneeName, b.assigneeName, direction);
+        case "status":
+          return compareNullable(
+            SCHEDULE_LABEL[a.scheduleStatus],
+            SCHEDULE_LABEL[b.scheduleStatus],
+            direction,
+          );
+        case "dueDate":
+          return compareNullable(a.dueDate, b.dueDate, direction);
+        case "pmApproval":
+          return compareNullable(a.pmApproval ?? "PENDING", b.pmApproval ?? "PENDING", direction);
+      }
+    });
+  }, [items, filters, sort, projectNames]);
+
+  const handleSort = (key: WorkColKey) => setSort((prev) => toggleSortConfig(prev, key));
+
   return (
     <>
+      {hasFilters ? (
+        <Group justify="flex-end" mb={4}>
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            onClick={() => setFilters(EMPTY_WORK_FILTERS)}
+          >
+            Clear column filters
+          </Button>
+        </Group>
+      ) : null}
       <Table verticalSpacing={4} fz="sm" mb="xs">
         <Table.Thead>
           <Table.Tr>
             {checkable ? <Table.Th w={36} aria-label="Done" /> : null}
-            <Table.Th>Task</Table.Th>
-            <Table.Th>Project</Table.Th>
-            <Table.Th>Module</Table.Th>
-            <Table.Th>Assignee</Table.Th>
-            <Table.Th>Status</Table.Th>
-            <Table.Th>Due date</Table.Th>
-            <Table.Th>PM Approval</Table.Th>
+            <ColumnHeader
+              label="Task"
+              colKey="title"
+              sort={sort}
+              onSort={handleSort}
+              activeFilterCount={filters.title ? 1 : 0}
+              onClearFilter={() => setFilters((f) => ({ ...f, title: "" }))}
+            >
+              <TextInput
+                size="xs"
+                placeholder="Search task..."
+                value={filters.title}
+                onChange={(e) => setFilters((f) => ({ ...f, title: e.currentTarget.value }))}
+              />
+            </ColumnHeader>
+            <ColumnHeader
+              label="Project"
+              colKey="project"
+              sort={sort}
+              onSort={handleSort}
+              activeFilterCount={filters.projects.length}
+              onClearFilter={() => setFilters((f) => ({ ...f, projects: [] }))}
+            >
+              <Checkbox.Group
+                value={filters.projects}
+                onChange={(v) => setFilters((f) => ({ ...f, projects: v }))}
+              >
+                <Stack gap={4}>
+                  {projectOpts.map((opt) => (
+                    <Checkbox key={opt} size="xs" value={opt} label={opt} />
+                  ))}
+                </Stack>
+              </Checkbox.Group>
+            </ColumnHeader>
+            <ColumnHeader
+              label="Module"
+              colKey="module"
+              sort={sort}
+              onSort={handleSort}
+              activeFilterCount={filters.modules.length}
+              onClearFilter={() => setFilters((f) => ({ ...f, modules: [] }))}
+            >
+              <Checkbox.Group
+                value={filters.modules}
+                onChange={(v) => setFilters((f) => ({ ...f, modules: v }))}
+              >
+                <Stack gap={4}>
+                  {moduleOpts.map((opt) => (
+                    <Checkbox key={opt} size="xs" value={opt} label={opt} />
+                  ))}
+                </Stack>
+              </Checkbox.Group>
+            </ColumnHeader>
+            <ColumnHeader
+              label="Assignee"
+              colKey="assignee"
+              sort={sort}
+              onSort={handleSort}
+              activeFilterCount={filters.assignees.length}
+              onClearFilter={() => setFilters((f) => ({ ...f, assignees: [] }))}
+            >
+              <Checkbox.Group
+                value={filters.assignees}
+                onChange={(v) => setFilters((f) => ({ ...f, assignees: v }))}
+              >
+                <Stack gap={4}>
+                  {assigneeOpts.map((opt) => (
+                    <Checkbox key={opt} size="xs" value={opt} label={opt} />
+                  ))}
+                </Stack>
+              </Checkbox.Group>
+            </ColumnHeader>
+            <ColumnHeader
+              label="Status"
+              colKey="status"
+              sort={sort}
+              onSort={handleSort}
+              activeFilterCount={filters.statuses.length}
+              onClearFilter={() => setFilters((f) => ({ ...f, statuses: [] }))}
+            >
+              <Checkbox.Group
+                value={filters.statuses}
+                onChange={(v) => setFilters((f) => ({ ...f, statuses: v }))}
+              >
+                <Stack gap={4}>
+                  {statusOpts.map((opt) => (
+                    <Checkbox key={opt} size="xs" value={opt} label={opt} />
+                  ))}
+                </Stack>
+              </Checkbox.Group>
+            </ColumnHeader>
+            <ColumnHeader label="Due date" colKey="dueDate" sort={sort} onSort={handleSort} />
+            <ColumnHeader
+              label="PM Approval"
+              colKey="pmApproval"
+              sort={sort}
+              onSort={handleSort}
+              activeFilterCount={filters.approvals.length}
+              onClearFilter={() => setFilters((f) => ({ ...f, approvals: [] }))}
+            >
+              <Checkbox.Group
+                value={filters.approvals}
+                onChange={(v) => setFilters((f) => ({ ...f, approvals: v }))}
+              >
+                <Stack gap={4}>
+                  {approvalOpts.map((opt) => (
+                    <Checkbox key={opt} size="xs" value={opt} label={opt} />
+                  ))}
+                </Stack>
+              </Checkbox.Group>
+            </ColumnHeader>
             {deletable ? <Table.Th>Delete</Table.Th> : null}
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {items.map((i) => {
-            const open = onOpen?.(i);
+          {visible.map((i) => {
+            const open = onOpen?.(i) ?? (() => setSelectedTask(i));
             return (
               <Table.Tr
                 key={`${i.sourceModule}-${i.id}`}
                 data-testid="work-item-row"
                 onClick={open}
-                style={open ? { cursor: "pointer" } : undefined}
+                style={{ cursor: "pointer" }}
               >
                 {checkable ? (
                   <Table.Td>
@@ -267,6 +490,11 @@ export function WorkItemsTable({
           onClose={() => setPendingDelete(null)}
         />
       ) : null}
+      <TaskDetailModal
+        item={selectedTask}
+        projectName={selectedTask ? projectNames.get(selectedTask.projectId) : undefined}
+        onClose={() => setSelectedTask(null)}
+      />
     </>
   );
 }
@@ -283,17 +511,30 @@ export function WorkItemsCards({
   checkable?: boolean;
   onOpen?: (item: WorkItem) => (() => void) | undefined;
 }) {
+  const [selectedTask, setSelectedTask] = useState<WorkItem | null>(null);
   return (
-    <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} p="sm">
-      {items.map((i) => (
-        <Card
-          key={`${i.sourceModule}-${i.id}`}
-          withBorder
-          padding="sm"
-          data-testid="work-item-row"
-          onClick={onOpen?.(i)}
-          style={onOpen?.(i) ? { cursor: "pointer" } : undefined}
-        >
+    <>
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} p="sm">
+        {items.map((i) => {
+          const open = onOpen?.(i) ?? (() => setSelectedTask(i));
+          return (
+            <Card
+              key={`${i.sourceModule}-${i.id}`}
+              withBorder
+              padding="sm"
+              data-testid="work-item-row"
+              role="button"
+              tabIndex={0}
+              onClick={open}
+              onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  open();
+                }
+              }}
+              style={{ cursor: "pointer" }}
+            >
           <Group justify="space-between" wrap="nowrap" mb={4}>
             <Group gap="xs" wrap="nowrap">
               {checkable ? <WorkItemCheck item={i} /> : null}
@@ -322,9 +563,16 @@ export function WorkItemsCards({
             {projectNames.get(i.projectId) ?? "—"} · {i.assigneeName ?? "Unassigned"} ·{" "}
             {i.dueDate ? fmtDate(i.dueDate) : "No due date"}
           </Text>
-        </Card>
-      ))}
-    </SimpleGrid>
+            </Card>
+          );
+        })}
+      </SimpleGrid>
+      <TaskDetailModal
+        item={selectedTask}
+        projectName={selectedTask ? projectNames.get(selectedTask.projectId) : undefined}
+        onClose={() => setSelectedTask(null)}
+      />
+    </>
   );
 }
 
@@ -349,6 +597,7 @@ export function WorkItemsView({
   /** List view only: spell out an empty assignee and date. */
   detailed?: boolean;
 }) {
+  const [selectedTask, setSelectedTask] = useState<WorkItem | null>(null);
   if (view === "table")
     return (
       <WorkItemsTable
@@ -375,10 +624,15 @@ export function WorkItemsView({
           key={`${i.sourceModule}-${i.id}`}
           item={i}
           detailed={detailed}
-          onOpen={onOpen?.(i)}
+          onOpen={onOpen?.(i) ?? (() => setSelectedTask(i))}
           checkable={checkable}
         />
       ))}
+      <TaskDetailModal
+        item={selectedTask}
+        projectName={selectedTask ? projectNames.get(selectedTask.projectId) : undefined}
+        onClose={() => setSelectedTask(null)}
+      />
     </>
   );
 }

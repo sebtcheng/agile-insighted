@@ -369,7 +369,7 @@ describe("Workload task delete", () => {
         h.textContent?.trim(),
       );
       expect(ths.at(-1)).toBe("Delete");
-      expect(ths.at(-2)).toBe("PM Approval");
+      expect(ths.at(-2)).toContain("PM Approval");
       expect(deleteButton("ost-1 title")).toBeTruthy();
     });
   }
@@ -419,7 +419,7 @@ describe("Workload page as a team member", () => {
     auth.role = "team_member";
     await mount();
     const names = [
-      ...document.querySelectorAll("tbody tr td:first-child button:not([aria-label^='Delete'])"),
+      ...document.querySelectorAll("tbody button[aria-expanded]:not([aria-label^='Filter '])"),
     ].map((b) =>
       b.textContent?.replace(/[▸▾]\s*/, "").trim(),
     );

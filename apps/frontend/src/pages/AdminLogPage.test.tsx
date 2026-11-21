@@ -150,8 +150,18 @@ describe("Admin Log page", () => {
     expect(heads.some((h) => h?.includes("PM Approval"))).toBe(true);
     expect(groups[0]!.textContent).toMatch(/USM/);
     expect(groups[0]!.textContent).toMatch(/RAID/);
-    expect(groups[1]!.textContent).toMatch(/OST/);
     expect(groups[0]!.textContent).toContain("Sprint 47 — Ends Sun, Nov 22, 2026");
+    // Single-open accordion: clicking Project B expands it and collapses Project A
+    const btn0 = groups[0]!.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    const btn1 = groups[1]!.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    expect(btn0.getAttribute("aria-expanded")).toBe("true");
+    expect(btn1.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => {
+      btn1.click();
+    });
+    expect(btn0.getAttribute("aria-expanded")).toBe("false");
+    expect(btn1.getAttribute("aria-expanded")).toBe("true");
+    expect(groups[1]!.textContent).toMatch(/OST/);
   });
 
   it("locks the completion checkbox until the task is approved", async () => {
@@ -213,11 +223,11 @@ describe("PM Approval column in task tables", () => {
         checkable: true,
       }),
     );
-    expect([...el.querySelectorAll("thead th")].map((th) => th.textContent)).toContain(
-      "PM Approval",
+    expect([...el.querySelectorAll("thead th")].some((th) => th.textContent?.includes("PM Approval"))).toBe(
+      true,
     );
     const badges = [...el.querySelectorAll("div[data-approval]")].map((b) => b.textContent);
-    expect(badges).toEqual(["Pending", "Approved"]);
+    expect(badges).toEqual(["Approved", "Pending"]);
     expect(byLabel("Complete usm-1 title")!.disabled).toBe(true);
     expect(byLabel("Complete raid-1 title")!.disabled).toBe(false);
   });
