@@ -2,6 +2,7 @@ import {
   Anchor,
   Badge,
   Button,
+  Checkbox,
   Group,
   MultiSelect,
   Select,
@@ -14,7 +15,8 @@ import {
 import { useForm } from "@mantine/form";
 import { useDisclosure } from "@mantine/hooks";
 import { zod4Resolver } from "mantine-form-zod-resolver";
-import { useState, type KeyboardEvent } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
+import { ColumnHeader, compareNullable, toggleSortConfig, type SortConfig } from "../components/ColumnHeader";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { createProjectSchema, createSubprojectSchema } from "@myapp/shared";
 import type { ProjectDto, SubprojectDto } from "@myapp/shared";
@@ -175,6 +177,203 @@ function EditProjectModal(props: { project: ProjectRow; onClose: () => void }) {
   );
 }
 
+type ProjSortKey = "name" | "code" | "owner" | "members" | "createdAt";
+type ProjFilters = {
+  name: string;
+  code: string;
+  owners: string[];
+  members: string[];
+  created: string[];
+};
+const EMPTY_PROJ_FILTERS: ProjFilters = {
+  name: "",
+  code: "",
+  owners: [],
+  members: [],
+  created: [],
+};
+
+function ProjectsTableWrap<
+  T extends ProjectDto & { teamMembers?: Array<{ fullName: string }> },
+>({
+  items,
+  renderRows,
+}: {
+  items: T[];
+  renderRows: (sorted: T[]) => React.ReactNode;
+}) {
+  const [sort, setSort] = useState<SortConfig<ProjSortKey>>({ key: null, direction: "asc" });
+  const [filters, setFilters] = useState<ProjFilters>(EMPTY_PROJ_FILTERS);
+  const hasFilters =
+    Boolean(filters.name.trim()) ||
+    Boolean(filters.code.trim()) ||
+    filters.owners.length > 0 ||
+    filters.members.length > 0 ||
+    filters.created.length > 0;
+
+  const ownerOpts = useMemo(
+    () => [...new Set(items.map((p) => p.ownerName ?? "—"))].sort(),
+    [items],
+  );
+  const memberOpts = useMemo(
+    () => [...new Set(items.flatMap((p) => (p.teamMembers ?? []).map((m) => m.fullName)))].sort(),
+    [items],
+  );
+  const createdOpts = useMemo(
+    () => [...new Set(items.map((p) => fmtDate(p.createdAt)))],
+    [items],
+  );
+
+  const visible = useMemo(() => {
+    const qName = filters.name.trim().toLowerCase();
+    const qCode = filters.code.trim().toLowerCase();
+    const filtered = items.filter((p) => {
+      if (qName && !p.name.toLowerCase().includes(qName)) return false;
+      if (qCode && !p.code.toLowerCase().includes(qCode)) return false;
+      if (filters.owners.length && !filters.owners.includes(p.ownerName ?? "—")) return false;
+      if (
+        filters.members.length &&
+        !(p.teamMembers ?? []).some((m) => filters.members.includes(m.fullName))
+      )
+        return false;
+      if (filters.created.length && !filters.created.includes(fmtDate(p.createdAt))) return false;
+      return true;
+    });
+    if (!sort.key) return filtered;
+    const { key, direction } = sort;
+    return [...filtered].sort((a, b) => {
+      switch (key) {
+        case "name":
+          return compareNullable(a.name.toLowerCase(), b.name.toLowerCase(), direction);
+        case "code": {
+          const cmp = a.code.localeCompare(b.code, undefined, { numeric: true });
+          return direction === "asc" ? cmp : -cmp;
+        }
+        case "owner":
+          return compareNullable(a.ownerName ?? null, b.ownerName ?? null, direction);
+        case "members": {
+          const am = (a.teamMembers ?? []).map((m) => m.fullName).join(", ") || null;
+          const bm = (b.teamMembers ?? []).map((m) => m.fullName).join(", ") || null;
+          return compareNullable(am, bm, direction);
+        }
+        case "createdAt":
+          return compareNullable(a.createdAt, b.createdAt, direction);
+      }
+    });
+  }, [items, filters, sort]);
+
+  const handleSort = (key: ProjSortKey) => setSort((prev) => toggleSortConfig(prev, key));
+
+  return (
+    <>
+      {hasFilters ? (
+        <Group justify="flex-end" mb="xs">
+          <Button size="compact-xs" variant="subtle" onClick={() => setFilters(EMPTY_PROJ_FILTERS)}>
+            Clear filters
+          </Button>
+        </Group>
+      ) : null}
+      <Table.ScrollContainer minWidth={520}>
+        <Table highlightOnHover>
+          <Table.Thead>
+            <Table.Tr>
+              <ColumnHeader
+                label="Project"
+                colKey="name"
+                sort={sort}
+                onSort={handleSort}
+                activeFilterCount={filters.name ? 1 : 0}
+                onClearFilter={() => setFilters((f) => ({ ...f, name: "" }))}
+              >
+                <TextInput
+                  size="xs"
+                  placeholder="Search project..."
+                  value={filters.name}
+                  onChange={(e) => setFilters((f) => ({ ...f, name: e.currentTarget.value }))}
+                />
+              </ColumnHeader>
+              <ColumnHeader
+                label="Code"
+                colKey="code"
+                sort={sort}
+                onSort={handleSort}
+                activeFilterCount={filters.code ? 1 : 0}
+                onClearFilter={() => setFilters((f) => ({ ...f, code: "" }))}
+              >
+                <TextInput
+                  size="xs"
+                  placeholder="Search code..."
+                  value={filters.code}
+                  onChange={(e) => setFilters((f) => ({ ...f, code: e.currentTarget.value }))}
+                />
+              </ColumnHeader>
+              <ColumnHeader
+                label="Owner"
+                colKey="owner"
+                sort={sort}
+                onSort={handleSort}
+                activeFilterCount={filters.owners.length}
+                onClearFilter={() => setFilters((f) => ({ ...f, owners: [] }))}
+              >
+                <Checkbox.Group
+                  value={filters.owners}
+                  onChange={(v) => setFilters((f) => ({ ...f, owners: v }))}
+                >
+                  <Stack gap={4}>
+                    {ownerOpts.map((opt) => (
+                      <Checkbox key={opt} size="xs" value={opt} label={opt} />
+                    ))}
+                  </Stack>
+                </Checkbox.Group>
+              </ColumnHeader>
+              <ColumnHeader
+                label="Team members"
+                colKey="members"
+                sort={sort}
+                onSort={handleSort}
+                activeFilterCount={filters.members.length}
+                onClearFilter={() => setFilters((f) => ({ ...f, members: [] }))}
+              >
+                <Checkbox.Group
+                  value={filters.members}
+                  onChange={(v) => setFilters((f) => ({ ...f, members: v }))}
+                >
+                  <Stack gap={4}>
+                    {memberOpts.map((opt) => (
+                      <Checkbox key={opt} size="xs" value={opt} label={opt} />
+                    ))}
+                  </Stack>
+                </Checkbox.Group>
+              </ColumnHeader>
+              <ColumnHeader
+                label="Created"
+                colKey="createdAt"
+                sort={sort}
+                onSort={handleSort}
+                activeFilterCount={filters.created.length}
+                onClearFilter={() => setFilters((f) => ({ ...f, created: [] }))}
+              >
+                <Checkbox.Group
+                  value={filters.created}
+                  onChange={(v) => setFilters((f) => ({ ...f, created: v }))}
+                >
+                  <Stack gap={4}>
+                    {createdOpts.map((opt) => (
+                      <Checkbox key={opt} size="xs" value={opt} label={opt} />
+                    ))}
+                  </Stack>
+                </Checkbox.Group>
+              </ColumnHeader>
+              <Table.Th />
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>{renderRows(visible)}</Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+    </>
+  );
+}
+
 export function ProjectsPage() {
   const isPm = useIsPm();
   const me = useAuth();
@@ -230,20 +429,10 @@ export function ProjectsPage() {
       <PageHeader title="Projects" actions={<Button onClick={open}>New project</Button>} />
       <QueryState query={tree} isEmpty={(d) => d.length === 0} empty="No projects yet.">
         {(items) => (
-          <Table.ScrollContainer minWidth={520}>
-            <Table highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Project</Table.Th>
-                  <Table.Th>Code</Table.Th>
-                  <Table.Th>Owner</Table.Th>
-                  <Table.Th>Team members</Table.Th>
-                  <Table.Th>Created</Table.Th>
-                  <Table.Th />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {items.flatMap((p) => [
+          <ProjectsTableWrap
+            items={items}
+            renderRows={(visible) =>
+              visible.flatMap((p) => [
                   <Table.Tr key={p.id} {...rowProps(() => setEditing(p), true)}>
                     <Table.Td>
                       <Anchor
@@ -364,10 +553,9 @@ export function ProjectsPage() {
                       )}
                     </Table.Tr>
                   )),
-                ])}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
+                ])
+            }
+          />
         )}
       </QueryState>
 
